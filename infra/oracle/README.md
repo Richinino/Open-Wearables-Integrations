@@ -5,77 +5,72 @@ Výsledok: Open Wearables beží nonstop na bezplatnom serveri v Oracle Cloud. T
 **Ako to funguje**
 
 - **Server:** Oracle Always Free VM (ARM, Ubuntu 24.04).
-- **Verejná HTTPS adresa** ide cez **Tailscale Funnel**. Netreba vlastnú doménu ani otvárať porty v Oracle. Adresa bude v tvare `https://ow.<tvoj-tailnet>.ts.net`:
-  - `https://ow.<tailnet>.ts.net`: API pre mobilnú appku, Claude Desktop a neskôr web na Verceli
-  - `https://ow.<tailnet>.ts.net:8443`: admin portál
-- **Všetko na serveri nastaví sám skript [`user-data.sh`](user-data.sh)**, ktorý vložíš do Oracle pri vytváraní VM:
-  - Docker
-  - Tailscale
-  - Open Wearables `0.9.0`
-  - denná záloha databázy na disk VM
+- **Verejná adresa** je odvodená z verejnej IP, ktorú dá Oracle. Ak má server IP `141.147.12.34`, adresy budú:
+  - `https://141-147-12-34.sslip.io`: API pre mobilnú appku, Claude Desktop a neskôr web na Verceli
+  - `https://admin.141-147-12-34.sslip.io`: admin portál
+- **HTTPS certifikát** vybaví program Caddy na serveri. [sslip.io](https://sslip.io) je bezplatná služba, ktorá takéto meno preloží na IP adresu.
+- **Všetko na serveri nastaví sám skript [`user-data.sh`](user-data.sh)**:
+  - firewall (porty 80 a 443)
+  - Docker, Caddy a Open Wearables `0.9.0`
+  - denná záloha databázy
+
+  Do Oracle stačí vložiť krátky [`bootstrap.sh`](bootstrap.sh), ktorý si skript stiahne z GitHubu.
 
 Celkový čas: asi 30 minút, z toho 10 minút len čakanie.
 
 ---
 
-## 1. Tailscale (5 min)
+## 1. Otvor porty 80 a 443 v Oracle
 
-1. Choď na <https://login.tailscale.com/start> a prihlás sa Google účtom. Ak ťa sprievodca bude nútiť pridať zariadenie, môžeš to preskočiť.
-2. **DNS** (<https://login.tailscale.com/admin/dns>): MagicDNS nechaj zapnuté. Nižšie v sekcii **HTTPS Certificates** klikni **Enable HTTPS**.
-3. **Access controls** (<https://login.tailscale.com/admin/acls>): skontroluj, že policy obsahuje blok s `"attr": ["funnel"]`. V nových účtoch tam je automaticky. Ak chýba, pridaj ho:
-   ```json
-   "nodeAttrs": [
-     { "target": ["autogroup:member"], "attr": ["funnel"] }
-   ]
-   ```
-4. **Keys** (<https://login.tailscale.com/admin/settings/keys>): klikni **Generate auth key**.
-   - Reusable: vypnuté
-   - Expiration: 1 day
-   - Ephemeral: vypnuté
-   - Tags: žiadne
+Oracle predvolene púšťa zvonku len SSH. Caddy potrebuje porty 80 a 443, aby získal certifikát a obsluhoval HTTPS.
 
-   Skopíruj kľúč `tskey-auth-...`.
+1. **☰ → Networking → Virtual cloud networks.**
+2. Ak tam žiadna VCN nie je, vytvor ju: **Start VCN Wizard → Create VCN with Internet Connectivity**, meno napr. `open-wearables-vcn`, ostatné nechaj predvolené.
+3. Otvor VCN → **Security** (alebo **Security Lists**) → **Default Security List for …** → **Add Ingress Rules**. Pridaj dve pravidlá:
+
+   | Source CIDR | IP Protocol | Destination Port Range |
+   |---|---|---|
+   | `0.0.0.0/0` | TCP | `80` |
+   | `0.0.0.0/0` | TCP | `443` |
 
 ## 2. Priprav skript
 
-Otvor [`user-data.sh`](user-data.sh) a skopíruj si celý obsah. V bloku `VYPLŇ` hore doplň tri hodnoty a nechaj ich v jednoduchých úvodzovkách `'...'`:
+Skopíruj obsah [`bootstrap.sh`](bootstrap.sh) a doplň dve hodnoty. Nechaj ich v jednoduchých úvodzovkách `'...'`:
 
 | Premenná | Čo tam patrí |
 |---|---|
-| `TS_AUTHKEY` | kľúč z Tailscale, krok 1.4 |
-| `ADMIN_EMAIL` | tvoj e-mail na prihlásenie do admin portálu |
-| `ADMIN_PASSWORD` | aspoň 12 znakov, bez medzier a bez znaku `'` |
+| `OW_ADMIN_EMAIL` | tvoj e-mail: prihlásenie do admin portálu a kontakt pre vydavateľa HTTPS certifikátu |
+| `OW_ADMIN_PASSWORD` | aspoň 12 znakov, bez medzier a bez znaku `'` |
 
-Heslo ostane uložené v nastaveniach VM v Oracle, preto ho po prvom prihlásení zmeň (krok 5). Ostatné tajomstvá (heslo databázy, `SECRET_KEY`) si skript vygeneruje sám na serveri a nikam ich neposiela.
+Heslo ostane uložené v nastaveniach VM v Oracle, preto ho po prvom prihlásení zmeň (krok 5). Ostatné tajomstvá (heslo databázy, `SECRET_KEY`) si skript vygeneruje sám na serveri.
 
-## 3. Vytvor VM v Oracle
+## 3. Vytvor VM
 
-V Oracle konzole: **☰ → Compute → Instances → Create instance**.
+**☰ → Compute → Instances → Create instance:**
 
 1. **Name:** `open-wearables`
 2. **Image:** Change image → **Ubuntu** → **Canonical Ubuntu 24.04**. Nie verziu „Minimal“.
 3. **Shape:** Change shape → **Ampere** → **VM.Standard.A1.Flex** → **1 OCPU, 4 GB memory**. Malo by tam byť označenie „Always Free-eligible“.
-   - 4 GB stačí. Stack v teste zabral okolo 1,4 GB.
+   - Stack zaberie okolo 1,4 GB, takže 4 GB stačí.
    - Pri menšej RAM sa VM nebude javiť ako nečinná, takže je menšia šanca, že ju Oracle vypne.
-4. **Networking:** nechaj predvolené (nová VCN, verejná podsieť, verejná IPv4 adresa).
-5. **SSH keys:** **Generate a key pair for me** → **Download private key**. Kľúč si odlož, slúži ako núdzový prístup.
-6. **Advanced options → Management → Initialization script → Paste cloud-init script.** Vlož upravený obsah `user-data.sh`.
+4. **Networking:** VCN z kroku 1, jej **public subnet**, zapnuté **Automatically assign public IPv4 address**.
+5. **SSH keys:** **Generate a key pair for me** → **Download private key**. Kľúč si odlož, je to jediný spôsob, ako sa dostať do servera cez príkazový riadok.
+6. **Advanced options → Management → Initialization script → Paste cloud-init script.** Vlož upravený `bootstrap.sh`.
 7. **Create.**
 
 Ak Oracle hlási **Out of capacity**, v časti Placement zmeň **Availability domain** a skús znova. Ak to nepomôže, skús to o pár hodín, často to ide večer alebo v noci.
 
 ## 4. Počkaj asi 10 minút a skontroluj
 
-1. V Tailscale → **Machines** sa objaví zariadenie `ow`. Klikni na **⋯ → Disable key expiry**. Inak sa server po 180 dňoch odpojí.
-2. V detaile zariadenia nájdeš jeho meno, napr. `ow.tail1234.ts.net`.
-3. Otvor `https://ow.<tailnet>.ts.net/docs`. Má sa ukázať dokumentácia API. Prvé otvorenie môže trvať asi minútu, kým sa vystaví certifikát.
-4. Otvor `https://ow.<tailnet>.ts.net:8443`. Má sa ukázať prihlásenie do admin portálu.
+1. V detaile inštancie nájdeš **Public IP address**, napr. `141.147.12.34`.
+2. Otvor `https://141-147-12-34.sslip.io/docs` (bodky v IP nahraď pomlčkami). Má sa ukázať dokumentácia API.
+3. Otvor `https://admin.141-147-12-34.sslip.io`. Má sa ukázať prihlásenie do admin portálu.
 
 Ak niečo nejde ani po 15 minútach, pozri [Riešenie problémov](#riešenie-problémov).
 
 ## 5. Admin portál
 
-1. Prihlás sa `ADMIN_EMAIL` / `ADMIN_PASSWORD` a **hneď si zmeň heslo** v nastaveniach profilu.
+1. Prihlás sa e-mailom a heslom z kroku 2 a **hneď si zmeň heslo** v nastaveniach profilu.
 2. **Settings → API Keys → vytvor kľúč.** Ukáže sa len raz, ulož si ho do password managera. Potrebuješ ho pre Claude Desktop.
 3. **Users → pridaj používateľa** (seba).
 4. V detaile používateľa klikni **Connect Mobile App**. Dostaneš **API URL** a jednorazový **invitation code**.
@@ -90,9 +85,9 @@ Ak niečo nejde ani po 15 minútach, pozri [Riešenie problémov](#riešenie-pro
 
 ## 7. Claude Desktop (MCP)
 
-MCP server Open Wearables beží u teba, keď je zapnutý Claude Desktop, a len sa pýta servera v cloude. Na notebooku nič nehostíš.
+MCP server Open Wearables beží u teba, keď je zapnutý Claude Desktop, a len sa pýta servera v cloude.
 
-1. Potrebuješ [`uv`](https://docs.astral.sh/uv/getting-started/installation/), pravdepodobne ho už máš. Stiahni MCP server vo verzii zhodnej so serverom:
+1. Potrebuješ [`uv`](https://docs.astral.sh/uv/getting-started/installation/). Stiahni MCP server vo verzii zhodnej so serverom:
    ```bash
    git clone --branch 0.9.0 --depth 1 https://github.com/the-momentum/open-wearables.git open-wearables-0.9.0
    ```
@@ -107,7 +102,7 @@ MCP server Open Wearables beží u teba, keď je zapnutý Claude Desktop, a len 
          "command": "uv",
          "args": ["run", "--frozen", "--directory", "/CESTA/K/open-wearables-0.9.0/mcp", "start"],
          "env": {
-           "OPEN_WEARABLES_API_URL": "https://ow.<tailnet>.ts.net",
+           "OPEN_WEARABLES_API_URL": "https://141-147-12-34.sslip.io",
            "OPEN_WEARABLES_API_KEY": "sk-..."
          }
        }
@@ -131,9 +126,15 @@ Bez `-v` ostanú staré dáta na disku, keby si ich ešte potreboval.
 
 ## Čo je verejné a čo nie
 
-- Z internetu je dostupné API a prihlasovacia stránka admin portálu, oboje cez HTTPS. Dáta chráni heslo, API kľúč a tokeny mobilnej appky.
-- Databáza a Redis sú len vo vnútri servera. Porty 8000 a 3000 počúvajú len na `127.0.0.1` a von ich pustí iba Tailscale.
-- V Oracle nie je otvorený žiadny port okrem predvoleného SSH.
+- Zvonku sú otvorené len porty 80 a 443 (Caddy) a SSH, ktoré je predvolené a dostaneš sa naň len s kľúčom.
+- Cez HTTPS je dostupné API a prihlasovacia stránka admin portálu. Dáta chráni heslo, API kľúč a tokeny mobilnej appky.
+- Databáza a Redis sú len vo vnútri servera.
+
+## Na čo si dať pozor
+
+- **Adresa závisí od verejnej IP.** Tá ostáva aj po reštarte či vypnutí VM. Zmení sa, len keď VM zmažeš a vytvoríš novú. Vtedy treba novú adresu nastaviť v telefóne aj v MCP.
+- **sslip.io je bezplatná služba tretej strany.** Keby nefungovala, telefón ani Claude server nenájdu. Certifikáty pre sslip.io občas narazia na limity Let's Encrypt. Caddy to vtedy skúša znova sám.
+- Ak si neskôr kúpiš doménu, stačí v `.env` na serveri zmeniť `API_HOST` a `ADMIN_HOST` a stack reštartovať.
 
 ## Zálohy
 
@@ -151,10 +152,13 @@ Bez `-v` ostanú staré dáta na disku, keby si ich ešte potreboval.
 
 ## Riešenie problémov
 
-**Pripojenie na server (SSH)** – jedna z možností:
+**Pripojenie na server (SSH)** kľúčom z kroku 3.5:
 
-- **Cez Tailscale:** nainštaluj Tailscale na notebook a prihlás sa rovnakým účtom. Potom spusti `ssh ubuntu@ow`. Prihlásenie potvrdíš v prehliadači.
-- **Cez kľúč z Oracle:** spusti `ssh -i /cesta/ku/kluc.key ubuntu@<verejná IP z detailu inštancie>`. Na macOS a Linuxe najprv `chmod 600 /cesta/ku/kluc.key`.
+```bash
+ssh -i /cesta/ku/kluc.key ubuntu@<verejná IP>
+```
+
+Na macOS a Linuxe najprv spusti `chmod 600 /cesta/ku/kluc.key`.
 
 **Užitočné príkazy na serveri:**
 
@@ -163,14 +167,12 @@ sudo cat /opt/open-wearables/INFO.txt                 # adresy a stav
 sudo tail -50 /var/log/open-wearables-setup.log       # priebeh inštalácie
 cd /opt/open-wearables && sudo docker compose ps      # bežia všetky služby?
 cd /opt/open-wearables && sudo docker compose logs --tail 100 app
-sudo tailscale funnel status                          # verejné adresy
+cd /opt/open-wearables && sudo docker compose logs --tail 100 caddy   # certifikáty
 ```
 
-**Funnel sa nezapol.** V Tailscale over kroky 1.2 a 1.3, potom na serveri spusti:
+**Prehliadač hlási chybu certifikátu alebo sa stránka nenačíta.**
 
-```bash
-sudo tailscale funnel --bg 8000
-sudo tailscale funnel --bg --https=8443 3000
-```
+1. Over krok 1: Security List musí povoľovať TCP 80 a 443 zo zdroja `0.0.0.0/0`.
+2. Potom VM v Oracle konzole reštartuj (**Reboot**). Caddy po štarte skúsi certifikát získať hneď.
 
 **Oracle VM vypol pre nečinnosť.** V konzole ju znova spusti (Start). Ak sa to opakuje, prepni účet na Pay As You Go: Always Free zdroje ostanú zadarmo a toto pravidlo sa naň nevzťahuje.
