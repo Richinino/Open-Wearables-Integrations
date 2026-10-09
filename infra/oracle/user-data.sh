@@ -1,7 +1,8 @@
 #!/bin/bash
 # Open Wearables na Oracle Cloud Always Free (Ubuntu 24.04, ARM / VM.Standard.A1.Flex).
 #
-# Celý obsah tohto súboru vlož pri vytváraní VM do:
+# Jednoduchšie: do Oracle vlož krátky bootstrap.sh, ktorý tento skript stiahne.
+# Alebo vlož celý obsah tohto súboru pri vytváraní VM do:
 #   Create instance -> Show advanced options -> Management -> Initialization script
 #   -> Paste cloud-init script
 #
@@ -17,6 +18,11 @@ ADMIN_EMAIL='tvoj@email.sk'
 # Aspoň 12 znakov, bez medzier a bez znaku '. Po prvom prihlásení ho v portáli zmeň.
 ADMIN_PASSWORD='SEM-DAJ-SILNE-HESLO'
 # =======================================================================
+
+# Krátky bootstrap.sh odovzdá hodnoty cez premenné prostredia OW_*.
+TS_AUTHKEY="${OW_TS_AUTHKEY:-$TS_AUTHKEY}"
+ADMIN_EMAIL="${OW_ADMIN_EMAIL:-$ADMIN_EMAIL}"
+ADMIN_PASSWORD="${OW_ADMIN_PASSWORD:-$ADMIN_PASSWORD}"
 
 OW_VERSION='0.9.0'
 TS_HOSTNAME='ow'
