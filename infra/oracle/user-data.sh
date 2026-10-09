@@ -1,18 +1,17 @@
 #!/bin/bash
 # Open Wearables na Oracle Cloud Always Free (Ubuntu 24.04, ARM / VM.Standard.A1.Flex).
 #
-# Jednoduchšie: do Oracle vlož krátky bootstrap.sh, ktorý tento skript stiahne.
+# Do Oracle stačí vložiť krátky bootstrap.sh, ktorý tento skript stiahne.
 # Alebo vlož celý obsah tohto súboru pri vytváraní VM do:
-#   Create instance -> Show advanced options -> Management -> Initialization script
+#   Create instance -> Advanced options -> Management -> Initialization script
 #   -> Paste cloud-init script
 #
-# Vyplň len tri hodnoty v bloku VYPLŇ. Hodnoty nechaj v jednoduchých úvodzovkách.
+# Predpoklad: Security List podsiete v Oracle povoľuje prichádzajúce TCP 80 a 443.
+# Verejná adresa bude https://<IP-s-pomlčkami>.sslip.io (HTTPS certifikát vybaví Caddy).
 # Skript beží raz, pri prvom štarte VM, a trvá asi 5-10 minút.
 # Log: /var/log/open-wearables-setup.log, výsledné adresy: /opt/open-wearables/INFO.txt
 
 # ================================ VYPLŇ ================================
-# Tailscale -> Settings -> Keys -> Generate auth key (Reusable: vypnuté, Expiration: 1 day)
-TS_AUTHKEY='tskey-auth-SEM-VLOZ-KLUC'
 # Prihlásenie do admin portálu Open Wearables
 ADMIN_EMAIL='tvoj@email.sk'
 # Aspoň 12 znakov, bez medzier a bez znaku '. Po prvom prihlásení ho v portáli zmeň.
@@ -20,12 +19,11 @@ ADMIN_PASSWORD='SEM-DAJ-SILNE-HESLO'
 # =======================================================================
 
 # Krátky bootstrap.sh odovzdá hodnoty cez premenné prostredia OW_*.
-TS_AUTHKEY="${OW_TS_AUTHKEY:-$TS_AUTHKEY}"
 ADMIN_EMAIL="${OW_ADMIN_EMAIL:-$ADMIN_EMAIL}"
 ADMIN_PASSWORD="${OW_ADMIN_PASSWORD:-$ADMIN_PASSWORD}"
 
 OW_VERSION='0.9.0'
-TS_HOSTNAME='ow'
+CADDY_VERSION='2.11'
 OW_DIR='/opt/open-wearables'
 
 set -euo pipefail
@@ -39,16 +37,20 @@ fail() {
   exit 1
 }
 
-case "$TS_AUTHKEY" in
-  tskey-auth-SEM-VLOZ-KLUC|"") fail "TS_AUTHKEY nie je vyplnený." ;;
-  tskey-*) ;;
-  *) fail "TS_AUTHKEY musí začínať 'tskey-'." ;;
-esac
 [[ "$ADMIN_EMAIL" == *@* && "$ADMIN_EMAIL" != 'tvoj@email.sk' ]] || fail "ADMIN_EMAIL nie je vyplnený."
 [[ "$ADMIN_PASSWORD" != 'SEM-DAJ-SILNE-HESLO' && ${#ADMIN_PASSWORD} -ge 12 ]] \
   || fail "ADMIN_PASSWORD musí mať aspoň 12 znakov."
 [[ "$ADMIN_PASSWORD" != *"'"* && "$ADMIN_PASSWORD" != *" "* ]] \
   || fail "ADMIN_PASSWORD nesmie obsahovať medzeru ani znak '."
+
+# --- Firewall na VM: Ubuntu image v Oracle púšťa len SSH. Povolíme 80 a 443.
+# Ukladá sa ešte pred inštaláciou Dockeru, aby sa do súboru nedostali jeho pravidlá.
+if command -v iptables >/dev/null; then
+  # shellcheck disable=SC2054  # čiarky patria do --dports, nie sú oddeľovač poľa
+  RULE=(INPUT -p tcp -m multiport --dports 80,443 -m conntrack --ctstate NEW -j ACCEPT)
+  iptables -C "${RULE[@]}" 2>/dev/null || iptables -I "${RULE[@]}"
+  if command -v netfilter-persistent >/dev/null; then netfilter-persistent save; fi
+fi
 
 # --- Swap 2 GB ako poistka pri malej RAM ---
 if [[ -z "$(swapon --show --noheadings)" ]]; then
@@ -66,23 +68,21 @@ cat > /etc/docker/daemon.json <<'EOF'
 }
 EOF
 # Pri prvom štarte môže apt držať unattended-upgrades. Všetky apt príkazy
-# (aj inštalátor Tailscale) preto počkajú na zámok namiesto chyby.
+# preto počkajú na zámok namiesto chyby.
 echo 'DPkg::Lock::Timeout "600";' > /etc/apt/apt.conf.d/90-lock-timeout
 apt-get update -y
 apt-get install -y docker.io docker-compose-v2 jq openssl curl ca-certificates
 systemctl enable --now docker
 usermod -aG docker ubuntu || true
 
-# --- Tailscale: verejná HTTPS adresa bez domény a bez otvárania portov ---
-curl -fsSL https://tailscale.com/install.sh | sh
-timeout 120 tailscale up --authkey="$TS_AUTHKEY" --hostname="$TS_HOSTNAME" --ssh \
-  || fail "tailscale up zlyhal (neplatný alebo expirovaný auth key?)."
-
-TS_DNS="$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')"
-[[ -n "$TS_DNS" && "$TS_DNS" != "null" ]] || fail "Nepodarilo sa zistiť Tailscale DNS meno (je zapnuté MagicDNS?)."
-API_URL="https://${TS_DNS}"
-ADMIN_URL="https://${TS_DNS}:8443"
-echo "Tailscale DNS meno: $TS_DNS"
+# --- Verejná adresa: IP z Oracle + bezplatné meno cez sslip.io ---
+is_ipv4() { [[ "$1" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; }
+PUBLIC_IP="$(curl -fsS --retry 5 https://checkip.amazonaws.com | tr -d '[:space:]' || true)"
+is_ipv4 "$PUBLIC_IP" || PUBLIC_IP="$(curl -fsS --retry 5 https://ifconfig.me | tr -d '[:space:]' || true)"
+is_ipv4 "$PUBLIC_IP" || fail "Nepodarilo sa zistiť verejnú IP adresu (má VM pridelenú verejnú IPv4?)."
+API_HOST="${PUBLIC_IP//./-}.sslip.io"
+ADMIN_HOST="admin.${API_HOST}"
+echo "Verejná IP: $PUBLIC_IP, API: https://$API_HOST, admin: https://$ADMIN_HOST"
 
 # --- Konfigurácia Open Wearables ---
 mkdir -p "$OW_DIR/backups" && chmod 700 "$OW_DIR/backups"
@@ -94,6 +94,7 @@ if [[ ! -f .env ]]; then
   cat > .env <<EOF
 # Vygenerované $(date -Is) skriptom user-data.sh. Necommitovať.
 OW_VERSION=${OW_VERSION}
+CADDY_VERSION=${CADDY_VERSION}
 
 ENVIRONMENT=production
 SECRET_KEY='$(openssl rand -hex 48)'
@@ -105,13 +106,18 @@ DB_PASSWORD='$(openssl rand -hex 24)'
 ADMIN_EMAIL='${ADMIN_EMAIL}'
 ADMIN_PASSWORD='${ADMIN_PASSWORD}'
 
-# Verejná adresa API (mobilná appka, MCP, web na Verceli)
-API_BASE_URL=${API_URL}
+# Verejné adresy (Caddy pre ne vybaví HTTPS certifikáty)
+API_HOST=${API_HOST}
+ADMIN_HOST=${ADMIN_HOST}
+# API: mobilná appka, Claude Desktop MCP, web na Verceli
+API_BASE_URL=https://${API_HOST}
 # Adresa, ktorú volá prehliadač s admin portálom
-VITE_API_URL=${API_URL}
+VITE_API_URL=https://${API_HOST}
 # Admin portál
-FRONTEND_URL=${ADMIN_URL}
-CORS_ORIGINS=["${ADMIN_URL}"]
+FRONTEND_URL=https://${ADMIN_HOST}
+CORS_ORIGINS=["https://${ADMIN_HOST}"]
+# API beží za Caddy: veriť jeho X-Forwarded-* hlavičkám (správne https v odpovediach)
+FORWARDED_ALLOW_IPS='*'
 
 SENTRY_ENABLED=false
 OUTGOING_WEBHOOKS_ENABLED=false
@@ -119,9 +125,27 @@ EOF
   umask 022
 fi
 
+cat > Caddyfile <<'EOF'
+{
+	email {$ACME_EMAIL}
+	# HTTP/3 (UDP) nie je v Oracle otvorené, ostávame pri HTTP/1.1 a HTTP/2.
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$API_HOST} {
+	reverse_proxy app:8000
+}
+
+{$ADMIN_HOST} {
+	reverse_proxy frontend:3000
+}
+EOF
+
 cat > docker-compose.yml <<'EOF'
 # Produkčný stack Open Wearables pre jednu ARM VM.
-# Porty sú len na 127.0.0.1, von ich publikuje Tailscale Funnel.
+# Von sú len porty 80 a 443 (Caddy, HTTPS). API a frontend sú na 127.0.0.1.
 # Verziu meníš cez OW_VERSION v .env (pred upgradom si prečítaj release notes).
 name: open-wearables
 
@@ -134,6 +158,29 @@ x-backend: &backend
   restart: unless-stopped
 
 services:
+  caddy:
+    image: caddy:${CADDY_VERSION:?Set CADDY_VERSION in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      API_HOST: ${API_HOST:?Set API_HOST in .env}
+      ADMIN_HOST: ${ADMIN_HOST:?Set ADMIN_HOST in .env}
+      ACME_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      default:
+        # Kontajnery (napr. SSR admin portálu) dosiahnu verejnú adresu API priamo cez Caddy.
+        aliases:
+          - ${API_HOST}
+    depends_on:
+      - app
+      - frontend
+    restart: unless-stopped
+
   db:
     image: postgres:18
     environment:
@@ -202,6 +249,8 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  caddy_data:
+  caddy_config:
 EOF
 
 cat > backup.sh <<'EOF'
@@ -235,33 +284,39 @@ done
 curl -fsS -o /dev/null http://127.0.0.1:8000/openapi.json \
   || fail "API neodpovedá ani po 10 minútach. Pozri: cd $OW_DIR && docker compose logs app"
 
-# --- Verejné HTTPS adresy cez Tailscale Funnel (konfigurácia prežije reštart) ---
-FUNNEL_OK=yes
-timeout 60 tailscale funnel --bg 8000 || FUNNEL_OK=no
-timeout 60 tailscale funnel --bg --https=8443 3000 || FUNNEL_OK=no
+# HTTPS overujeme lokálne cez Caddy (--resolve), bez spoliehania sa na hairpin cez verejnú IP.
+echo "Čakám na HTTPS certifikát..."
+HTTPS_OK=no
+for _ in $(seq 1 30); do
+  if curl -fsS -o /dev/null --resolve "${API_HOST}:443:127.0.0.1" "https://${API_HOST}/openapi.json"; then
+    HTTPS_OK=yes
+    break
+  fi
+  sleep 10
+done
 
-if [[ "$FUNNEL_OK" == yes ]]; then
-  FUNNEL_NOTE="Funnel je zapnutý."
+if [[ "$HTTPS_OK" == yes ]]; then
+  HTTPS_NOTE="HTTPS certifikát je vydaný."
 else
-  FUNNEL_NOTE="Funnel sa nepodarilo zapnúť. V Tailscale admin konzole zapni HTTPS a Funnel, potom na VM spusti:
-  sudo tailscale funnel --bg 8000
-  sudo tailscale funnel --bg --https=8443 3000"
+  HTTPS_NOTE="HTTPS certifikát sa zatiaľ nepodarilo získať. Over v Oracle, že Security List podsiete
+povoľuje TCP 80 a 443 zo zdroja 0.0.0.0/0. Caddy to skúša znova sám; zrýchliť sa to dá
+reštartom VM v Oracle konzole. Detaily: cd ${OW_DIR} && sudo docker compose logs caddy"
 fi
 
 cat > INFO.txt <<EOF
 Open Wearables ${OW_VERSION} beží.
 
-API (mobilná appka, Claude Desktop MCP): ${API_URL}
-API dokumentácia:                        ${API_URL}/docs
-Admin portál:                            ${ADMIN_URL}
+API (mobilná appka, Claude Desktop MCP): https://${API_HOST}
+API dokumentácia:                        https://${API_HOST}/docs
+Admin portál:                            https://${ADMIN_HOST}
 Prihlásenie:                             ${ADMIN_EMAIL} (heslo z user-data, po prihlásení ho zmeň)
 
-${FUNNEL_NOTE}
+${HTTPS_NOTE}
 
 Príkazy (cez SSH na VM):
   cd ${OW_DIR} && sudo docker compose ps
   cd ${OW_DIR} && sudo docker compose logs -f app
-  sudo tailscale funnel status
+  cd ${OW_DIR} && sudo docker compose logs caddy
   sudo ${OW_DIR}/backup.sh
 EOF
 
