@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.dump
+backups/
+node_modules/
+.next/
+.vercel/
