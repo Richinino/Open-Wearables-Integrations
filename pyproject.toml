@@ -1,0 +1,30 @@
+[project]
+name = "owi"
+version = "0.1.0"
+description = "Daily health metrics computed from Open Wearables raw data"
+requires-python = ">=3.12"
+dependencies = ["httpx>=0.27", "tzdata>=2024.1"]
+
+[project.scripts]
+owi = "owi.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/owi"]
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

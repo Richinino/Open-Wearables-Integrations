@@ -1,0 +1,25 @@
+# Runs owi next to an Open Wearables stack and reaches its API over that stack's network.
+# Start from the repository root:  docker compose -f docker/compose.yml up -d --build
+name: owi
+
+services:
+  owi:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      OWI_API_URL: ${OWI_DOCKER_API_URL:-http://app:8000}
+      OWI_DATA_DIR: /data
+    volumes:
+      # Shared with the host so `owi calibrate` and `owi day` see the same files.
+      - ../data:/data
+    networks:
+      - openwearables
+    restart: unless-stopped
+
+networks:
+  openwearables:
+    external: true
+    name: ${OW_NETWORK:-open-wearables_default}

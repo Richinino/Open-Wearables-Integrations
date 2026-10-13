@@ -8,3 +8,8 @@ backups/
 node_modules/
 .next/
 .vercel/
+data/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/

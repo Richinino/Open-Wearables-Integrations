@@ -1,0 +1,143 @@
+"""Read-only client for the Open Wearables REST API."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator, Sequence
+from datetime import UTC, datetime
+from typing import Any
+
+import httpx
+
+from owi.models import Sample, SleepSession, SourceRef, Workout
+
+PAGE_LIMIT = 100
+# Open Wearables 0.9.0 renamed the series; older servers still send the old name.
+_TYPE_ALIASES = {"energy": "active_energy"}
+
+
+class OWError(RuntimeError):
+    """The Open Wearables API could not be reached or answered with an error."""
+
+
+def _parse_time(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
+
+
+def _format_time(value: datetime) -> str:
+    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _source(raw: dict[str, Any] | None) -> SourceRef:
+    raw = raw or {}
+    return SourceRef(
+        provider=(raw.get("provider") or "unknown").lower(),
+        source=raw.get("source"),
+        device=raw.get("device"),
+    )
+
+
+class OWClient:
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        *,
+        transport: httpx.BaseTransport | None = None,
+        timeout: float = 30.0,
+    ) -> None:
+        self._http = httpx.Client(
+            base_url=base_url.rstrip("/") + "/api/v1",
+            headers={"X-Open-Wearables-API-Key": api_key},
+            transport=transport,
+            timeout=timeout,
+        )
+
+    def __enter__(self) -> OWClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        self._http.close()
+
+    def _get(self, path: str, params: list[tuple[str, str]]) -> dict[str, Any]:
+        try:
+            response = self._http.get(path, params=params)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise OWError(f"Open Wearables API request failed for {path}: {exc}") from exc
+        return response.json()
+
+    def _pages(self, path: str, params: list[tuple[str, str]]) -> Iterator[dict[str, Any]]:
+        cursor: str | None = None
+        while True:
+            query = [*params, ("limit", str(PAGE_LIMIT))]
+            if cursor:
+                query.append(("cursor", cursor))
+            body = self._get(path, query)
+            yield from body.get("data") or []
+            pagination = body.get("pagination") or {}
+            cursor = pagination.get("next_cursor")
+            if not pagination.get("has_more") or not cursor:
+                return
+
+    def user_id(self) -> str:
+        items = self._get("/users", [("limit", "2")]).get("items") or []
+        if len(items) != 1:
+            raise OWError(f"Expected exactly one user, found {len(items)}; set OWI_USER_ID")
+        return items[0]["id"]
+
+    def timeseries(
+        self, user_id: str, types: Sequence[str], start: datetime, end: datetime
+    ) -> list[Sample]:
+        params = [
+            ("start_time", _format_time(start)),
+            ("end_time", _format_time(end)),
+            *[("types", type_) for type_ in types],
+        ]
+        return [
+            Sample(
+                timestamp=_parse_time(item["timestamp"]),
+                type=_TYPE_ALIASES.get(item["type"], item["type"]),
+                value=float(item["value"]),
+                source=_source(item.get("source")),
+            )
+            for item in self._pages(f"/users/{user_id}/timeseries", params)
+        ]
+
+    def workouts(self, user_id: str, start: datetime, end: datetime) -> list[Workout]:
+        params = [("start_date", _format_time(start)), ("end_date", _format_time(end))]
+        return [
+            Workout(
+                id=item["id"],
+                type=item.get("type") or "unknown",
+                start=_parse_time(item["start_time"]),
+                end=_parse_time(item["end_time"]),
+                source=_source(item.get("source")),
+                distance_m=item.get("distance_meters"),
+            )
+            for item in self._pages(f"/users/{user_id}/events/workouts", params)
+        ]
+
+    def sleeps(self, user_id: str, start: datetime, end: datetime) -> list[SleepSession]:
+        params = [("start_date", _format_time(start)), ("end_date", _format_time(end))]
+        sessions = []
+        for item in self._pages(f"/users/{user_id}/events/sleep", params):
+            stages = item.get("stages") or {}
+            seconds = item.get("sleep_duration_seconds")
+            sessions.append(
+                SleepSession(
+                    id=item["id"],
+                    start=_parse_time(item["start_time"]),
+                    end=_parse_time(item["end_time"]),
+                    source=_source(item.get("source")),
+                    sleep_minutes=None if seconds is None else seconds / 60,
+                    deep_minutes=stages.get("deep_minutes"),
+                    rem_minutes=stages.get("rem_minutes"),
+                    light_minutes=stages.get("light_minutes"),
+                    awake_minutes=stages.get("awake_minutes"),
+                    is_nap=bool(item.get("is_nap", False)),
+                )
+            )
+        return sessions
