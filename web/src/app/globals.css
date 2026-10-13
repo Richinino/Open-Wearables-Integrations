@@ -1,0 +1,194 @@
+@import "tailwindcss";
+
+/*
+ * Tokens. Chrome is ink on warm paper; colour is reserved for data.
+ * Data colours come from a palette validated for colour-vision deficiency
+ * in both modes; dark values are chosen for the dark surface, not inverted.
+ */
+:root {
+  color-scheme: light;
+
+  --page: #f6f5f1;
+  --surface: #fcfcfb;
+  --surface-sunk: #efeee9;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --line: #e1e0d9;
+  --line-strong: #c3c2b7;
+  --ring: rgba(11, 11, 11, 0.1);
+
+  /* One hue per subject, the same on every page. */
+  --activity: #eb6834;
+  --activity-soft: #f6c3ab;
+  --sleep: #6250d6;
+  --heart: #e87ba4;
+  --context: #c3c2b7;
+  --spark: #b3b2a8;
+
+  /* Sleep stages, in stacking order. */
+  --stage-deep: #6250d6;
+  --stage-rem: #1baf7a;
+  --stage-light: #2a78d6;
+  --stage-awake: #eb6834;
+
+  /* Intensity: one hue, more is darker. */
+  --zone-light: #ee9d74;
+  --zone-moderate: #e2591f;
+  --zone-vigorous: #8f3410;
+
+  --good: #006300;
+  --bad: #b42a2a;
+  --warn: #8a5a00;
+  --warn-bg: #fbefd0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-sunk: #242423;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --line: #2c2c2a;
+    --line-strong: #383835;
+    --ring: rgba(255, 255, 255, 0.1);
+
+    --activity: #d95926;
+    --activity-soft: #6e3219;
+    --sleep: #9085e9;
+    --heart: #d55181;
+    --context: #4a4a46;
+    --spark: #66665f;
+
+    --stage-deep: #9085e9;
+    --stage-rem: #199e70;
+    --stage-light: #3987e5;
+    --stage-awake: #d95926;
+
+    /* On a dark surface more is lighter. */
+    --zone-light: #96401c;
+    --zone-moderate: #d95926;
+    --zone-vigorous: #f3ad8b;
+
+    --good: #0ca30c;
+    --bad: #e66767;
+    --warn: #fab219;
+    --warn-bg: #2e2610;
+  }
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-sunk: var(--surface-sunk);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ring: var(--ring);
+  --color-activity: var(--activity);
+  --color-sleep: var(--sleep);
+  --color-heart: var(--heart);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --font-sans: var(--font-instrument), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --breakpoint-xs: 26rem;
+}
+
+html {
+  background: var(--page);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+::selection {
+  background: var(--ink);
+  color: var(--page);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Figures: the same sans, drawn narrow. Proportional digits at display sizes. */
+.figure {
+  font-stretch: 78%;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 0.95;
+}
+
+.figure-sm {
+  font-stretch: 84%;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+
+/* Small caps-like labels above figures and sections. */
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Chart text. SVG text takes its colour from tokens, never from the series. */
+.chart-tick {
+  font-size: 11px;
+  fill: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-label {
+  font-size: 11px;
+  font-weight: 600;
+  fill: var(--ink-2);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* One staggered entrance per page; children opt in with --i. */
+.rise {
+  animation: rise 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise {
+    animation: none;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -8,7 +8,8 @@ Moja inštancia [Open Wearables](https://github.com/the-momentum/open-wearables)
 | Spojenie telefón → backend | Tailscale Funnel (stála HTTPS adresa) | beží |
 | MCP pre Claude | lokálne, volá API backendu | beží |
 | Denné metriky (`owi`) | toto repo | beží |
-| Web so súhrnmi | toto repo | neskôr |
+| Čítacie API pre web (`owi serve`) | toto repo, Docker | beží |
+| Web so súhrnmi | `web/`, Vercel | pripravený lokálne |
 
 Tajomstvá (API kľúče, heslá, `.env`) ani zdravotné dáta do tohto repa nepatria. Priečinok `data/` je v `.gitignore`.
 
@@ -103,3 +104,21 @@ uv run ruff check . && uv run ruff format --check .
 ```
 
 Testy bežia na umelých dátach z `tests/factories.py`.
+
+## Web
+
+Stránka v [`web/`](web/) (Next.js) ukazuje výsledky `owi`: dnešok, posledné obdobie, spánok, tréningy a detail dňa. Dáta ostávajú doma; web si ich číta cez `owi serve` a drží ich v cache 5 minút.
+
+- Prihlásenie jedným heslom (`SITE_PASSWORD`). Bez prihlásenia sa nezobrazí stránka ani `/api/*`.
+- Token k dátam (`OWI_API_TOKEN`) pozná len server na Verceli, do prehliadača sa nedostane.
+- Odhady sú označené znakom ≈.
+- Bez `OWI_API_URL` beží lokálny vývoj na umelých dátach.
+
+```bash
+cd web
+npm install
+npm run dev -- -p 3100
+npm test
+```
+
+Premenné prostredia sú v [`web/.env.example`](web/.env.example), návrh v [`docs/superpowers/specs/2026-10-13-web-design.md`](docs/superpowers/specs/2026-10-13-web-design.md).
