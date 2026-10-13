@@ -61,16 +61,39 @@ uv run owi sync --from 2026-07-01   # prepočíta dni s novými parametrami
 
 Ladí sa dĺžka kroku, prah tepu pre aktívnu minútu a koeficient kalórií. Čím viac dní, tým lepšie; s jedným či dvoma dňami sedí odhad len na ne.
 
-### Docker
+### Čítacie API
 
-Kontajner prepočítava posledné 3 dni každých 30 minút a na API sa pripája cez sieť Open Wearables.
+Web si výsledky číta cez `owi serve`. Server databázu len číta a pýta si token z `OWI_SERVE_TOKEN` (aspoň 32 znakov, v `.env`).
 
 ```bash
-docker compose -f docker/compose.yml up -d --build
-docker compose -f docker/compose.yml logs --tail 20 owi
+uv run owi serve            # http://127.0.0.1:8787
+curl -H "Authorization: Bearer $OWI_SERVE_TOKEN" "http://127.0.0.1:8787/v1/days?from=2026-07-01&to=2026-07-31"
 ```
 
-Predvolene sa pripája na sieť `open-wearables_default` a adresu `http://app:8000`. Iné hodnoty nastav ako premenné prostredia `OW_NETWORK` a `OWI_DOCKER_API_URL` pred spustením príkazu; z koreňového `.env` ich Compose nečíta.
+| Cesta | Čo vráti |
+|---|---|
+| `GET /health` | `{"status": "ok"}`, bez tokenu |
+| `GET /v1/days` | posledných najviac 400 dní aj s tréningmi |
+| `GET /v1/days?from=…&to=…` | dni v rozsahu vrátane okrajov |
+
+Presný tvar odpovede je v [`docs/superpowers/specs/2026-10-13-web-design.md`](docs/superpowers/specs/2026-10-13-web-design.md).
+
+### Docker
+
+Dva kontajnery z jedného image: `owi` prepočítava posledné 3 dni každých 30 minút, `api` sprístupňuje výsledky na `127.0.0.1:8787`. Kontajner `api` má `data/` pripojené len na čítanie a nedostane kľúč k Open Wearables.
+
+```bash
+docker compose --env-file .env -f docker/compose.yml up -d --build
+docker compose --env-file .env -f docker/compose.yml logs --tail 20
+```
+
+Predvolene sa `owi` pripája na sieť `open-wearables_default` a adresu `http://app:8000`. Iné hodnoty nastav v `.env` ako `OW_NETWORK` a `OWI_DOCKER_API_URL`, port API ako `OWI_SERVE_PORT`.
+
+Na internet sa API dostane cez Tailscale Funnel pod cestou `/owi` (v PowerShelli; Git Bash cestu `/owi` prepíše):
+
+```powershell
+tailscale funnel --bg --set-path /owi 8787
+```
 
 ### Vývoj
 
