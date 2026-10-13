@@ -15,6 +15,13 @@ def test_defaults_without_env_or_file():
     assert settings.truth_path == Path("data") / "truth.csv"
     assert settings.params_path == Path("data") / "params.json"
     assert settings.max_hr is None
+    assert settings.serve_token == ""
+
+
+def test_serve_token_comes_from_the_environment():
+    settings = load_settings(env={"OWI_SERVE_TOKEN": "s3cret"}, env_file=None)
+
+    assert settings.serve_token == "s3cret"
 
 
 def test_environment_overrides_the_env_file(tmp_path):

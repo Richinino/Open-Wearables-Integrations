@@ -1,12 +1,16 @@
 # Runs owi next to an Open Wearables stack and reaches its API over that stack's network.
-# Start from the repository root:  docker compose -f docker/compose.yml up -d --build
+# Start from the repository root:
+#   docker compose --env-file .env -f docker/compose.yml up -d --build
 name: owi
 
 services:
+  # Recomputes the last days every 30 minutes.
   owi:
+    image: owi:local
     build:
       context: ..
       dockerfile: docker/Dockerfile
+    init: true
     env_file:
       - ../.env
     environment:
@@ -17,6 +21,25 @@ services:
       - ../data:/data
     networks:
       - openwearables
+    restart: unless-stopped
+
+  # Read-only HTTP API for the web. It gets the results and its own token, nothing else:
+  # no Open Wearables key and no access to that stack's network.
+  api:
+    image: owi:local
+    command: ["owi", "serve", "--host", "0.0.0.0", "--port", "8787"]
+    init: true
+    environment:
+      OWI_SERVE_TOKEN: ${OWI_SERVE_TOKEN:?set OWI_SERVE_TOKEN in .env and pass --env-file .env}
+      OWI_TIMEZONE: ${OWI_TIMEZONE:-Europe/Bratislava}
+      OWI_DATA_DIR: /data
+    volumes:
+      - ../data:/data:ro
+    ports:
+      # Local only; a reverse proxy (Tailscale Funnel) publishes it over HTTPS.
+      - "127.0.0.1:${OWI_SERVE_PORT:-8787}:8787"
+    depends_on:
+      - owi
     restart: unless-stopped
 
 networks:

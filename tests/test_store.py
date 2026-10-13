@@ -1,3 +1,4 @@
+import sqlite3
 from dataclasses import replace
 from datetime import date
 
@@ -143,3 +144,53 @@ def test_data_survives_reopening(tmp_path):
 
     with Store(path) as second:
         assert second.get_day(DAY) == make_day()
+
+
+def test_days_returns_the_range_in_order_with_workouts(store):
+    for offset in (3, 1, 2, 5):
+        day = date(2026, 10, offset)
+        store.save_day(make_day(day, steps=offset, workouts=(make_workout(f"w{offset}", day),)))
+
+    loaded = store.days(date(2026, 10, 2), date(2026, 10, 4))
+
+    assert [d.day for d in loaded] == [date(2026, 10, 2), date(2026, 10, 3)]
+    assert [d.steps for d in loaded] == [2, 3]
+    assert [[w.id for w in d.workouts] for d in loaded] == [["w2"], ["w3"]]
+    assert loaded[0] == store.get_day(date(2026, 10, 2))
+
+
+def test_days_without_matches_is_empty(store):
+    store.save_day(make_day())
+
+    assert store.days(date(2026, 1, 1), date(2026, 1, 31)) == []
+
+
+def test_span_covers_all_stored_days(store):
+    store.save_day(make_day(date(2026, 10, 3)), computed_at=utc(2026, 10, 3, 9))
+    store.save_day(make_day(date(2026, 9, 28)), computed_at=utc(2026, 10, 4, 7, 30))
+
+    assert store.span() == (date(2026, 9, 28), date(2026, 10, 3), utc(2026, 10, 4, 7, 30))
+
+
+def test_span_of_an_empty_store_is_none(store):
+    assert store.span() is None
+
+
+def test_readonly_store_reads_but_cannot_write(tmp_path):
+    path = tmp_path / "owi.db"
+    with Store(path) as writer:
+        writer.save_day(make_day())
+
+    with Store(path, readonly=True) as reader:
+        assert reader.get_day(DAY) == make_day()
+        with pytest.raises(sqlite3.OperationalError):
+            reader.save_day(make_day(steps=1))
+
+
+def test_readonly_store_does_not_create_a_missing_database(tmp_path):
+    path = tmp_path / "missing" / "owi.db"
+
+    with pytest.raises(sqlite3.OperationalError):
+        Store(path, readonly=True)
+
+    assert not path.parent.exists()

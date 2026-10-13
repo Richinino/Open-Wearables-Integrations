@@ -1,4 +1,4 @@
-"""Command line entry point: owi sync | day | calibrate | check."""
+"""Command line entry point: owi sync | day | calibrate | check | serve."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from owi.config import Settings, load_settings
 from owi.days import day_window, today
 from owi.models import DEFAULT_MAX_HR, HEART_RATE, DayInputs, DayResult, Params, Profile
 from owi.pipeline import compute, fetch_day, has_data, load_profile_samples, profile_for
+from owi.serve import MIN_TOKEN_LENGTH, make_server
 from owi.store import MAX_PLAUSIBLE_HR, Store
 
 DEFAULT_SYNC_DAYS = 3
@@ -208,6 +209,31 @@ def _cmd_check(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _cmd_serve(args: argparse.Namespace, settings: Settings) -> int:
+    if len(settings.serve_token) < MIN_TOKEN_LENGTH:
+        print(
+            f"chyba: nastav OWI_SERVE_TOKEN (aspoň {MIN_TOKEN_LENGTH} znakov)",
+            file=sys.stderr,
+        )
+        return 1
+    server = make_server(
+        args.host,
+        args.port,
+        db_path=settings.db_path,
+        token=settings.serve_token,
+        timezone=settings.timezone,
+    )
+    host, port = server.server_address[:2]
+    print(f"owi serve počúva na http://{host}:{port}", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="owi", description="Denné metriky z Open Wearables")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -228,6 +254,11 @@ def _parser() -> argparse.ArgumentParser:
     calibrate.set_defaults(run=_cmd_calibrate)
     check = commands.add_parser("check", help="porovná odhady s data/truth.csv")
     check.set_defaults(run=_cmd_check)
+
+    serve = commands.add_parser("serve", help="sprístupní uložené dni cez HTTP, len na čítanie")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8787)
+    serve.set_defaults(run=_cmd_serve)
     return parser
 
 

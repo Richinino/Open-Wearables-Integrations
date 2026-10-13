@@ -23,6 +23,7 @@ class Settings:
     weight_kg: float | None = None
     vo2max: float | None = None
     basal_kcal: float | None = None
+    serve_token: str = ""
 
     @property
     def db_path(self) -> Path:
@@ -72,4 +73,5 @@ def load_settings(
         weight_kg=_float(values, "OWI_WEIGHT_KG"),
         vo2max=_float(values, "OWI_VO2MAX"),
         basal_kcal=_float(values, "OWI_BASAL_KCAL"),
+        serve_token=values.get("OWI_SERVE_TOKEN") or "",
     )
