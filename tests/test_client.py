@@ -1,7 +1,10 @@
+from datetime import UTC
+
 import httpx
 import pytest
 
 from owi.client import OWClient, OWError
+from owi.models import SleepInterval, SleepSession
 from tests.factories import utc
 
 SOURCE = {
@@ -151,6 +154,72 @@ def test_sleep_without_stage_summary_has_no_stage_minutes():
     assert session.sleep_minutes is None
     assert session.deep_minutes is None
     assert session.is_nap is True
+    assert session.intervals == ()
+
+
+def sleep_with_intervals(intervals) -> SleepSession:
+    def handler(request: httpx.Request) -> httpx.Response:
+        item = {
+            "id": "s3",
+            "start_time": "2026-10-11T21:50:00Z",
+            "end_time": "2026-10-12T05:00:00Z",
+            "source": SOURCE,
+            "sleep_stage_intervals": intervals,
+        }
+        return httpx.Response(200, json={"data": [item], "pagination": LAST_PAGE})
+
+    (session,) = make_client(handler).sleeps("u1", utc(2026, 10, 10, 22), utc(2026, 10, 12, 22))
+    return session
+
+
+def stage_interval(start: str, end: str, stage: str | None) -> dict:
+    return {"start_time": start, "end_time": end, "stage": stage}
+
+
+def test_sleep_stage_intervals_are_parsed_in_utc_and_sorted():
+    session = sleep_with_intervals(
+        [
+            stage_interval("2026-10-12T01:00:00+02:00", "2026-10-12T01:40:00+02:00", "deep"),
+            stage_interval("2026-10-11T21:50:00Z", "2026-10-11T22:00:00Z", "in_bed"),
+            stage_interval("2026-10-11T22:00:00Z", "2026-10-11T23:00:00Z", "light"),
+        ]
+    )
+
+    assert session.intervals == (
+        SleepInterval(utc(2026, 10, 11, 21, 50), utc(2026, 10, 11, 22), "awake"),
+        SleepInterval(utc(2026, 10, 11, 22), utc(2026, 10, 11, 23), "light"),
+        SleepInterval(utc(2026, 10, 11, 23), utc(2026, 10, 11, 23, 40), "deep"),
+    )
+    assert session.intervals[0].start.tzinfo == UTC
+
+
+@pytest.mark.parametrize(
+    ("raw", "stage"),
+    [
+        ("deep", "deep"),
+        ("rem", "rem"),
+        ("light", "light"),
+        ("awake", "awake"),
+        ("in_bed", "awake"),
+        ("out_of_bed", "awake"),
+        ("sleeping", "asleep"),
+        ("unknown", "asleep"),
+        ("restless", "asleep"),
+        ("DEEP", "deep"),
+        (None, "asleep"),
+    ],
+)
+def test_sleep_stages_are_normalised(raw, stage):
+    session = sleep_with_intervals(
+        [stage_interval("2026-10-11T22:00:00Z", "2026-10-11T23:00:00Z", raw)]
+    )
+
+    assert [interval.stage for interval in session.intervals] == [stage]
+
+
+@pytest.mark.parametrize("intervals", [None, []])
+def test_sleep_without_stage_intervals_has_an_empty_timeline(intervals):
+    assert sleep_with_intervals(intervals).intervals == ()
 
 
 def test_http_error_becomes_ow_error():

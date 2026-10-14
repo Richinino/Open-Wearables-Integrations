@@ -8,11 +8,22 @@ from typing import Any
 
 import httpx
 
-from owi.models import Sample, SleepSession, SourceRef, Workout
+from owi.models import Sample, SleepInterval, SleepSession, SourceRef, Workout
 
 PAGE_LIMIT = 100
 # Open Wearables 0.9.0 renamed the series; older servers still send the old name.
 _TYPE_ALIASES = {"energy": "active_energy"}
+# Open Wearables stage names (SleepStageType), plus out_of_bed in case a provider sends it.
+# "sleeping", "unknown" and anything unrecognised are sleep without a known stage.
+_SLEEP_STAGES = {
+    "deep": "deep",
+    "rem": "rem",
+    "light": "light",
+    "awake": "awake",
+    "in_bed": "awake",
+    "out_of_bed": "awake",
+}
+_ASLEEP = "asleep"
 
 
 class OWError(RuntimeError):
@@ -34,6 +45,18 @@ def _source(raw: dict[str, Any] | None) -> SourceRef:
         source=raw.get("source"),
         device=raw.get("device"),
     )
+
+
+def _intervals(raw: list[dict[str, Any]] | None) -> tuple[SleepInterval, ...]:
+    intervals = [
+        SleepInterval(
+            start=_parse_time(item["start_time"]),
+            end=_parse_time(item["end_time"]),
+            stage=_SLEEP_STAGES.get((item.get("stage") or "").lower(), _ASLEEP),
+        )
+        for item in raw or []
+    ]
+    return tuple(sorted(intervals, key=lambda interval: interval.start))
 
 
 class OWClient:
@@ -138,6 +161,7 @@ class OWClient:
                     light_minutes=stages.get("light_minutes"),
                     awake_minutes=stages.get("awake_minutes"),
                     is_nap=bool(item.get("is_nap", False)),
+                    intervals=_intervals(item.get("sleep_stage_intervals")),
                 )
             )
         return sessions
