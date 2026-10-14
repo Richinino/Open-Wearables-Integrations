@@ -20,6 +20,17 @@ export interface Workout {
   zone_vigorous_min: number;
   distance_m: number | null;
   kcal_est: number | null;
+  /** WHOOP-style strain of this workout, 0-21; absent until owi has scored it. */
+  strain?: number | null;
+}
+
+export type SleepStage = "deep" | "rem" | "light" | "awake" | "asleep";
+
+/** One stretch of the sleep stage timeline. ISO 8601, UTC. */
+export interface SleepInterval {
+  start: string;
+  end: string;
+  stage: SleepStage;
 }
 
 export interface Day {
@@ -52,6 +63,61 @@ export interface Day {
   sleep_awake_min: number | null;
   nap_minutes: number | null;
   workouts: Workout[];
+  /** Stage timeline of the main sleep and naps of this day, oldest first. */
+  sleep_timeline?: SleepInterval[] | null;
+  /** Scores computed by owi for this day; absent until owi has scored it. */
+  scores?: DayScores | null;
+}
+
+/** A score with the parts it was built from. Mirrors owi's score_models.Score. */
+export interface Score {
+  value: number | null;
+  components: Record<string, number | null>;
+  /** Why the value is missing or limited, e.g. "too little history" or "estimate". */
+  note: string | null;
+}
+
+export type CardioLoadStatus = "detraining" | "recovering" | "maintaining" | "productive" | "overreaching";
+
+export interface CardioLoad {
+  strain_7d: number | null;
+  tolerance_28d: number | null;
+  ratio: number | null;
+  status: CardioLoadStatus | null;
+}
+
+export interface NightSignal {
+  level: "green" | "yellow" | "red" | null;
+  night_hr: number | null;
+  baseline: number | null;
+  delta: number | null;
+}
+
+/** Mirrors owi's score_models.DayScores; field names follow the API. */
+export interface DayScores {
+  day: string;
+  /** WHOOP-style strain of the day, 0-21. */
+  strain: number | null;
+  cardio_load: CardioLoad;
+  /** Sleep need for the night that follows this day, in minutes. */
+  sleep_need_minutes: number | null;
+  /** Last night against the need set the day before (WHOOP-style), 0-100. */
+  sleep_performance: Score;
+  /** Last night, Apple-style, 0-100 (duration 50, bedtime 30, interruptions 20). */
+  apple_sleep: Score;
+  /** Sleep Regularity Index over 14 days, -100..100. */
+  sleep_regularity: number | null;
+  /** Oura-style readiness without HRV and temperature, 0-100. */
+  readiness: Score;
+  /** Oura-style activity, 0-100. */
+  activity: Score;
+  night_signal: NightSignal;
+  /** Mean of readiness, sleep performance and activity; capped at 50 on a red night signal. */
+  day_score: number | null;
+  vo2max: number | null;
+  vo2max_uth: number | null;
+  /** Estimated body age in years; components are per-metric impacts in years. */
+  whoop_age: Score;
 }
 
 export interface Dataset {
