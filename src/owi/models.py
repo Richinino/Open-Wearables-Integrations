@@ -60,6 +60,15 @@ class Workout:
 
 
 @dataclass(frozen=True)
+class SleepInterval:
+    """One stretch of a sleep stage timeline. `stage` is deep, rem, light, awake or asleep."""
+
+    start: datetime
+    end: datetime
+    stage: str
+
+
+@dataclass(frozen=True)
 class SleepSession:
     id: str
     start: datetime
@@ -71,6 +80,7 @@ class SleepSession:
     light_minutes: float | None = None
     awake_minutes: float | None = None
     is_nap: bool = False
+    intervals: tuple[SleepInterval, ...] = ()
 
 
 @dataclass(frozen=True)

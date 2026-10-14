@@ -24,6 +24,8 @@ class Settings:
     vo2max: float | None = None
     basal_kcal: float | None = None
     serve_token: str = ""
+    age: int | None = None
+    sex: str | None = None
 
     @property
     def db_path(self) -> Path:
@@ -74,4 +76,6 @@ def load_settings(
         vo2max=_float(values, "OWI_VO2MAX"),
         basal_kcal=_float(values, "OWI_BASAL_KCAL"),
         serve_token=values.get("OWI_SERVE_TOKEN") or "",
+        age=int(values["OWI_AGE"]) if values.get("OWI_AGE") else None,
+        sex=(values.get("OWI_SEX") or "").strip().lower() or None,
     )

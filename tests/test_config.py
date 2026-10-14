@@ -65,3 +65,10 @@ def test_numeric_overrides_are_floats():
     assert settings.vo2max == 48.0
     assert settings.basal_kcal == 1650.0
     assert settings.data_dir == Path("/data")
+
+
+def test_age_and_sex_for_the_score_formulas():
+    settings = load_settings(env={"OWI_AGE": "30", "OWI_SEX": "Female"}, env_file=None)
+
+    assert (settings.age, settings.sex) == (30, "female")
+    assert load_settings(env={}, env_file=None).age is None
