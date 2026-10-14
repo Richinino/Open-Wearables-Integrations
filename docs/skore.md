@@ -118,7 +118,7 @@ Dôvera: stredná až vysoká.
 - `Potreba = B + 60·1,7/(1 + e^((17 − Strain_včera)/3,5)) min + D − zdriemnutia` **[P, US12318226B2; overené na ukážke z WHOOP API: 7,62 h / 7,76 h = 98 %, V]**.
   - `B` = základ 7,5 h; po 60 nociach 75. percentil spánku po dňoch so strainom < 10, obmedzené na 7–9 h **[A, WHOOP ráta základ z dní s nízkou záťažou, P]**.
   - `D = min(120, 0,5·max(0, potreba_včera − TST_včera))` min **[A]**.
-  - Strain 10 → +12 min, 14 → +30 min, 18 → +64 min.
+  - Strain 10 → +12 min, 14 → +30 min, 18 → +58 min.
 - `Sleep Performance = 100·min(1, TST / potreba)` **[V/P]**.
 - Pásma: ≥ 85 optimálne, 70–85 dostačujúce, < 70 slabé; pravidelnosť ≥ 80; efektivita ≥ 90 % **[V]**.
 
