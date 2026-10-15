@@ -13,7 +13,7 @@ hodinky a telefón Samsung
 appka Open Wearables v telefóne ──► Tailscale Funnel (HTTPS) ──► Open Wearables v Dockeri (notebook, neskôr PC)
                                                                       │  surové dáta v Postgrese
                                                                       ▼
-                                                     owi (každých 30 min prepočíta posledné 3 dni)
+                                                     owi (každých 30 min prepočíta posledných 14 dní)
                                                                       │  denné výsledky v data/owi.db
                                                                       ▼
                                        owi serve (len čítanie, token) ──► Funnel /owi ──► web (Vercel) ──► prehliadač
@@ -35,6 +35,8 @@ appka Open Wearables v telefóne ──► Tailscale Funnel (HTTPS) ──► Op
 **Poradie zdrojov v Open Wearables:** Health Connect = 1, Samsung priamo = 2. Pri prekryve vyhráva Health Connect, lebo má hustejší tep.
 
 **Odporúčanie:** v appke nechať zapnutý hlavne Health Connect. Priame napojenie na Samsung pri prvej synchronizácii uložilo vzdialenosť ako kalórie (opravené ručne v databáze), čo by sa mohlo zopakovať.
+
+**Neúplné kroky (zistené 15. 10.):** Samsung Health má v Health Connect za každý deň jeden záznam krokov, ktorý cez deň prepisuje. Appka OW s Android SDK starším ako 0.13.0 číta Health Connect podľa času začiatku záznamu, takže pošle len prvú, rannú hodnotu a neskoršie prepisy vynechá; dni od 13. 10. tak majú v databáze len rannú časť krokov. SDK 0.13.0 prešlo na zmeny z Health Connect (`getChanges`), ktoré prepis zachytia, a 0.13.1 opravilo aj ukladanie vzdialenosti ako kalórií pri priamom Samsungu ([CHANGELOG SDK](https://github.com/the-momentum/open_wearables_android_sdk/blob/main/CHANGELOG.md)). Riešenie: novšia verzia appky; po prihlásení SDK vymaže kurzory a pošle všetko znova, backend staré hodnoty prepíše a `owi` prepočíta posledných 14 dní (staršie dni `owi sync --from D`).
 
 ## Aké dáta máme
 

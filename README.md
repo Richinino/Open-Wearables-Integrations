@@ -102,7 +102,7 @@ Presný tvar odpovede je v [`docs/superpowers/specs/2026-10-13-web-design.md`](d
 
 ### Docker
 
-Dva kontajnery z jedného image: `owi` prepočítava posledné 3 dni každých 30 minút, `api` sprístupňuje výsledky na `127.0.0.1:8787`. Kontajner `api` má `data/` pripojené len na čítanie a nedostane kľúč k Open Wearables.
+Dva kontajnery z jedného image: `owi` prepočítava posledných 14 dní každých 30 minút (telefón niekedy pošle dáta až o pár dní), `api` sprístupňuje výsledky na `127.0.0.1:8787`. Kontajner `api` má `data/` pripojené len na čítanie a nedostane kľúč k Open Wearables.
 
 ```bash
 docker compose --env-file .env -f docker/compose.yml up -d --build

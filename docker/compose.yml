@@ -4,7 +4,7 @@
 name: owi
 
 services:
-  # Recomputes the last days every 30 minutes.
+  # Recomputes the last 14 days every 30 minutes.
   owi:
     image: owi:local
     build:
