@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<title>Zdravie – prehľad</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Urbanist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#08090c}
+a{color:inherit}a:hover{color:inherit}
+</style>
+</helmet>
+<div style="--bg: {{t.bg}}; --glass: {{t.glass}}; --ink: {{t.ink}}; --ink2: {{t.ink2}}; --muted: {{t.muted}}; --line: {{t.line}}; --track: {{t.track}}; --accent: {{t.accent}}; --sleep: {{t.sleep}}; --heart: {{t.heart}}; --deep: {{t.deep}}; --rem: {{t.rem}}; --lsleep: {{t.lsleep}}; --good: {{t.good}}; --glow: {{t.glow}}; position: relative; overflow: hidden; min-height: 100vh; box-sizing: border-box; background: var(--bg, #08090c); color: var(--ink, #f2f1ed); font-family: Urbanist, 'Segoe UI', system-ui, sans-serif; padding: 28px clamp(16px, 3vw, 40px) 48px; transition: background 0.3s, color 0.3s">
+<div aria-hidden="true" style="position: absolute; width: 900px; height: 900px; left: -260px; top: -380px; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 60%, transparent), transparent); opacity: var(--glow); pointer-events: none"></div>
+<div aria-hidden="true" style="position: absolute; width: 1000px; height: 1000px; right: -340px; top: 420px; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in oklab, var(--sleep) 60%, transparent), transparent); opacity: var(--glow); pointer-events: none"></div>
+
+<div style="position: relative; max-width: 1360px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px 8px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px">
+<div style="display: flex; align-items: center; gap: 12px">
+<div aria-hidden="true" style="width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(90deg, var(--accent) 50%, var(--sleep) 50%)"></div>
+<div style="font-size: 19px; font-weight: 600; letter-spacing: -0.01em">Zdravie</div>
+</div>
+<nav aria-label="Hlavná navigácia" style="display: flex; gap: 6px">
+<a href="NocnyPanel2.dc.html" aria-current="page" style="display: flex; align-items: center; height: 44px; padding: 0 18px; border-radius: 22px; background: var(--ink); color: var(--bg); font-size: 14px; font-weight: 600; text-decoration: none">Prehľad</a>
+<a href="Kalendar.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 18px; border-radius: 22px; color: var(--ink2); font-size: 14px; font-weight: 600; text-decoration: none">Kalendár</a>
+</nav>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px">
+<div style="display: flex; align-items: center; gap: 20px; font-family: 'DM Mono', ui-monospace, monospace; font-size: 12px; color: var(--ink2); letter-spacing: 0.04em; text-transform: uppercase">
+<div>Utorok 13. októbra</div>
+<div style="display: flex; align-items: center; gap: 8px"><div aria-hidden="true" style="width: 6px; height: 6px; border-radius: 50%; background: var(--good)"></div><div>pred 7 min</div></div>
+</div>
+<button type="button" onClick="{{toggleTheme}}" style="display: flex; align-items: center; gap: 9px; height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid var(--line); background: var(--glass); color: var(--ink); font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><path d="M8 1.5a6.5 6.5 0 0 1 0 13Z" fill="currentColor"></path></svg>
+<span>{{themeLabel}}</span>
+</button>
+</div>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; gap: 18px; align-items: stretch">
+
+<section style="flex: 1 1 330px; min-width: 0; background: var(--glass); backdrop-filter: blur(24px); border: 1px solid var(--line); border-radius: 28px; padding: 30px; display: flex; flex-direction: column; gap: 24px">
+<div style="font-family: 'DM Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: 0.1em; color: var(--ink2)">SKÓRE DŇA</div>
+<div style="position: relative; width: 100%; max-width: 260px; aspect-ratio: 1; align-self: center" role="img" aria-label="Skóre dňa 78 zo 100">
+<div style="position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(from 225deg, var(--accent) 0 58.5%, var(--track) 0 75%, transparent 0)"></div>
+<div style="position: absolute; inset: 12px; border-radius: 50%; background: var(--bg)"></div>
+<div style="position: absolute; inset: 12px; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center">
+<div style="font-size: 104px; font-weight: 300; letter-spacing: -0.05em; line-height: 0.9">78</div>
+<div style="font-size: 14px; color: var(--ink2); margin-top: 6px">dobrý deň</div>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 16px">
+<sc-for list="{{scores}}" as="s" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px"><div style="font-size: 14px; color: var(--ink2)">{{s.label}}</div><div style="font-size: 20px; font-weight: 500">{{s.value}}</div></div>
+<div style="height: 4px; border-radius: 2px; background: var(--track)"><div style="height: 100%; width: {{s.w}}; border-radius: 2px; background: {{s.bg}}"></div></div>
+<div style="font-size: 12px; color: var(--muted)">{{s.why}}</div>
+</div>
+</sc-for>
+</div>
+</section>
+
+<div style="flex: 1.8 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 18px">
+<section style="flex: 1 1 auto; background: var(--glass); backdrop-filter: blur(24px); border: 1px solid var(--line); border-radius: 28px; padding: 30px; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px">
+<div>
+<div style="font-family: 'DM Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: 0.1em; color: var(--ink2)">KROKY DNES</div>
+<div style="font-size: clamp(72px, 9vw, 120px); font-weight: 300; letter-spacing: -0.045em; line-height: 0.95; margin-top: 4px">6 480</div>
+</div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px; padding-bottom: 10px">
+<div style="font-size: 14px; color: var(--ink2)">30 dní · priemer 12 460</div>
+<div style="font-size: 13px; color: var(--good)">↑ 12 % oproti minulému mesiacu</div>
+</div>
+</div>
+<svg viewBox="0 0 600 150" preserveAspectRatio="none" style="width: 100%; height: 150px; display: block; overflow: visible" role="img" aria-label="Kroky za 30 dní s vrcholmi cez víkendy">
+<defs><linearGradient id="np2steps" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: var(--accent); stop-opacity: 0.38"></stop><stop offset="1" style="stop-color: var(--accent); stop-opacity: 0"></stop></linearGradient></defs>
+<path d="{{stepsArea}}" fill="url(#np2steps)"></path>
+<path d="{{stepsLine}}" vector-effect="non-scaling-stroke" style="fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round"></path>
+</svg>
+<div style="display: flex; justify-content: space-between; font-family: 'DM Mono', ui-monospace, monospace; font-size: 11px; color: var(--muted)"><div>14. 9.</div><div>21. 9.</div><div>28. 9.</div><div>5. 10.</div><div>dnes</div></div>
+</section>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 18px">
+<sc-for list="{{minis}}" as="m" hint-placeholder-count="3">
+<section style="background: var(--glass); backdrop-filter: blur(24px); border: 1px solid var(--line); border-radius: 24px; padding: 22px; display: flex; flex-direction: column; gap: 12px">
+<div style="font-size: 12px; color: var(--ink2)">{{m.label}}</div>
+<div style="font-size: 30px; font-weight: 400; letter-spacing: -0.02em; line-height: 1">{{m.value}}</div>
+<div style="display: flex; align-items: flex-end; gap: 4px; height: 36px" aria-hidden="true">
+<sc-for list="{{m.bars}}" as="b" hint-placeholder-count="7">
+<div style="flex: 1 1 0; height: {{b.h}}; border-radius: 3px 3px 1px 1px; background: {{b.bg}}"></div>
+</sc-for>
+</div>
+<div style="font-size: 12px; color: var(--muted)">{{m.note}}</div>
+</section>
+</sc-for>
+</div>
+</div>
+
+<div style="flex: 1 1 330px; min-width: 0; display: flex; flex-direction: column; gap: 18px">
+<section style="flex: 1 1 auto; background: var(--glass); backdrop-filter: blur(24px); border: 1px solid var(--line); border-radius: 28px; padding: 28px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px"><div style="font-family: 'DM Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: 0.1em; color: var(--ink2)">SPÁNOK</div><div style="font-family: 'DM Mono', ui-monospace, monospace; font-size: 12px; color: var(--ink2)">23:12 → 06:56</div></div>
+<div style="font-size: 48px; font-weight: 300; letter-spacing: -0.03em; line-height: 1">7 h 36 min</div>
+<div style="display: flex; gap: 2px; height: 28px; border-radius: 8px; overflow: hidden" role="img" aria-label="Priebeh noci po fázach">
+<sc-for list="{{night}}" as="s" hint-placeholder-count="11">
+<div style="flex: {{s.w}} 1 0; background: {{s.bg}}"></div>
+</sc-for>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; font-size: 13px">
+<div style="display: flex; align-items: center; gap: 8px; color: var(--ink2)"><div aria-hidden="true" style="width: 9px; height: 9px; border-radius: 3px; background: var(--deep)"></div>Hlboký<div style="margin-left: auto; color: var(--ink); font-weight: 600">1 h 30</div></div>
+<div style="display: flex; align-items: center; gap: 8px; color: var(--ink2)"><div aria-hidden="true" style="width: 9px; height: 9px; border-radius: 3px; background: var(--rem)"></div>REM<div style="margin-left: auto; color: var(--ink); font-weight: 600">1 h 50</div></div>
+<div style="display: flex; align-items: center; gap: 8px; color: var(--ink2)"><div aria-hidden="true" style="width: 9px; height: 9px; border-radius: 3px; background: var(--lsleep)"></div>Ľahký<div style="margin-left: auto; color: var(--ink); font-weight: 600">4 h 16</div></div>
+<div style="display: flex; align-items: center; gap: 8px; color: var(--ink2)"><div aria-hidden="true" style="width: 9px; height: 9px; border-radius: 3px; background: var(--accent)"></div>Bdenie<div style="margin-left: auto; color: var(--ink); font-weight: 600">8 min</div></div>
+</div>
+<div style="font-size: 12px; color: var(--muted)">Zaspávaš okolo 23:24, vstávaš 06:58 · ± 26 min</div>
+</section>
+<section style="background: var(--glass); backdrop-filter: blur(24px); border: 1px solid var(--line); border-radius: 28px; padding: 28px; display: flex; flex-direction: column; gap: 14px">
+<div style="font-family: 'DM Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: 0.1em; color: var(--ink2)">POKOJOVÝ TEP</div>
+<div style="display: flex; align-items: baseline; gap: 10px"><div style="font-size: 48px; font-weight: 300; letter-spacing: -0.03em; line-height: 1">51</div><div style="font-size: 14px; color: var(--ink2)">bpm · dnes 44 – 163</div></div>
+<svg viewBox="0 0 300 64" preserveAspectRatio="none" style="width: 100%; height: 64px; display: block; overflow: visible" role="img" aria-label="Pokojový tep za 30 dní klesá z 55 na 51">
+<path d="{{restingPath}}" vector-effect="non-scaling-stroke" style="fill: none; stroke: var(--heart); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round"></path>
+</svg>
+<div style="font-size: 12px; color: var(--muted)">O 4 bpm nižší než pred mesiacom</div>
+</section>
+</div>
+
+</div>
+
+<section style="background: var(--glass); backdrop-filter: blur(24px); border: 1px solid var(--line); border-radius: 28px; padding: 30px; display: flex; flex-wrap: wrap; gap: 24px 40px">
+<div style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 14px">
+<div style="font-family: 'DM Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: 0.1em; color: var(--ink2)">RANNÝ SÚHRN · ČO SI VŠIMNÚŤ</div>
+<p style="margin: 0; font-size: clamp(22px, 2.4vw, 30px); font-weight: 400; letter-spacing: -0.02em; line-height: 1.2; text-wrap: pretty">Dobrá noc za tebou a telo je oddýchnuté. Dnes máš priestor na dlhší pohyb.</p>
+<div style="font-size: 12px; color: var(--muted)">Zostavené ráno o 07:05 z dát za posledných 30 dní</div>
+</div>
+<div style="flex: 2.4 1 560px; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 14px">
+<sc-for list="{{insights}}" as="n" hint-placeholder-count="3">
+<div style="border: 1px solid var(--line); border-radius: 20px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: flex-end; gap: 4px; height: 44px" aria-hidden="true">
+<sc-for list="{{n.bars}}" as="b" hint-placeholder-count="7">
+<div style="flex: 1 1 0; height: {{b.h}}; border-radius: 3px 3px 1px 1px; background: {{b.bg}}"></div>
+</sc-for>
+</div>
+<div style="font-size: 17px; font-weight: 500; line-height: 1.3; letter-spacing: -0.01em">{{n.text}}</div>
+<div style="font-size: 12px; color: var(--muted); margin-top: auto">{{n.detail}}</div>
+</div>
+</sc-for>
+</div>
+</section>
+
+<section style="background: var(--glass); backdrop-filter: blur(24px); border: 1px solid var(--line); border-radius: 28px; padding: 28px; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px"><div style="font-family: 'DM Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: 0.1em; color: var(--ink2)">TÝŽDEŇ V SKRATKE</div><div style="font-size: 12px; color: var(--muted)">kruh = kroky oproti priemeru</div></div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 12px">
+<sc-for list="{{weekCards}}" as="d" hint-placeholder-count="7">
+<div style="border: 1px solid {{d.border}}; border-radius: 20px; padding: 16px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
+<div style="font-size: 13px; color: var(--ink2)">{{d.day}}</div>
+<div aria-hidden="true" style="position: relative; width: 28px; height: 28px; border-radius: 50%; background: conic-gradient(var(--accent) 0 {{d.pct}}, var(--track) 0)"><div style="position: absolute; inset: 4px; border-radius: 50%; background: var(--bg)"></div></div>
+</div>
+<div style="font-size: 26px; font-weight: 400; letter-spacing: -0.02em; line-height: 1">{{d.steps}}</div>
+<div style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink2)">
+<div style="display: flex; justify-content: space-between; gap: 8px"><div>Spánok</div><div style="color: var(--ink)">{{d.sleep}}</div></div>
+<div style="display: flex; justify-content: space-between; gap: 8px"><div>Skóre</div><div style="color: var(--ink)">{{d.score}}</div></div>
+</div>
+<div style="font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{d.workout}}</div>
+</div>
+</sc-for>
+</div>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; gap: 18px">
+
+<section style="flex: 2 1 600px; min-width: 0; background: var(--glass); backdrop-filter: blur(24px); border: 1px solid var(--line); border-radius: 28px; padding: 28px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px">
+<div style="font-family: 'DM Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: 0.1em; color: var(--ink2)">12 TÝŽDŇOV PO DŇOCH</div>
+<div role="group" aria-label="Čo kalendár ukazuje" style="display: flex; flex-wrap: wrap; gap: 6px">
+<sc-for list="{{metrics}}" as="m" hint-placeholder-count="4">
+<button type="button" onClick="{{m.pick}}" aria-pressed="{{m.on}}" style="height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid {{m.border}}; background: {{m.bg}}; color: {{m.fg}}; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer">{{m.label}}</button>
+</sc-for>
+</div>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px"><div style="font-size: 34px; font-weight: 400; letter-spacing: -0.03em; line-height: 1">{{heatValue}}</div><div style="font-size: 13px; color: var(--ink2)">{{heatNote}}</div></div>
+<div style="display: flex; gap: 10px">
+<div aria-hidden="true" style="display: flex; flex-direction: column; justify-content: space-between; font-family: 'DM Mono', ui-monospace, monospace; font-size: 10px; color: var(--muted); height: 196px; padding: 4px 0"><div>po</div><div>st</div><div>pi</div><div>ne</div></div>
+<div style="flex: 1 1 0; display: grid; grid-template-rows: repeat(7, minmax(0, 1fr)); grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 5px; height: 196px" role="img" aria-label="{{heatAlt}}">
+<sc-for list="{{heat}}" as="c" hint-placeholder-count="84">
+<div style="border-radius: 6px; background: {{c.bg}}"></div>
+</sc-for>
+</div>
+</div>
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-family: 'DM Mono', ui-monospace, monospace; font-size: 11px; color: var(--muted); padding-left: 24px"><div>21. 7.</div><div>august</div><div>september</div><div>13. 10.</div></div>
+<div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted)"><div>{{heatLow}}</div><div aria-hidden="true" style="display: flex; gap: 3px"><div style="width: 12px; height: 12px; border-radius: 3px; background: {{sw1}}"></div><div style="width: 12px; height: 12px; border-radius: 3px; background: {{sw2}}"></div><div style="width: 12px; height: 12px; border-radius: 3px; background: {{sw3}}"></div><div style="width: 12px; height: 12px; border-radius: 3px; background: {{sw4}}"></div></div><div>{{heatHigh}}</div></div>
+</section>
+
+<section style="flex: 1 1 320px; min-width: 0; background: var(--glass); backdrop-filter: blur(24px); border: 1px solid var(--line); border-radius: 28px; padding: 28px; display: flex; flex-direction: column; gap: 4px">
+<div style="font-family: 'DM Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: 0.1em; color: var(--ink2); padding-bottom: 10px">REKORDY · 90 DNÍ</div>
+<sc-for list="{{records}}" as="r" hint-placeholder-count="5">
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 0; border-top: 1px solid var(--line)"><div style="font-size: 26px; font-weight: 400; letter-spacing: -0.02em; line-height: 1.1">{{r.value}}</div><div style="font-size: 12px; color: var(--ink2)">{{r.note}}</div></div>
+</sc-for>
+</section>
+
+</div>
+
+<section style="background: var(--glass); backdrop-filter: blur(24px); border: 1px solid var(--line); border-radius: 28px; padding: 28px; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; padding-bottom: 10px"><div style="font-family: 'DM Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: 0.1em; color: var(--ink2)">TRÉNINGY · 7 DNÍ</div><div style="font-size: 13px; color: var(--ink2)">4 tréningy · 5 h 46 min · ≈ 3 120 kcal</div></div>
+<sc-for list="{{workouts}}" as="w" hint-placeholder-count="4">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 13px 0; border-top: 1px solid var(--line)">
+<div style="flex: 1 1 150px; min-width: 0"><div style="font-size: 16px; font-weight: 600">{{w.type}}</div><div style="font-family: 'DM Mono', ui-monospace, monospace; font-size: 11px; color: var(--muted)">{{w.when}}</div></div>
+<div style="flex: 0 0 96px; font-size: 16px; font-weight: 500">{{w.dur}}</div>
+<div style="flex: 2 1 160px; display: flex; gap: 2px; height: 6px; border-radius: 3px; overflow: hidden"><div style="flex: {{w.z1}} 1 0; background: {{z1}}"></div><div style="flex: {{w.z2}} 1 0; background: {{z2}}"></div><div style="flex: {{w.z3}} 1 0; background: var(--accent)"></div></div>
+<div style="flex: 0 0 auto; font-family: 'DM Mono', ui-monospace, monospace; font-size: 12px; color: var(--ink2)">{{w.hr}} bpm</div>
+</div>
+</sc-for>
+</section>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["tmavý","svetlý"],"default":"tmavý"},"accent":{"editor":"color","default":"#e9b44c","options":["#e9b44c","#ff7a45","#5fd0c5","#c9f25c"]},"$preview":{"width":1440,"height":2260}}'>
+class Component extends DCLogic {
+state = { light: null, metric: 'kroky' };
+renderVals() {
+const accent = this.props.accent ?? '#e9b44c';
+const light = this.state.light ?? ((this.props.theme ?? 'tmavý') === 'svetlý');
+const t = light
+? { bg: '#eef0f3', glass: 'rgba(255,255,255,0.74)', ink: '#14161a', ink2: '#565962', muted: '#6b6e77', line: 'rgba(18,24,38,0.10)', track: 'rgba(18,24,38,0.09)', accent: 'color-mix(in oklab, ' + accent + ' 70%, #4a3200)', sleep: '#5b57d6', heart: '#d6456b', deep: '#2f2c9a', rem: '#1f9c8d', lsleep: '#9a97ee', good: '#178f4d', glow: '0.30' }
+: { bg: '#08090c', glass: 'rgba(22,24,30,0.66)', ink: '#f2f1ed', ink2: '#a9a9a4', muted: '#8b8b86', line: 'rgba(255,255,255,0.09)', track: 'rgba(255,255,255,0.08)', accent: accent, sleep: '#8f8cf2', heart: '#f0718f', deep: '#5b57d6', rem: '#4fc7b8', lsleep: '#a9a6f7', good: '#5fd08a', glow: '0.22' };
+const mixOf = (color, pct) => 'color-mix(in oklab, ' + color + ' ' + pct + '%, var(--bg))';
+const mix = (pct) => mixOf('var(--accent)', pct);
+const bars = (values, color, marked) => {
+const top = Math.max(...values);
+const on = marked ?? [values.length - 1];
+return values.map((value, i) => ({ h: Math.max(8, Math.round((value / top) * 100)) + '%', bg: on.includes(i) ? color : 'var(--track)' }));
+};
+const scores = [
+{ label: 'Aktivita', value: 64, w: '64%', bg: 'var(--accent)', why: 'kroky zatiaľ na polovici, ranný beh pomohol' },
+{ label: 'Spánok', value: 86, w: '86%', bg: 'var(--sleep)', why: '7 h 36 min, zaspal si načas' },
+{ label: 'Regenerácia', value: 81, w: '81%', bg: 'var(--heart)', why: 'pokojový tep 51, pod tvojím priemerom' }
+];
+const month = [9.8, 12.4, 8.1, 11.9, 14.2, 19.6, 16.3, 10.2, 12.1, 9.4, 13.3, 12.8, 22.4, 15.1, 8.9, 11.6, 12.9, 10.4, 15.8, 24.3, 13.7, 11.0, 8.3, 12.1, 9.1, 16.9, 21.1, 14.4, 17.7, 6.5];
+const stepsLine = month.map((value, i) => (i ? 'L' : 'M') + ((i * 600) / 29).toFixed(1) + ',' + (150 - (value / 25) * 140).toFixed(1)).join('');
+const minis = [
+{ label: 'Aktívny čas', value: '≈ 48 min', note: 'bežne 1 h 19 min', bars: bars([84, 58, 132, 171, 96, 124, 48], 'var(--accent)') },
+{ label: 'Kalórie', value: '≈ 1 742', note: 'z toho aktivita ≈ 92', bars: bars([2290, 2180, 2590, 2680, 2410, 2530, 1742], 'var(--accent)') },
+{ label: 'Vzdialenosť', value: '≈ 4,8 km', note: 'bežne 9,3 km', bars: bars([9.0, 6.8, 12.6, 15.7, 10.7, 13.2, 4.8], 'var(--accent)') }
+];
+const stageColor = { D: 'var(--deep)', R: 'var(--rem)', L: 'var(--lsleep)', A: 'var(--accent)' };
+const night = [['L', 30], ['D', 50], ['L', 35], ['R', 25], ['L', 55], ['D', 40], ['R', 40], ['A', 8], ['L', 70], ['R', 45], ['L', 66]]
+.map(([stage, minutes]) => ({ w: minutes, bg: stageColor[stage] }));
+const resting = [55, 54, 54, 53, 55, 54, 52, 53, 53, 52, 54, 53, 52, 51, 52, 53, 52, 51, 50, 52, 51, 51, 50, 52, 51, 50, 49, 51, 50, 51];
+const restingPath = resting.map((value, i) => (i ? 'L' : 'M') + (i * 300 / 29).toFixed(1) + ',' + (64 - ((value - 47) / 10) * 60).toFixed(1)).join('');
+const insights = [
+{ text: 'Cez víkendy prejdeš o 62 % viac než v pracovné dni.', detail: '17 700 oproti 10 900 krokom', bars: bars([10.4, 11.2, 10.1, 11.6, 11.2, 18.9, 16.5], 'var(--accent)', [5, 6]) },
+{ text: 'V piatok spíš najkratšie, priemerne 5 h 40 min.', detail: 'ostatné noci 7 h 32 min', bars: bars([7.4, 7.2, 7.5, 7.3, 5.7, 7.9, 8.1], 'var(--sleep)', [4]) },
+{ text: 'Pokojový tep ti za mesiac klesol o 4 bpm.', detail: 'z 55 na 51, zvyčajne znak lepšej kondície', bars: bars([9, 8, 8, 7, 6, 6, 5, 5], 'var(--heart)', [7]) }
+];
+const weekCards = [
+['St 7. 10.', 12110, '7:13', 74, 'Volejbal 1 h 21'], ['Št 8. 10.', 9120, '6:51', 69, 'bez tréningu'], ['Pi 9. 10.', 16940, '4:21', 58, 'Futbal 1 h 31'],
+['So 10. 10.', 21050, '7:24', 88, 'Bicykel 2 h 12'], ['Ne 11. 10.', 14380, '8:49', 84, 'Silový 1 h 05'], ['Po 12. 10.', 17650, '6:42', 80, 'Beh 58 min'], ['Dnes', 6480, '7:36', 78, 'Beh 55 min']
+].map(([day, steps, sleep, score, workout], i) => ({
+day, sleep, score, workout,
+steps: String(steps).replace(/\B(?=(\d{3})+(?!\d))/g, ' '),
+pct: Math.min(100, Math.round((steps / 12460) * 100)) + '%',
+border: i === 6 ? 'var(--accent)' : 'var(--line)'
+}));
+const kinds = {
+kroky: { label: 'Kroky', color: 'var(--accent)', seed: 7, value: '12 460', note: 'krokov za deň · najsilnejšie bývajú soboty', low: 'menej', high: 'viac' },
+spanok: { label: 'Spánok', color: 'var(--sleep)', seed: 23, value: '7 h 21 min', note: 'za noc · najkratšie spíš v piatok', low: 'kratší', high: 'dlhší' },
+aktivita: { label: 'Aktívny čas', color: 'var(--accent)', seed: 41, value: '≈ 1 h 19 min', note: 'za deň · odhad z tepu a tréningov', low: 'menej', high: 'viac' },
+tep: { label: 'Pokojový tep', color: 'var(--heart)', seed: 59, value: '52 bpm', note: 'priemer · za 12 týždňov klesol o 5 bpm', low: 'nižší', high: 'vyšší' }
+};
+const current = this.state.metric;
+const kind = kinds[current];
+let seed = kind.seed;
+const heat = [];
+for (let i = 0; i < 84; i++) {
+seed = (seed * 1103515245 + 12345) % 2147483648;
+const random = seed / 2147483648;
+const weekday = i % 7;
+const week = Math.floor(i / 7);
+let level = Math.floor(random * 4);
+if (current === 'kroky' || current === 'aktivita') level += weekday >= 5 ? 1 : 0;
+if (current === 'spanok') level = weekday === 4 ? Math.floor(random * 2) : 1 + Math.floor(random * 3) + (weekday >= 5 ? 1 : 0);
+if (current === 'tep') level = Math.max(0, Math.min(4, Math.round(3.6 - week * 0.28 + (random - 0.5) * 1.6)));
+level = Math.max(0, Math.min(4, level));
+heat.push({ bg: level === 0 ? 'var(--track)' : level === 4 ? kind.color : mixOf(kind.color, level * 24) });
+}
+const metrics = Object.keys(kinds).map((id) => ({
+label: kinds[id].label,
+on: id === current,
+bg: id === current ? 'var(--ink)' : 'transparent',
+fg: id === current ? 'var(--bg)' : 'var(--ink2)',
+border: id === current ? 'var(--ink)' : 'var(--line)',
+pick: () => this.setState({ metric: id })
+}));
+const records = [
+{ value: '24 310 krokov', note: 'najviac za deň · so 3. 10.' },
+{ value: '9 h 02 min', note: 'najdlhší spánok · ne 20. 9.' },
+{ value: '47 bpm', note: 'najnižší pokojový tep · št 8. 10.' },
+{ value: '2 h 30 min', note: 'najdlhší tréning · bicykel, ne 27. 9.' },
+{ value: '92 bodov', note: 'najlepšie skóre dňa · so 3. 10.' }
+];
+const workouts = [
+{ type: 'Beh', when: 'po 18:10', dur: '58 min', hr: '152 / 178', z1: 20, z2: 50, z3: 30 },
+{ type: 'Silový tréning', when: 'ne 10:30', dur: '1 h 05 min', hr: '118 / 141', z1: 70, z2: 25, z3: 5 },
+{ type: 'Bicykel', when: 'so 14:20', dur: '2 h 12 min', hr: '127 / 149', z1: 45, z2: 45, z3: 10 },
+{ type: 'Futbal', when: 'pi 17:00', dur: '1 h 31 min', hr: '146 / 181', z1: 25, z2: 40, z3: 35 }
+];
+return {
+t, scores, stepsLine, stepsArea: stepsLine + 'L600,150L0,150Z', minis, night, restingPath, insights, weekCards,
+metrics, heat, heatValue: kind.value, heatNote: kind.note, heatLow: kind.low, heatHigh: kind.high,
+heatAlt: 'Kalendár za 12 týždňov: ' + kind.label.toLowerCase(),
+sw1: mixOf(kind.color, 24), sw2: mixOf(kind.color, 48), sw3: mixOf(kind.color, 72), sw4: kind.color,
+records, workouts, z1: mix(38), z2: mix(68),
+themeLabel: light ? 'Tmavý režim' : 'Svetlý režim',
+toggleTheme: () => this.setState({ light: !light })
+};
+}
+}
+</script>
+</body>
+</html>
