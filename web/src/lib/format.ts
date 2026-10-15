@@ -153,6 +153,23 @@ export function formatDuration(minutes: number | null | undefined): string {
   return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
 }
 
+/** Tight duration for legends and small tiles: "1 h 30", "2 h", "8 min". */
+export function formatDurationCompact(minutes: number | null | undefined): string {
+  if (!isNumber(minutes)) return DASH;
+  const total = Math.max(0, Math.round(minutes));
+  const hours = Math.floor(total / 60);
+  const rest = total % 60;
+  if (hours === 0) return `${rest} min`;
+  return rest === 0 ? `${hours} h` : `${hours} h ${pad(rest)}`;
+}
+
+/** Clock time from minutes since local midnight; values outside one day wrap around. */
+export function formatTimeOfDay(minutes: number | null | undefined): string {
+  if (!isNumber(minutes)) return DASH;
+  const ofDay = ((Math.round(minutes) % 1440) + 1440) % 1440;
+  return `${pad(Math.floor(ofDay / 60))}:${pad(ofDay % 60)}`;
+}
+
 export function formatDurationShort(minutes: number | null | undefined): string {
   if (!isNumber(minutes)) return DASH;
   const total = Math.max(0, Math.round(minutes));
@@ -234,6 +251,16 @@ export function formatChange(fraction: number | null | undefined): string {
   const percent = Math.round(fraction * 100);
   if (percent === 0) return "0 %";
   return `${percent > 0 ? "+" : MINUS}${formatInt(Math.abs(percent))} %`;
+}
+
+/**
+ * Slovak noun form for a count: 1 → one ("tréning"), 2–4 → few ("tréningy"), otherwise many
+ * ("tréningov"), which also covers 0 and fractions.
+ */
+export function plural(count: number, one: string, few: string, many: string): string {
+  if (count === 1) return one;
+  if (Number.isInteger(count) && count >= 2 && count <= 4) return few;
+  return many;
 }
 
 /** Marks an estimate. A missing value stays a plain dash. */

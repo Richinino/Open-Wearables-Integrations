@@ -70,7 +70,7 @@ function Headline({ label, value, unit, color }: { label: string; value: string;
 
 function Stepper({ href, label, children }: { href: string | null; label: string; children: string }) {
   const style =
-    "grid size-10 place-items-center rounded-full text-[18px] ring-1 ring-ring transition-colors";
+    "grid size-11 place-items-center rounded-full border border-line bg-glass text-[18px] transition-colors";
   if (!href) {
     return (
       <span aria-hidden="true" className={`${style} text-line-strong`}>
@@ -177,7 +177,7 @@ function DayDetail({ dataset, now, date }: { dataset: Dataset; now: Date; date: 
             {day.workouts.length === 0 ? (
               <p className="text-[14px] text-ink-2">V tento deň nebol zaznamenaný žiadny tréning.</p>
             ) : (
-              <div className="rounded-2xl bg-surface px-5 py-3 ring-1 ring-ring sm:px-6">
+              <div className="glass px-5 py-3 sm:px-7">
                 <WorkoutHead />
                 <div className="divide-y divide-line">
                   {day.workouts.map((workout) => (

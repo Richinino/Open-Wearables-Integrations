@@ -77,11 +77,7 @@ function Workouts({ dataset, now }: { dataset: Dataset; now: Date }) {
                 type="button"
                 aria-pressed={active}
                 onClick={() => setType(item.type)}
-                className={`rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors ${
-                  active
-                    ? "bg-ink text-page"
-                    : "text-ink-2 ring-1 ring-ring hover:bg-sunk hover:text-ink"
-                }`}
+                className="pill border-line"
               >
                 {item.type === null ? "Všetky" : workoutLabel(item.type)}
                 <span className={`tabular ml-1.5 ${active ? "opacity-70" : "text-muted"}`}>
@@ -134,7 +130,7 @@ function Workouts({ dataset, now }: { dataset: Dataset; now: Date }) {
             </div>
             <div className="space-y-6">
               {byMonth(shown).map(({ month, items }) => (
-                <div key={month} className="rounded-2xl bg-surface px-5 py-4 ring-1 ring-ring sm:px-6">
+                <div key={month} className="glass px-5 py-4 sm:px-7">
                   <div className="mb-3 flex items-baseline justify-between gap-4">
                     <h3 className="text-[15px] font-semibold tracking-tight">
                       {capitalize(formatMonth(`${month}-01`))}

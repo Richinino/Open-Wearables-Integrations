@@ -3,8 +3,11 @@
 // Every value is drawn from a generator seeded with the day's own date, so a given calendar
 // day looks the same whatever `today` is. Only the gaps (counted back from `today`) and the
 // unfinished last day depend on the arguments. No Math.random, no clock access.
+// Scores, the sleep stage timeline and workout strain come from demo-scores.ts; they use
+// generators of their own, so adding them did not change any of the values below.
 
-import { addDays, diffDays, isValidDay, localDay, localMinutesOfDay, weekdayIndex } from "./dates";
+import { addDays, dateRange, diffDays, isValidDay, localDay, localMinutesOfDay, weekdayIndex } from "./dates";
+import { demoScores, demoTimeline, nightElevation, workoutStrain } from "./demo-scores";
 import type { Dataset, Day, StepsSource, Workout } from "./types";
 
 const TIME_ZONE = "Europe/Bratislava";
@@ -18,6 +21,8 @@ const MISSING_OFFSETS = new Set([13, 14, 47, 92]);
 const NO_SLEEP_PERIOD = 31;
 /** One day in this many the watch stayed at home: phone steps only, no heart rate, no sleep. */
 const NO_WATCH_PERIOD = 41;
+/** Finished days before each day that its scores look back on. */
+const HISTORY_DAYS = 30;
 
 type Random = () => number;
 
@@ -285,7 +290,7 @@ function buildDay(day: string, cutoffMs: number | null): Day {
     .filter(({ happens }) => happens && watchWorn)
     .map(({ candidate }, index) => planWorkout(random, day, candidate, index))
     .filter(({ endMs }) => cutoffMs === null || endMs <= cutoffMs);
-  const workouts = planned.map(({ workout }) => workout);
+  const workouts = planned.map(({ workout }) => ({ ...workout, strain: workoutStrain(workout) }));
   const workoutMinutes = total(planned.map(({ minutes }) => minutes));
 
   const usualSteps =
@@ -311,6 +316,9 @@ function buildDay(day: string, cutoffMs: number | null): Day {
   const ambientActive = ambientModerate + ambientVigorous + ambientLight * briskShare;
 
   const resting = oneDecimal(53 + 2.5 * Math.sin(epochDay / 14) + between(random, [-1.5, 1.5]));
+  // On the few nights the demo marks as elevated, the resting heart rate rises with them.
+  const elevation = nightElevation(day);
+  const restingShown = elevation > 0 ? oneDecimal(resting + elevation - 1) : resting;
   const lowest = Math.round(resting) - whole(random, 2, 6);
   const mean = oneDecimal(resting + between(random, [13, 19]) + workoutMinutes * 0.05);
   const ambientPeak = whole(random, 108, 132);
@@ -335,7 +343,7 @@ function buildDay(day: string, cutoffMs: number | null): Day {
     activity_kcal_est: watchWorn ? activity : null,
     basal_kcal: basal,
     total_kcal_est: watchWorn ? basal + activity : null,
-    hr_resting: watchWorn ? resting : null,
+    hr_resting: watchWorn ? restingShown : null,
     hr_avg: watchWorn ? mean : null,
     hr_max: watchWorn ? peak : null,
     hr_min: watchWorn ? lowest : null,
@@ -366,10 +374,27 @@ export function demoDataset(today: string, days: number = 120, syncedAt?: string
   const synced = syncedAt !== undefined && !Number.isNaN(Date.parse(syncedAt)) ? syncedAt : fallbackSync;
   const cutoffMs = Date.parse(synced);
 
+  const finished = new Map<string, Day>();
+  const finishedDay = (day: string) => {
+    let built = finished.get(day);
+    if (!built) {
+      built = buildDay(day, null);
+      finished.set(day, built);
+    }
+    return built;
+  };
+
   const result: Day[] = [];
   for (let offset = Math.floor(days) - 1; offset >= 0; offset--) {
     if (MISSING_OFFSETS.has(offset)) continue;
-    result.push(buildDay(addDays(today, -offset), offset === 0 ? cutoffMs : null));
+    const day = addDays(today, -offset);
+    const base = offset === 0 ? buildDay(day, cutoffMs) : finishedDay(day);
+    const history = dateRange(addDays(day, -HISTORY_DAYS), addDays(day, -1)).map(finishedDay);
+    result.push({
+      ...base,
+      sleep_timeline: demoTimeline(base, seeded(hashText(`owi-demo-timeline:${day}`))),
+      scores: demoScores(base, history, seeded(hashText(`owi-demo-scores:${day}`))),
+    });
   }
 
   return {

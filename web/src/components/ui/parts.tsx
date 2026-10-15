@@ -15,7 +15,7 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded-2xl bg-surface p-5 ring-1 ring-ring sm:p-6 ${className}`}
+      className={`glass p-5 sm:p-7 ${className}`}
       style={style}
     >
       {children}
@@ -127,7 +127,7 @@ export function ChartCard({
   return (
     <figure
       aria-labelledby={titleId}
-      className={`rounded-2xl bg-surface p-5 ring-1 ring-ring sm:p-6 ${className}`}
+      className={`glass p-5 sm:p-7 ${className}`}
       style={style}
     >
       <figcaption className="mb-5 flex items-start justify-between gap-4">
@@ -141,7 +141,7 @@ export function ChartCard({
           type="button"
           onClick={() => setAsTable((value) => !value)}
           aria-pressed={asTable}
-          className="shrink-0 rounded-full px-2.5 py-1 text-[12px] font-medium text-ink-2 ring-1 ring-ring transition-colors hover:bg-sunk hover:text-ink"
+          className="shrink-0 rounded-full border border-line px-3 py-1.5 text-[12px] font-semibold text-ink2 transition-colors hover:bg-sunk hover:text-ink"
         >
           {asTable ? "Graf" : "Tabuľka"}
         </button>
@@ -177,7 +177,7 @@ export function Delta({
   if (change === null) return <span className="text-[12px] text-muted">bez porovnania</span>;
   const flat = Math.abs(change) < 0.005;
   const good = upIsGood === null || flat ? null : change > 0 === upIsGood;
-  const tone = good === null ? "text-ink-2" : good ? "text-good" : "text-bad";
+  const tone = good === null ? "text-ink-2" : good ? "text-good-ink" : "text-bad";
   return (
     <span className="text-[12px] text-muted">
       <span className={`font-semibold tabular ${tone}`}>
@@ -211,12 +211,12 @@ export function StatTile({
 }) {
   return (
     <div
-      className={`flex flex-col rounded-2xl bg-surface p-4 ring-1 ring-ring sm:p-5 ${className}`}
-      style={style}
+      className={`glass flex flex-col p-4 sm:p-[22px] ${className}`}
+      style={{ borderRadius: 24, ...style }}
     >
       <div className="eyebrow">{label}</div>
       <div className="mt-3 flex items-baseline gap-1.5">
-        <span className="figure text-[27px] whitespace-nowrap xs:text-[32px] sm:text-[38px]">{value}</span>
+        <span className="figure text-[30px] whitespace-nowrap xs:text-[34px] sm:text-[40px]">{value}</span>
         {unit && <span className="text-[13px] font-medium text-ink-2">{unit}</span>}
       </div>
       {hint && <div className="mt-1 text-[12px] text-muted">{hint}</div>}
@@ -316,7 +316,7 @@ export function Segmented<T extends string | number>({
   label: string;
 }) {
   return (
-    <div role="group" aria-label={label} className="inline-flex rounded-full bg-sunk p-0.5">
+    <div role="group" aria-label={label} className="glass inline-flex gap-1.5 p-1" style={{ borderRadius: 26 }}>
       {options.map((option) => {
         const selected = option.value === value;
         return (
@@ -325,9 +325,7 @@ export function Segmented<T extends string | number>({
             type="button"
             aria-pressed={selected}
             onClick={() => onChange(option.value)}
-            className={`rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors ${
-              selected ? "bg-surface text-ink shadow-sm ring-1 ring-ring" : "text-ink-2 hover:text-ink"
-            }`}
+            className="pill border-0"
           >
             {option.label}
           </button>
@@ -339,7 +337,7 @@ export function Segmented<T extends string | number>({
 
 export function EmptyState({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-dashed border-line-strong px-6 py-14 text-center">
+    <div className="glass px-6 py-14 text-center" style={{ borderStyle: "dashed", borderColor: "var(--line-strong)" }}>
       <p className="text-[17px] font-semibold tracking-tight">{title}</p>
       {children && <p className="mx-auto mt-2 max-w-sm text-[14px] text-ink-2">{children}</p>}
     </div>

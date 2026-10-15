@@ -1,11 +1,18 @@
 import type { Metadata, Viewport } from "next";
-import { Instrument_Sans } from "next/font/google";
+import { DM_Mono, Urbanist } from "next/font/google";
+import { THEME_SCRIPT } from "@/components/theme/theme";
 import "./globals.css";
 
-const instrument = Instrument_Sans({
+const urbanist = Urbanist({
   subsets: ["latin", "latin-ext"],
-  axes: ["wdth"],
-  variable: "--font-instrument",
+  variable: "--font-urbanist",
+  display: "swap",
+});
+
+const dmMono = DM_Mono({
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "500"],
+  variable: "--font-dm-mono",
   display: "swap",
 });
 
@@ -17,14 +24,18 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f6f5f1" },
-    { media: "(prefers-color-scheme: dark)", color: "#0d0d0d" },
+    { media: "(prefers-color-scheme: light)", color: "#eef0f3" },
+    { media: "(prefers-color-scheme: dark)", color: "#08090c" },
   ],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="sk" className={`${instrument.variable} antialiased`}>
+    // The inline script may set data-theme before React hydrates, hence the warning switch.
+    <html lang="sk" className={`${urbanist.variable} ${dmMono.variable} antialiased`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="min-h-dvh">{children}</body>
     </html>
   );

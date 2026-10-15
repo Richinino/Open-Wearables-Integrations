@@ -1,170 +1,397 @@
 @import "tailwindcss";
 
 /*
- * Tokens. Chrome is ink on warm paper; colour is reserved for data.
- * Data colours come from a palette validated for colour-vision deficiency
- * in both modes; dark values are chosen for the dark surface, not inverted.
+ * A2 "Nočný panel so skóre" – tokens exactly as in docs/design/project/NocnyPanel2.dc.html.
+ *
+ * Theme: without a stored choice the page follows prefers-color-scheme; the toggle in the
+ * header writes data-theme="light" | "dark" on <html> (and localStorage), set again by an
+ * inline script before the first paint. Light values sit on :root, dark ones are repeated
+ * for the media query and for the explicit attribute.
+ *
+ * Deviations from the artboards, for contrast (WCAG text >= 4.5:1, checked on --bg and on
+ * the glass composite): light --muted #6b6e77 -> #686b74 (4.46 -> 4.66 on --bg), and text in
+ * the "good" colour uses --good-ink (light #11783b, 4.9:1) while dots and marks keep --good.
+ *
+ * Data colours: one hue per subject (accent = activity, sleep, heart), sleep stages deep /
+ * rem / lsleep / accent (awake). Checked with the dataviz validator (Machado 2009 CVD sim):
+ * every pair stays >= 8 OKLab dE under protan/deutan and >= 15 under normal vision in both
+ * themes. Light --lsleep is under 3:1 against the glass, so stage strips always keep their
+ * 2px gaps and a labelled legend with values. Status colours (--warn, --bad) are reserved for
+ * the night-signal warning and stale data and always come with an icon and words.
  */
+
 :root {
   color-scheme: light;
 
-  --page: #f6f5f1;
-  --surface: #fcfcfb;
-  --surface-sunk: #efeee9;
-  --ink: #0b0b0b;
-  --ink-2: #52514e;
-  --muted: #898781;
-  --line: #e1e0d9;
-  --line-strong: #c3c2b7;
-  --ring: rgba(11, 11, 11, 0.1);
+  --bg: #eef0f3;
+  --glass: rgba(255, 255, 255, 0.74);
+  --ink: #14161a;
+  --ink2: #565962;
+  --muted: #686b74;
+  --line: rgba(18, 24, 38, 0.1);
+  --track: rgba(18, 24, 38, 0.09);
+  --accent: color-mix(in oklab, #e9b44c 70%, #4a3200);
+  --sleep: #5b57d6;
+  --heart: #d6456b;
+  --deep: #2f2c9a;
+  --rem: #1f9c8d;
+  --lsleep: #9a97ee;
+  --good: #178f4d;
+  --glow: 0.3;
 
-  /* One hue per subject, the same on every page. */
-  --activity: #eb6834;
-  --activity-soft: #f6c3ab;
-  --sleep: #6250d6;
-  --heart: #e87ba4;
-  --context: #c3c2b7;
-  --spark: #b3b2a8;
-
-  /* Sleep stages, in stacking order. */
-  --stage-deep: #6250d6;
-  --stage-rem: #1baf7a;
-  --stage-light: #2a78d6;
-  --stage-awake: #eb6834;
-
-  /* Intensity: one hue, more is darker. */
-  --zone-light: #ee9d74;
-  --zone-moderate: #e2591f;
-  --zone-vigorous: #8f3410;
-
-  --good: #006300;
-  --bad: #b42a2a;
+  /* Additions beyond the artboards. */
+  --good-ink: #11783b;
   --warn: #8a5a00;
-  --warn-bg: #fbefd0;
+  --bad: #b42a2a;
+  /* The glass over --bg as one opaque colour, for gaps between chart marks. */
+  --surface: #fbfbfc;
+  --line-strong: rgba(18, 24, 38, 0.2);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     color-scheme: dark;
 
-    --page: #0d0d0d;
-    --surface: #1a1a19;
-    --surface-sunk: #242423;
-    --ink: #f0efec;
-    --ink-2: #c3c2b7;
-    --muted: #898781;
-    --line: #2c2c2a;
-    --line-strong: #383835;
-    --ring: rgba(255, 255, 255, 0.1);
+    --bg: #08090c;
+    --glass: rgba(22, 24, 30, 0.66);
+    --ink: #f2f1ed;
+    --ink2: #a9a9a4;
+    --muted: #8b8b86;
+    --line: rgba(255, 255, 255, 0.09);
+    --track: rgba(255, 255, 255, 0.08);
+    --accent: #e9b44c;
+    --sleep: #8f8cf2;
+    --heart: #f0718f;
+    --deep: #5b57d6;
+    --rem: #4fc7b8;
+    --lsleep: #a9a6f7;
+    --good: #5fd08a;
+    --glow: 0.22;
 
-    --activity: #d95926;
-    --activity-soft: #6e3219;
-    --sleep: #9085e9;
-    --heart: #d55181;
-    --context: #4a4a46;
-    --spark: #66665f;
-
-    --stage-deep: #9085e9;
-    --stage-rem: #199e70;
-    --stage-light: #3987e5;
-    --stage-awake: #d95926;
-
-    /* On a dark surface more is lighter. */
-    --zone-light: #96401c;
-    --zone-moderate: #d95926;
-    --zone-vigorous: #f3ad8b;
-
-    --good: #0ca30c;
-    --bad: #e66767;
-    --warn: #fab219;
-    --warn-bg: #2e2610;
+    --good-ink: #5fd08a;
+    --warn: #ffa94d;
+    --bad: #ff6b6b;
+    --surface: #111318;
+    --line-strong: rgba(255, 255, 255, 0.18);
   }
 }
 
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #08090c;
+  --glass: rgba(22, 24, 30, 0.66);
+  --ink: #f2f1ed;
+  --ink2: #a9a9a4;
+  --muted: #8b8b86;
+  --line: rgba(255, 255, 255, 0.09);
+  --track: rgba(255, 255, 255, 0.08);
+  --accent: #e9b44c;
+  --sleep: #8f8cf2;
+  --heart: #f0718f;
+  --deep: #5b57d6;
+  --rem: #4fc7b8;
+  --lsleep: #a9a6f7;
+  --good: #5fd08a;
+  --glow: 0.22;
+
+  --good-ink: #5fd08a;
+  --warn: #ffa94d;
+  --bad: #ff6b6b;
+  --surface: #111318;
+  --line-strong: rgba(255, 255, 255, 0.18);
+}
+
+/*
+ * Names the earlier UI used, mapped onto the A2 palette so older views keep working.
+ * New code should use the A2 names above.
+ */
+:root {
+  --page: var(--bg);
+  --surface-sunk: color-mix(in oklab, var(--ink) 6%, transparent);
+  --ink-2: var(--ink2);
+  --ring: var(--line);
+  --activity: var(--accent);
+  --activity-soft: color-mix(in oklab, var(--accent) 30%, var(--bg));
+  --context: color-mix(in oklab, var(--ink) 24%, var(--bg));
+  --spark: color-mix(in oklab, var(--ink) 30%, var(--bg));
+  --stage-deep: var(--deep);
+  --stage-rem: var(--rem);
+  --stage-light: var(--lsleep);
+  --stage-awake: var(--accent);
+  /* Intensity: one hue, more is stronger. */
+  --zone-light: color-mix(in oklab, var(--accent) 38%, var(--bg));
+  --zone-moderate: color-mix(in oklab, var(--accent) 68%, var(--bg));
+  --zone-vigorous: var(--accent);
+  --warn-bg: color-mix(in oklab, var(--warn) 14%, var(--bg));
+}
+
 @theme inline {
-  --color-page: var(--page);
-  --color-surface: var(--surface);
-  --color-sunk: var(--surface-sunk);
+  --color-bg: var(--bg);
+  --color-glass: var(--glass);
   --color-ink: var(--ink);
-  --color-ink-2: var(--ink-2);
+  --color-ink2: var(--ink2);
   --color-muted: var(--muted);
   --color-line: var(--line);
-  --color-line-strong: var(--line-strong);
-  --color-ring: var(--ring);
-  --color-activity: var(--activity);
+  --color-track: var(--track);
+  --color-accent: var(--accent);
   --color-sleep: var(--sleep);
   --color-heart: var(--heart);
+  --color-deep: var(--deep);
+  --color-rem: var(--rem);
+  --color-lsleep: var(--lsleep);
   --color-good: var(--good);
-  --color-bad: var(--bad);
+  --color-good-ink: var(--good-ink);
   --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-surface: var(--surface);
+  --color-line-strong: var(--line-strong);
+  /* Older names. */
+  --color-page: var(--bg);
+  --color-sunk: var(--surface-sunk);
+  --color-ink-2: var(--ink2);
+  --color-ring: var(--line);
+  --color-activity: var(--accent);
   --color-warn-bg: var(--warn-bg);
-  --font-sans: var(--font-instrument), system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --font-sans: var(--font-urbanist), "Segoe UI", system-ui, sans-serif;
+  --font-mono: var(--font-dm-mono), ui-monospace, monospace;
   --breakpoint-xs: 26rem;
 }
 
-html {
-  background: var(--page);
-  -webkit-text-size-adjust: 100%;
+@layer base {
+  html {
+    background: var(--bg);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.45;
+    transition:
+      background-color 0.3s,
+      color 0.3s;
+  }
+
+  a {
+    color: inherit;
+  }
+
+  ::selection {
+    background: var(--ink);
+    color: var(--bg);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
 }
 
-body {
-  background: var(--page);
-  color: var(--ink);
-  font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 1.45;
+@layer components {
+  /* Glass tile: the basic surface of A2. */
+  .glass {
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    border: 1px solid var(--line);
+    border-radius: 28px;
+  }
+
+  /* Mono label above figures and tiles. */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink2);
+  }
+
+  .mono {
+    font-family: var(--font-mono);
+  }
+
+  /* Large light figures. */
+  .figure {
+    font-weight: 300;
+    letter-spacing: -0.04em;
+    line-height: 0.95;
+  }
+
+  .figure-sm {
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Pill buttons and links: 44px tall, the A2 navigation and switch shape. */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 44px;
+    padding: 0 18px;
+    border-radius: 22px;
+    border: 1px solid transparent;
+    color: var(--ink2);
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      background-color 0.2s,
+      color 0.2s,
+      border-color 0.2s;
+  }
+
+  .pill:hover {
+    color: var(--ink);
+  }
+
+  .pill[aria-current="page"],
+  .pill[aria-pressed="true"] {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--bg);
+  }
+
+  .pill-outline {
+    border-color: var(--line);
+    background: var(--glass);
+    color: var(--ink);
+    font-size: 13px;
+    padding: 0 16px;
+  }
+
+  /*
+   * A whole tile as one link: the tile's title link stretches over the tile. Controls and
+   * links inside the tile that must stay usable get .tile-raise.
+   */
+  .tile {
+    position: relative;
+    transition: border-color 0.2s;
+  }
+
+  .tile-link {
+    text-decoration: none;
+  }
+
+  .tile-link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+
+  .tile-link:focus-visible {
+    outline: none;
+  }
+
+  .tile:has(.tile-link:focus-visible) {
+    outline: 2px solid var(--ink);
+    outline-offset: 3px;
+  }
+
+  .tile:has(.tile-link:hover) {
+    border-color: color-mix(in oklab, var(--ink) 24%, transparent);
+  }
+
+  .tile-arrow {
+    opacity: 0.45;
+    transition:
+      opacity 0.2s,
+      transform 0.2s;
+  }
+
+  .tile:has(.tile-link:hover) .tile-arrow,
+  .tile:has(.tile-link:focus-visible) .tile-arrow {
+    opacity: 1;
+    transform: translateX(2px);
+  }
+
+  .title-link {
+    text-decoration: none;
+  }
+
+  .title-link:hover {
+    color: var(--ink);
+  }
+
+  .title-link:hover .tile-arrow {
+    opacity: 1;
+    transform: translateX(2px);
+  }
+
+  .tile-raise {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Smaller links inside tiles, such as the sub-score rows. */
+  .row-link {
+    display: block;
+    border-radius: 14px;
+    margin: -6px -8px;
+    padding: 6px 8px;
+    text-decoration: none;
+    transition: background-color 0.2s;
+  }
+
+  .row-link:hover {
+    background: color-mix(in oklab, var(--ink) 6%, transparent);
+  }
+
+  /* Text shown only in the light or only in the dark theme, without a hydration mismatch. */
+  .when-dark {
+    display: none;
+  }
+
+  /* Chart text takes its colour from tokens, never from the series. */
+  .chart-tick {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    fill: var(--muted);
+  }
+
+  .chart-label {
+    font-size: 11px;
+    font-weight: 600;
+    fill: var(--ink2);
+  }
+
+  /* One staggered entrance per page; children opt in with --i. */
+  .rise {
+    animation: rise 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    animation-delay: calc(var(--i, 0) * 60ms);
+  }
 }
 
-::selection {
-  background: var(--ink);
-  color: var(--page);
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .when-dark {
+    display: revert;
+  }
+  :root:not([data-theme="light"]) .when-light {
+    display: none;
+  }
 }
 
-:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
-  border-radius: 4px;
+:root[data-theme="dark"] .when-dark {
+  display: revert;
 }
 
-/* Figures: the same sans, drawn narrow. Proportional digits at display sizes. */
-.figure {
-  font-stretch: 78%;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 0.95;
-}
-
-.figure-sm {
-  font-stretch: 84%;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1;
-}
-
-/* Small caps-like labels above figures and sections. */
-.eyebrow {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.tabular {
-  font-variant-numeric: tabular-nums;
-}
-
-/* Chart text. SVG text takes its colour from tokens, never from the series. */
-.chart-tick {
-  font-size: 11px;
-  fill: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.chart-label {
-  font-size: 11px;
-  font-weight: 600;
-  fill: var(--ink-2);
+:root[data-theme="dark"] .when-light {
+  display: none;
 }
 
 @keyframes rise {
@@ -176,12 +403,6 @@ body {
     opacity: 1;
     transform: none;
   }
-}
-
-/* One staggered entrance per page; children opt in with --i. */
-.rise {
-  animation: rise 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
-  animation-delay: calc(var(--i, 0) * 60ms);
 }
 
 @media (prefers-reduced-motion: reduce) {

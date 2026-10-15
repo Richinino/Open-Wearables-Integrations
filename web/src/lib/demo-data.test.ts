@@ -414,3 +414,174 @@ describe.each(datasets)("internal consistency of the window ending %s", (_today,
     expect(data.last_day).toBe(data.days[data.days.length - 1].day);
   });
 });
+
+describe("demo scores, sleep timelines and workout strain", () => {
+  const days = dataset.days;
+  const finished = days.filter((day) => day.complete);
+  const scored = (day: Day) => day.scores!;
+  const mean = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
+  const STATUSES = ["detraining", "recovering", "maintaining", "productive", "overreaching"];
+
+  it("scores every day, under the day's own date", () => {
+    for (const day of days) {
+      expect(day.scores, day.day).toBeTruthy();
+      expect(scored(day).day, day.day).toBe(day.day);
+    }
+  });
+
+  it("keeps strain at 4-19 on finished days with heart rate, and none without", () => {
+    for (const day of finished) {
+      if (day.hr_resting === null) {
+        expect(scored(day).strain, day.day).toBeNull();
+        continue;
+      }
+      expect(scored(day).strain!, day.day).toBeGreaterThanOrEqual(4);
+      expect(scored(day).strain!, day.day).toBeLessThanOrEqual(19);
+    }
+    const strains = finished.flatMap((day) => (scored(day).strain === null ? [] : [scored(day).strain!]));
+    expect(Math.min(...strains)).toBeLessThan(8);
+    expect(Math.max(...strains)).toBeGreaterThan(15);
+    const withWorkout = finished.filter((day) => day.workouts.length > 0 && scored(day).strain !== null);
+    const without = finished.filter((day) => day.workouts.length === 0 && scored(day).strain !== null);
+    expect(mean(withWorkout.map((day) => scored(day).strain!))).toBeGreaterThan(
+      mean(without.map((day) => scored(day).strain!)) + 3,
+    );
+  });
+
+  it("asks for 8 to 10 hours of sleep", () => {
+    for (const day of days) {
+      expect(scored(day).sleep_need_minutes!, day.day).toBeGreaterThanOrEqual(480);
+      expect(scored(day).sleep_need_minutes!, day.day).toBeLessThanOrEqual(600);
+    }
+    expect(new Set(days.map((day) => scored(day).sleep_need_minutes)).size).toBeGreaterThan(20);
+  });
+
+  it("keeps 0-100 scores in range, with their parts and notes", () => {
+    for (const day of days) {
+      const scores = scored(day);
+      for (const key of ["readiness", "sleep_performance", "apple_sleep", "activity"] as const) {
+        const score = scores[key];
+        if (score.value !== null) {
+          expect(score.value, `${day.day} ${key}`).toBeGreaterThanOrEqual(0);
+          expect(score.value, `${day.day} ${key}`).toBeLessThanOrEqual(100);
+        }
+        for (const part of Object.values(score.components)) {
+          if (part !== null) expect(part, `${day.day} ${key}`).toBeGreaterThanOrEqual(0);
+        }
+      }
+      expect(Object.keys(scores.readiness.components).sort()).toEqual([
+        "activity_balance",
+        "previous_day_activity",
+        "recovery_index",
+        "resting_hr",
+        "sleep",
+        "sleep_balance",
+        "sleep_regularity",
+      ]);
+      expect(Object.keys(scores.activity.components)).toHaveLength(6);
+      if (scores.readiness.value !== null) expect(scores.readiness.note).toBe("estimate");
+      expect(scores.whoop_age.note).toBe("estimate");
+      expect(scores.whoop_age.value!).toBeGreaterThan(13);
+      expect(scores.whoop_age.value!).toBeLessThan(21);
+    }
+  });
+
+  it("has no sleep scores on a night without sleep, and no readiness without the watch", () => {
+    const sleepless = days.filter((day) => day.sleep_start === null);
+    expect(sleepless.length).toBeGreaterThan(0);
+    for (const day of sleepless) {
+      expect(scored(day).sleep_performance, day.day).toMatchObject({ value: null, note: "no sleep recorded" });
+      expect(scored(day).apple_sleep.value, day.day).toBeNull();
+    }
+    for (const day of days.filter((item) => item.hr_resting === null)) {
+      expect(scored(day).readiness, day.day).toMatchObject({ value: null, note: "no data" });
+      expect(scored(day).night_signal.level, day.day).toBeNull();
+    }
+  });
+
+  it("makes the day score the mean of its three parts", () => {
+    for (const day of days) {
+      const scores = scored(day);
+      const parts = [scores.readiness.value, scores.sleep_performance.value, scores.activity.value].flatMap(
+        (value) => (value === null ? [] : [value]),
+      );
+      if (parts.length === 0) {
+        expect(scores.day_score, day.day).toBeNull();
+        continue;
+      }
+      const expected = scores.night_signal.level === "red" ? Math.min(50, mean(parts)) : mean(parts);
+      expect(scores.day_score!, day.day).toBeCloseTo(expected, 0);
+    }
+  });
+
+  it("has occasional yellow nights and exactly one pair of red ones", () => {
+    const byDay = new Map(days.map((day) => [day.day, day]));
+    const red = days.filter((day) => scored(day).night_signal.level === "red").map((day) => day.day);
+    expect(red).toHaveLength(2);
+    expect(red[1]).toBe(addDays(red[0], 1));
+    // The night before a red pair is the first elevated one, so it is yellow.
+    expect(scored(byDay.get(addDays(red[0], -1))!).night_signal.level).toBe("yellow");
+    const yellow = days.filter((day) => scored(day).night_signal.level === "yellow").length;
+    expect(yellow).toBeGreaterThanOrEqual(3);
+    expect(yellow).toBeLessThanOrEqual(12);
+    for (const day of red) {
+      const scores = scored(byDay.get(day)!);
+      expect(scores.night_signal.delta!).toBeGreaterThanOrEqual(4);
+      expect(scores.night_signal.night_hr!).toBeCloseTo(scores.night_signal.baseline! + scores.night_signal.delta!, 1);
+      expect(scores.day_score!).toBeLessThanOrEqual(50);
+    }
+  });
+
+  it("gives a load status from the last 7 against the last 28 days", () => {
+    const statuses = new Set(days.map((day) => scored(day).cardio_load.status));
+    expect(statuses.size).toBeGreaterThanOrEqual(2);
+    for (const status of statuses) expect(STATUSES).toContain(status);
+    for (const day of days) {
+      const load = scored(day).cardio_load;
+      if (load.ratio !== null) expect(load.ratio).toBeCloseTo(load.strain_7d! / load.tolerance_28d!, 1);
+    }
+  });
+
+  it("gives every workout with heart rate a strain of 0-21", () => {
+    const workouts = days.flatMap((day) => day.workouts);
+    for (const workout of workouts) {
+      if (workout.hr_avg === null) expect(workout.strain, workout.id).toBeNull();
+      else {
+        expect(workout.strain!, workout.id).toBeGreaterThan(2);
+        expect(workout.strain!, workout.id).toBeLessThanOrEqual(21);
+      }
+    }
+    const strainOf = (type: string) =>
+      mean(workouts.filter((workout) => workout.type === type && workout.strain != null).map((workout) => workout.strain!));
+    expect(strainOf("running")).toBeGreaterThan(strainOf("walking"));
+  });
+
+  it("draws a stage timeline of the main sleep that matches the stage totals", () => {
+    for (const day of days) {
+      if (day.sleep_start === null) {
+        expect(day.sleep_timeline, day.day).toBeNull();
+        continue;
+      }
+      const timeline = day.sleep_timeline!;
+      expect(timeline[0].start, day.day).toBe(day.sleep_start);
+      expect(timeline[timeline.length - 1].end, day.day).toBe(day.sleep_end);
+      const totals: Record<string, number> = {};
+      timeline.forEach((interval, index) => {
+        expect(["deep", "rem", "light", "awake"], day.day).toContain(interval.stage);
+        expect(Date.parse(interval.end), day.day).toBeGreaterThan(Date.parse(interval.start));
+        if (index > 0) {
+          expect(interval.start, day.day).toBe(timeline[index - 1].end);
+          expect(interval.stage, day.day).not.toBe(timeline[index - 1].stage);
+        }
+        totals[interval.stage] = (totals[interval.stage] ?? 0) + minutesBetween(interval.start, interval.end);
+      });
+      expect(totals.deep, day.day).toBe(day.sleep_deep_min);
+      expect(totals.rem, day.day).toBe(day.sleep_rem_min);
+      expect(totals.light, day.day).toBe(day.sleep_light_min);
+      expect(totals.awake ?? 0, day.day).toBe(day.sleep_awake_min);
+      // Deep sleep comes early in the night.
+      const firstDeep = timeline.find((interval) => interval.stage === "deep")!;
+      expect(minutesBetween(day.sleep_start, firstDeep.start), day.day).toBeLessThan(90);
+    }
+  });
+});

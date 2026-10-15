@@ -13,11 +13,14 @@ import {
   formatDecimal,
   formatDistance,
   formatDuration,
+  formatDurationCompact,
   formatDurationShort,
   formatInt,
   formatKcal,
   formatMonth,
   formatRelative,
+  formatTimeOfDay,
+  plural,
   stepsSourceLabel,
   workoutLabel,
 } from "./format";
@@ -110,6 +113,38 @@ describe("formatDurationShort", () => {
 
   it("shows a dash for a missing value", () => {
     for (const value of missing) expect(formatDurationShort(value)).toBe(DASH);
+  });
+});
+
+describe("formatDurationCompact", () => {
+  it("drops the minute unit once there are hours", () => {
+    expect(formatDurationCompact(90)).toBe("1 h 30");
+    expect(formatDurationCompact(125)).toBe("2 h 05");
+    expect(formatDurationCompact(120)).toBe("2 h");
+    expect(formatDurationCompact(8)).toBe("8 min");
+    expect(formatDurationCompact(0)).toBe("0 min");
+    expect(formatDurationCompact(-4)).toBe("0 min");
+  });
+
+  it("shows a dash for a missing value", () => {
+    for (const value of missing) expect(formatDurationCompact(value)).toBe(DASH);
+  });
+});
+
+describe("formatTimeOfDay", () => {
+  it("writes minutes since midnight as a clock time", () => {
+    expect(formatTimeOfDay(0)).toBe("00:00");
+    expect(formatTimeOfDay(22 * 60 + 5)).toBe("22:05");
+    expect(formatTimeOfDay(415.4)).toBe("06:55");
+  });
+
+  it("wraps values outside one day", () => {
+    expect(formatTimeOfDay(-30)).toBe("23:30");
+    expect(formatTimeOfDay(1440 + 75)).toBe("01:15");
+  });
+
+  it("shows a dash for a missing value", () => {
+    for (const value of missing) expect(formatTimeOfDay(value)).toBe(DASH);
   });
 });
 
@@ -318,6 +353,21 @@ describe("formatChange", () => {
 
   it("shows a dash for a missing value", () => {
     for (const value of missing) expect(formatChange(value)).toBe(DASH);
+  });
+});
+
+describe("plural", () => {
+  it("picks the Slovak form for the count", () => {
+    const forms = ["tréning", "tréningy", "tréningov"] as const;
+    expect([0, 1, 2, 4, 5, 11, 2.5].map((count) => plural(count, ...forms))).toEqual([
+      "tréningov",
+      "tréning",
+      "tréningy",
+      "tréningy",
+      "tréningov",
+      "tréningov",
+      "tréningov",
+    ]);
   });
 });
 

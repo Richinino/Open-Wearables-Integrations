@@ -21,7 +21,7 @@ export function LoginForm() {
         required
         aria-invalid={state.error ? true : undefined}
         aria-describedby={state.error ? "login-error" : undefined}
-        className="mt-2 block w-full rounded-xl bg-surface px-4 py-3 text-[16px] ring-1 ring-line-strong outline-none transition-shadow placeholder:text-muted focus:ring-2 focus:ring-ink"
+        className="mt-2.5 block h-12 w-full rounded-[18px] border border-line-strong bg-glass px-4 text-[16px] outline-none transition-colors placeholder:text-muted focus:border-ink focus:ring-1 focus:ring-ink"
       />
       <p id="login-error" role="alert" className="mt-2 min-h-5 text-[13px] font-medium text-bad">
         {state.error}
@@ -29,7 +29,7 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={pending}
-        className="mt-2 w-full rounded-xl bg-ink px-4 py-3 text-[15px] font-semibold text-page transition-opacity hover:opacity-90 disabled:opacity-60"
+        className="mt-2 h-12 w-full rounded-[24px] bg-ink text-[15px] font-semibold text-bg transition-opacity hover:opacity-90 disabled:opacity-60"
       >
         {pending ? "Overujem…" : "Prihlásiť"}
       </button>
