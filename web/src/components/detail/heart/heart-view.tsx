@@ -16,9 +16,10 @@ import { average, windowEnding } from "@/lib/metrics";
 import type { Dataset, Day } from "@/lib/types";
 import { DetailHead, Figure, Keys, riseStyle, RunningHint, VendorLine } from "../common/bits";
 import { ChartTile, Switch } from "../common/controls";
-import { focusOf } from "../common/focus";
+import { latestFocusOf } from "../common/focus";
 import { TrendChart } from "../common/trend-chart";
 import { ZonesTile } from "../common/zones";
+import { Chip } from "../shared-b/parts";
 
 const PERIODS = [
   { value: 30, label: "30 dní" },
@@ -214,7 +215,7 @@ function NightHeartTile({ dataset, date, length = 30 }: { dataset: Dataset; date
 }
 
 function Heart({ dataset, now }: { dataset: Dataset; now: Date }) {
-  const focus = focusOf(dataset, now);
+  const focus = latestFocusOf(dataset, now);
   const day = focus.day;
   if (!day) return <EmptyState title="Pre tento deň nie sú dáta">Tep sa objaví po ďalšej synchronizácii.</EmptyState>;
   return (
@@ -223,6 +224,7 @@ function Heart({ dataset, now }: { dataset: Dataset; now: Date }) {
         <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
           {focus.isToday ? "Dnes" : formatDay(day.day)} · {formatInt(day.hr_resting)} bpm
           {isNumber(day.hr_min) && isNumber(day.hr_max) ? ` · počas dňa ${formatInt(day.hr_min)}–${formatInt(day.hr_max)} bpm` : ""}
+          {focus.label && <Chip tone="warn">{focus.label}</Chip>}
         </span>
       </DetailHead>
 

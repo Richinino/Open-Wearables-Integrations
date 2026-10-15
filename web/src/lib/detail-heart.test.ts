@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { addDays, dateRange } from "./dates";
 import {
   nightHeartSeries,
+  readinessDay,
   READINESS_PARTS,
   restingBaseline,
   restingComparison,
@@ -11,7 +12,7 @@ import {
   signalNightText,
   signalStatus,
 } from "./detail-heart";
-import { makeDay, makeScores } from "./test-fixtures";
+import { makeDay, makeScore, makeScores } from "./test-fixtures";
 import type { Day, NightSignal } from "./types";
 
 const END = "2026-10-15";
@@ -120,5 +121,31 @@ describe("restingTrend", () => {
     expect(trend.before).toBe(54);
     expect(trend.change).toBe(-4);
     expect(restingTrend([], END, 30).change).toBeNull();
+  });
+});
+
+describe("readinessDay", () => {
+  const scored = (day: string, value: number | null) =>
+    makeDay(day, { scores: makeScores(day, { readiness: makeScore(value, {}, value === null ? "no sleep recorded" : "estimate") }) });
+
+  it("takes the focus day when it has a readiness value", () => {
+    const days = [scored("2026-10-13", 60), scored("2026-10-14", 70)];
+    expect(readinessDay(days, "2026-10-14")?.day).toBe("2026-10-14");
+  });
+
+  it("falls back to the latest day with a value while today has none", () => {
+    const days = [scored("2026-10-13", 60), scored("2026-10-14", 70), scored(END, null)];
+    expect(readinessDay(days, END)?.day).toBe("2026-10-14");
+  });
+
+  it("ignores days after the focus day", () => {
+    const days = [scored("2026-10-13", 60), scored("2026-10-14", 70)];
+    expect(readinessDay(days, "2026-10-13")?.day).toBe("2026-10-13");
+  });
+
+  it("keeps the focus day when no day has a value", () => {
+    const days = [makeDay("2026-10-14"), scored(END, null)];
+    expect(readinessDay(days, END)?.day).toBe(END);
+    expect(readinessDay([], END)).toBeNull();
   });
 });

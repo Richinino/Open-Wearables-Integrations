@@ -9,7 +9,7 @@ import { tickPlain } from "@/components/charts/points";
 import { WithData } from "@/components/shell/shell";
 import { EmptyState } from "@/components/ui/parts";
 import { addDays, dateRange } from "@/lib/dates";
-import { restingBaseline, signalNights } from "@/lib/detail-heart";
+import { readinessDay, restingBaseline, signalNights } from "@/lib/detail-heart";
 import { DASH, formatDay, formatDayMonth, formatInt } from "@/lib/format";
 import { average, indexByDay } from "@/lib/metrics";
 import { formatScore, readinessBand, scoreValue } from "@/lib/scores";
@@ -26,10 +26,7 @@ function Readiness({ dataset, now }: { dataset: Dataset; now: Date }) {
   const router = useRouter();
   const focus = focusOf(dataset, now);
   const byDay = indexByDay(dataset.days);
-  // The focus day, or the latest scored day before it when owi has not scored it yet.
-  const day = focus.day?.scores
-    ? focus.day
-    : ([...dataset.days].reverse().find((item) => item.day <= focus.date && item.scores) ?? focus.day);
+  const day = readinessDay(dataset.days, focus.date);
   if (!day) {
     return <EmptyState title="Readiness zatiaľ nie je">Skóre sa objaví, keď owi spočíta prvé dni.</EmptyState>;
   }

@@ -6,7 +6,7 @@
 import { addDays, dateRange } from "./dates";
 import { formatInt } from "./format";
 import { average, indexByDay } from "./metrics";
-import { nightSignalAlert } from "./scores";
+import { nightSignalAlert, scoreValue } from "./scores";
 import type { Day, NightSignal } from "./types";
 
 function isNumber(value: number | null | undefined): value is number {
@@ -43,6 +43,16 @@ export interface Baseline {
   /** Standard deviation, at least 1 bpm so a very steady history still has a band. */
   sd: number;
   days: number;
+}
+
+/**
+ * The day the readiness page is about: the latest day up to `focus` with a readiness value.
+ * Today has none until its night is synced and scored. Without any value, the focus day.
+ */
+export function readinessDay(days: Day[], focus: string): Day | null {
+  const upTo = days.filter((day) => day.day <= focus);
+  const scored = [...upTo].reverse().find((day) => scoreValue(day.scores?.readiness) !== null);
+  return scored ?? upTo.find((day) => day.day === focus) ?? null;
 }
 
 /** Mean and spread of the resting heart rate over the `length` days before `date`. */

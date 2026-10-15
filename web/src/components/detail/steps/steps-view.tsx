@@ -26,7 +26,8 @@ import { WEEKDAY_LETTERS } from "@/lib/overview";
 import type { Dataset, Day } from "@/lib/types";
 import { DetailHead, Figure, riseStyle, RunningHint } from "../common/bits";
 import { ChartTile, Switch } from "../common/controls";
-import { focusOf } from "../common/focus";
+import { latestFocusOf } from "../common/focus";
+import { Chip } from "../shared-b/parts";
 
 const PERIODS = [
   { value: 30, label: "30 dní" },
@@ -223,7 +224,7 @@ function BestDaysTile({ dataset, date }: { dataset: Dataset; date: string }) {
 }
 
 function Steps({ dataset, now }: { dataset: Dataset; now: Date }) {
-  const focus = focusOf(dataset, now);
+  const focus = latestFocusOf(dataset, now);
   const day = focus.day;
   if (!day) return <EmptyState title="Pre tento deň nie sú dáta">Kroky sa objavia po ďalšej synchronizácii.</EmptyState>;
   const month = stepsStats(dataset.days, day.day, 30);
@@ -233,6 +234,7 @@ function Steps({ dataset, now }: { dataset: Dataset; now: Date }) {
         <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
           {focus.isToday ? "Dnes" : formatDay(day.day)} · {formatInt(day.steps)} krokov · zdroj {stepsSourceLabel(day.steps_source)}
           {day.complete === false && <RunningHint />}
+          {focus.label && <Chip tone="warn">{focus.label}</Chip>}
         </span>
       </DetailHead>
 
