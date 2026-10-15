@@ -190,6 +190,27 @@ def test_empty_history_has_no_score():
     assert score.note == "too little history"
 
 
+def test_no_main_sleep_last_night_gives_no_score_but_keeps_components():
+    # Oura computes readiness after the night; the day-only contributors alone are no score.
+    history = with_day(
+        steady_history(),
+        D,
+        sleep_rhr=None,
+        sleep_minutes=None,
+        sleep_start=None,
+        sleep_end=None,
+        sleep_hr_low_at=None,
+        nap_minutes=40.0,
+    )
+
+    score = readiness(history, ADULT, sleep_regularity=90.0)
+
+    assert score.value is None
+    assert score.note == "no sleep recorded"
+    assert score.components["sleep"] is None
+    assert score.components["previous_day_activity"] == pytest.approx(85.0)
+
+
 def test_resting_hr_z_uses_the_60_nights_before_d():
     # 30 earlier nights alternating 48 and 56 bpm: mean 52, SD 4.
     history = [

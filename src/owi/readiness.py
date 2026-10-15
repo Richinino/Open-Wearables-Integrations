@@ -15,6 +15,7 @@ from owi.score_models import DayFeatures, NightSignal, Person, Score
 AWAKE = "awake"
 ESTIMATE = "estimate"
 TOO_LITTLE_HISTORY = "too little history"
+NO_SLEEP = "no sleep recorded"
 
 WEIGHTS = {
     "sleep": 0.25,
@@ -118,6 +119,9 @@ def readiness(
     nights = _before(history, today.day, BASELINE_DAYS)
     if sum(1 for d in nights if d.sleep_rhr is not None) < MIN_RHR_NIGHTS:
         return Score(None, components, TOO_LITTLE_HISTORY)
+    # Oura scores readiness once the night is in; without it only day contributors remain.
+    if today.sleep_minutes is None:
+        return Score(None, components, NO_SLEEP)
     value = weighted_score(components, WEIGHTS)
     if value is None:
         return Score(None, components, "no data")

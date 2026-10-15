@@ -83,7 +83,7 @@ Vzorce v [`skore.md`](skore.md), návrh v [`superpowers/specs/2026-10-14-skore-d
 
 | Kedy | Čo | Podľa |
 |---|---|---|
-| ráno | **Readiness** (regenerácia) | Oura Readiness bez HRV a teploty, ako odhad; po 14 nociach |
+| ráno | **Readiness** (regenerácia) | Oura Readiness bez HRV a teploty, ako odhad; po 14 nociach a len po zaznamenanej noci |
 | ráno | **Sleep Performance** (hlavné číslo), **Sleep Score** (prepínač) | WHOOP, Apple |
 | ráno | **Pravidelnosť spánku** | Sleep Regularity Index za 14 dní |
 | ráno | **Activity** (včerajšok a týždeň) | Oura Activity |
@@ -91,7 +91,7 @@ Vzorce v [`skore.md`](skore.md), návrh v [`superpowers/specs/2026-10-14-skore-d
 | večer | **Potreba spánku na nasledujúcu noc** | WHOOP |
 | týždeň | **Stav záťaže** | Polar Cardio Load; po 28 dňoch |
 | kedykoľvek | **Varovanie pred chorobou alebo preťažením** | NightSignal (nočný tep o ≥ 4 bpm nad normálom dve noci po sebe) |
-| denne | **Skóre dňa** | priemer Readiness, Sleep Performance a Activity; pri červenom varovaní najviac 50 |
+| denne | **Skóre dňa** | priemer Readiness, Sleep Performance a Activity (aspoň dvoch z nich); pri červenom varovaní najviac 50 |
 | dlhodobo | **VO2max** (hodinky a Uth–Sørensen), **WHOOP Age** | Samsung, WHOOP white paper |
 
 Web ich dostane cez `owi serve` ako `scores` pri každom dni, k tomu `sleep_timeline` (fázy spánku) a `strain` pri tréningoch.

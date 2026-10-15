@@ -26,6 +26,7 @@ OVERREACHED_DAYS = 14  # Polar: "recovering" after overreaching in the last 14 d
 # into the day before, so 15 days hold everything they read.
 SLEEP_WINDOW_DAYS = 15
 NIGHT_RED_CAP = 50.0
+DAY_SCORE_MIN_PARTS = 2
 TOO_LITTLE_WEAR = "too little wear"
 RED = "red"
 OVERREACHING = "overreaching"
@@ -96,8 +97,9 @@ def _daily_trimp(history: Sequence[DayFeatures]) -> list[float | None]:
 
 
 def _day_score(parts: Sequence[Score], night: NightSignal) -> float | None:
+    """Mean of the parts that exist, at least two of them (A): activity alone is no day."""
     values = [part.value for part in parts if part.value is not None]
-    if not values:
+    if len(values) < DAY_SCORE_MIN_PARTS:
         return None
     value = fmean(values)
     if night.level == RED:

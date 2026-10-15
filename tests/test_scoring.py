@@ -162,12 +162,23 @@ def test_day_score_is_the_mean_of_the_available_scores():
     assert scores.day_score == pytest.approx(round(fmean(parts), 1))
 
 
-def test_day_score_leaves_out_missing_scores():
+def test_day_score_leaves_out_a_missing_score():
+    scores = score_day(history(), [], TEEN, TIMEZONE)
+
+    parts = [scores.readiness.value, scores.activity.value]
+    assert scores.sleep_performance.value is None
+    assert None not in parts
+    assert scores.day_score == pytest.approx(round(fmean(parts), 1))
+
+
+def test_day_score_needs_two_of_the_three_scores():
+    # Activity alone is no day score; a day without its night would otherwise get one.
     scores = score_day(history(10), [], TEEN, TIMEZONE)
 
     assert scores.readiness.value is None
     assert scores.sleep_performance.value is None
-    assert scores.day_score == scores.activity.value
+    assert scores.activity.value is not None
+    assert scores.day_score is None
 
 
 def test_day_score_is_none_without_any_score():

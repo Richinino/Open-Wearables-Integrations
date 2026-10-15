@@ -190,7 +190,7 @@ Nočný tep `A` = priemer tepu 00:00–07:00 z minút bez krokov **[PUB]**; owi 
 
 | Na webe | Výpočet | Dôvera |
 |---|---|---|
-| **Skóre dňa** (0–100) | priemer troch častí nižšie, rovnaké váhy **[PUB: tak to robia LE8 aj väčšina kompozitných indexov podľa OECD/JRC]**; pri červenom NightSignal najviac 50 **[A]** | podľa častí |
+| **Skóre dňa** (0–100) | priemer troch častí nižšie, rovnaké váhy **[PUB: tak to robia LE8 aj väčšina kompozitných indexov podľa OECD/JRC]**; pri červenom NightSignal najviac 50 **[A]**; chýbajúca časť sa vynechá, ale treba aspoň dve z troch, inak skóre nie je **[A]** | podľa častí |
 | **Spánok** (0–100) | Apple Sleep Score | stredná až vysoká |
 | **Regenerácia** (0–100) | Oura Readiness bez HRV a teploty, označená ako odhad | stredná |
 | **Aktivita** (0–100) | Oura Activity | nízka až stredná |
@@ -199,7 +199,7 @@ Nočný tep `A` = priemer tepu 00:00–07:00 z minút bez krokov **[PUB]**; owi 
 | **Stav záťaže** (týždeň) | Polar Cardio Load status | vysoká |
 | **Varovanie** | NightSignal | publikované |
 
-Skóre regenerácie sa ukazuje až po 14 nociach, porovnania s priemerom po 7 dňoch **[A, výrobcovia 7–14]**. Dni s menej ako 1 000 minútami nameraného tepu sa do základov nerátajú **[PUB, Radin 2020]**.
+Skóre regenerácie sa ukazuje až po 14 nociach, porovnania s priemerom po 7 dňoch **[A, výrobcovia 7–14]**, a len pre deň, ktorý má zaznamenaný hlavný spánok; Oura ho tiež počíta až po noci **[V]**. Dni s menej ako 1 000 minútami nameraného tepu sa do základov nerátajú **[PUB, Radin 2020]**.
 
 ## Zdroje
 
