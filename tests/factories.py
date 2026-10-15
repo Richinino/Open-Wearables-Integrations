@@ -85,6 +85,8 @@ def make_features(day: date, **fields: object) -> DayFeatures:
         "strain_load": 70.0,
         "strain": 11.2,
         "workout_strain": {"w1": 9.5},
+        "awake_hr_p10": 62.0,
+        "awake_rest_hr": 61.5,
         "met_minutes_medium": 300.0,
         "met_minutes_high": 120.0,
         "medium_minutes": 80,

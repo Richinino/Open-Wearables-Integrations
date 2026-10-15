@@ -42,7 +42,7 @@ class DayFeatures:
     resting_hr: float | None  # the day's lowest 30-minute rolling mean (DayResult.hr_resting)
     sleep_rhr: float | None  # lowest 5-minute rolling mean during the main sleep
     sleep_hr_low_at: datetime | None  # when that low began, UTC
-    night_hr: float | None  # mean heart rate 00:00-07:00 local, workout minutes left out
+    night_hr: float | None  # mean heart rate over the minutes asleep 00:00-07:00 local
     max_hr_seen: float | None  # highest heart rate of the day after spike filtering
 
     # Load
@@ -52,6 +52,8 @@ class DayFeatures:
     workout_strain: dict[str, float] = field(default_factory=dict)  # workout id -> 0-21
 
     # Activity, from per-minute METs estimated from heart rate
+    awake_hr_p10: float | None = None  # 10th percentile of awake minutes outside workouts
+    awake_rest_hr: float | None = None  # the resting heart rate the METs were computed with
     met_minutes_medium: float | None = None  # MET-minutes spent at 3-6 MET
     met_minutes_high: float | None = None  # MET-minutes spent at 6+ MET
     medium_minutes: int | None = None  # minutes at 3-6 MET

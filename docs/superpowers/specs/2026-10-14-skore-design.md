@@ -25,6 +25,8 @@ Dátum: 2026-10-14. Stav: schválené. Vzorce a zdroje: [`docs/skore.md`](../../
 - **Zóny pre WHOOP Age:** podiel rezervy tepu, 50–80 % = zóny 1–3, ≥ 80 % = zóny 4–5 (A, WHOOP zóny sú na rezerve tepu).
 - **Pohlavie** určuje konštanty TRIMP a strainu; bez neho sa použijú mužské (A).
 - **Neodmerané dni:** deň s menej ako 1 000 minútami tepu sa nepočíta do stavu záťaže (nie je to deň bez záťaže) a ukončený taký deň nemá strain ani Activity. Stav záťaže potrebuje aspoň 4 odmerané dni zo 7 a 14 z 28 (A).
+- **Bdelý pokojový tep pre MET a Uth VO2max:** medián 10. percentilu tepu v bdelých minútach mimo tréningov za deň a 14 dní pred ním, bez neho nočný základ (A; rezerva tepu zodpovedá rezerve VO2 len od bdelého pokojového tepu, nočné minimum nafukovalo MET). Uložený ako `awake_hr_p10` a `awake_rest_hr` v `DayFeatures`. Strain a TRIMP ostávajú na nočnom základe ako WHOOP.
+- **NightSignal:** nočný tep z minút spánku v 00:00–07:00 (aspoň 60) namiesto minút bez krokov, ktoré nemáme po minútach; bdenie pri neskorom zaspávaní ho už nezvyšuje (A).
 - **WHOOP Age:** súčet dopadov metrík sa násobí faktorom prekryvov 0,45 (A, nafitované na štyri typické profily z tabuľky 2 white paperu; WHOOP svoju úpravu nezverejňuje).
 
 ## Architektúra

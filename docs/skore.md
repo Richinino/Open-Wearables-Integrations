@@ -40,7 +40,7 @@ Kvôli chýbajúcemu HRV sú skóre regenerácie (WHOOP Recovery, Oura Readiness
 
 **Kĺzavý priemer (EWMA)** s časovou konštantou τ dní: `X_d = X_{d−1} + (1 − e^(−1/τ))·(L_d − X_{d−1})` **[PUB, Banister; GoldenCheetah]**.
 
-**Odhad MET z tepu**: `MET = 1 + r·(VO2max/3,5 − 1)` **[A, %HRR ≈ %VO2R, Swain]**.
+**Odhad MET z tepu**: `MET = 1 + r·(VO2max/3,5 − 1)` **[A, %HRR ≈ %VO2R, Swain]**. `HRrest` je tu **bdelý** pokojový tep: medián 10. percentilu tepu v bdelých minútach mimo tréningov (deň aspoň 300 takých minút) za počítaný deň a 14 dní pred ním; bez neho nočný základ **[A]**. Swainov vzťah platí len od pokojového tepu v bdelom stave; nočné minimum robilo z bežného sedenia strednú aktivitu.
 
 **Pravidelnosť spánku (SRI)**: minútový vektor spánok/bdenie; `SRI = 200·(zhodné páry 24 h od seba / platné páry) − 100`; zdriemnutia sa rátajú ako spánok; čas bez nameraného tepu je chýbajúci, nie bdenie **[PUB, Phillips 2017; Fischer 2021]**. UK Biobank: medián 81, kvintily 71,7 / 78,6 / 83,2 / 87,3 **[PUB, Windred 2024]**.
 
@@ -166,7 +166,7 @@ Výsledok = vážený priemer, každá zložka orezaná na 0–100. Pásma 85+ o
 
 ### Varovanie pred chorobou alebo preťažením (NightSignal)
 
-Nočný tep `A` = priemer tepu 00:00–07:00 z minút bez krokov; základ `M` = medián všetkých predošlých nocí. Zelená `A < M + 3`, žltá `A = M + 3`, červená `A ≥ M + 4` bpm dve noci po sebe **[PUB, Alavi 2022, Nature Medicine]**. Bežné kolísanie pokojového tepu je ±3 bpm (SD 3,0) **[PUB, Quer 2020, 92 457 ľudí]**.
+Nočný tep `A` = priemer tepu 00:00–07:00 z minút bez krokov **[PUB]**; owi berie minúty spánku (fázy okrem bdenia, záznam bez fáz celý), aspoň 60, lebo kroky po minútach nemáme a bdenie pri neskorom zaspávaní by tep zvyšovalo **[A]**; základ `M` = medián všetkých predošlých nocí. Zelená `A < M + 3`, žltá `A = M + 3`, červená `A ≥ M + 4` bpm dve noci po sebe **[PUB, Alavi 2022, Nature Medicine]**. Bežné kolísanie pokojového tepu je ±3 bpm (SD 3,0) **[PUB, Quer 2020, 92 457 ľudí]**.
 
 ### Ďalšie (len pre porovnanie)
 
@@ -176,7 +176,7 @@ Nočný tep `A` = priemer tepu 00:00–07:00 z minút bez krokov; základ `M` = 
 
 ## 5. Dlhodobé ukazovatele
 
-- **VO2max podľa Uth–Sørensena**: `15,3·HRmax/HRrest` **[PUB, chyba 4,5 % pri nameranom HRmax]** – kontrola odhadu z hodiniek.
+- **VO2max podľa Uth–Sørensena**: `15,3·HRmax/HRrest` **[PUB, chyba 4,5 % pri nameranom HRmax]** – kontrola odhadu z hodiniek. `HRrest` = bdelý pokojový tep ako pri MET **[A]**; nočné minimum ho nadhodnocovalo.
 - **WHOOP Age / Healthspan**: 9 metrík za 6 mesiacov (dĺžka a pravidelnosť spánku, kroky, minúty v zónach 1–3 a 4–5, silový tréning, VO2max, pokojový tep, podiel svalovej hmoty); dopad metriky `10·ln(HR)` rokov, kde HR je pomer rizika **[WP]**; úprava prekryvov nezverejnená, owi násobí súčet dopadov faktorom 0,45 nafitovaným na štyri typické profily z tabuľky 2 **[A]**. Ciele pre 30-ročného: 7–9 h, pravidelnosť ≥ 70 %, 8 000 krokov, zóny 1–3 ≥ 100 min a 4–5 ≥ 10 min týždenne, sila ≥ 40 min, VO2max muži > 44, pokojový tep muži < 60 **[WP]**. Dôvera: nízka.
 
 ## 6. Návrh pre web

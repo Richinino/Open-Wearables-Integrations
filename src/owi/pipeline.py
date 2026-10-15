@@ -154,10 +154,15 @@ def compute(inputs: DayInputs, params: Params, timezone: str) -> DayResult:
 
 
 def day_features(store: Store, inputs: DayInputs, result: DayResult, person: Person) -> DayFeatures:
-    """Features of one day. The reference resting heart rate is the mean sleep_rhr of the
-    stored days in the 14 before it; without any, extract() uses the day's own."""
+    """Features of one day, with references from the stored days in the 14 before it.
+
+    The resting heart rate for load is their mean sleep_rhr (without any, extract() uses the
+    day's own); their awake_hr_p10 values feed the awake reference for METs.
+    """
     earlier = store.features(
         inputs.day - timedelta(days=REST_HR_DAYS), inputs.day - timedelta(days=1)
     )
-    values = [f.sleep_rhr for f in earlier if f.sleep_rhr is not None]
-    return features.extract(inputs, result, person, fmean(values) if values else None)
+    sleep_rhr = [f.sleep_rhr for f in earlier if f.sleep_rhr is not None]
+    awake = [f.awake_hr_p10 for f in earlier if f.awake_hr_p10 is not None]
+    rest = fmean(sleep_rhr) if sleep_rhr else None
+    return features.extract(inputs, result, person, rest, awake)

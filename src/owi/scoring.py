@@ -79,7 +79,7 @@ def score_day(
         night_signal=night,
         day_score=_day_score((ready, performance, activity), night),
         vo2max=today.vo2max,
-        vo2max_uth=longterm.vo2max_uth(person.max_hr, today.resting_hr),
+        vo2max_uth=longterm.vo2max_uth(person.max_hr, today.awake_rest_hr),
         whoop_age=longterm.whoop_age(history, person),
     )
 

@@ -34,14 +34,15 @@ def with_day(days: list[DayFeatures], day: date, **fields: object) -> list[DayFe
 
 
 def test_day_values_come_from_the_days_features():
-    days = with_day(history(), D, strain=14.5, vo2max=51.0, resting_hr=50.0)
+    days = with_day(history(), D, strain=14.5, vo2max=51.0, resting_hr=45.0, awake_rest_hr=60.0)
 
     scores = score_day(days, [], TEEN, TIMEZONE)
 
     assert scores.day == D
     assert scores.strain == 14.5
     assert scores.vo2max == 51.0
-    assert scores.vo2max_uth == pytest.approx(15.3 * 200.0 / 50.0)
+    # Uth-Sorensen from the awake resting heart rate, not the sleeping minimum.
+    assert scores.vo2max_uth == pytest.approx(15.3 * 200.0 / 60.0)
 
 
 def test_a_finished_day_worn_too_little_has_no_strain_or_activity():

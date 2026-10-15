@@ -204,14 +204,20 @@ def test_day_features_use_the_mean_sleep_rhr_of_the_14_stored_days_before(tmp_pa
     result = compute(inputs, Params(), TIMEZONE)
     person = Person(age=17, sex=MALE)
     with Store(tmp_path / "owi.db") as store:
-        for days_back, sleep_rhr in ((15, 70.0), (14, 40.0), (3, None), (1, 50.0), (-1, 99.0)):
+        for days_back, sleep_rhr, awake_p10 in (
+            (15, 70.0, 99.0),
+            (14, 40.0, 60.0),
+            (3, None, None),
+            (1, 50.0, 64.0),
+            (-1, 99.0, 99.0),
+        ):
             day = DAY - timedelta(days=days_back)
-            store.save_features(make_features(day, sleep_rhr=sleep_rhr))
+            store.save_features(make_features(day, sleep_rhr=sleep_rhr, awake_hr_p10=awake_p10))
 
         features = day_features(store, inputs, result, person)
 
-    assert features == extract(inputs, result, person, 45.0)
-    assert features != extract(inputs, result, person, None)
+    assert features == extract(inputs, result, person, 45.0, [60.0, 64.0])
+    assert features != extract(inputs, result, person, None, [60.0, 64.0])
 
 
 def test_day_features_without_stored_days_use_the_days_own_resting_hr(tmp_path):
@@ -220,4 +226,4 @@ def test_day_features_without_stored_days_use_the_days_own_resting_hr(tmp_path):
     with Store(tmp_path / "owi.db") as store:
         features = day_features(store, inputs, result, Person())
 
-    assert features == extract(inputs, result, Person(), None)
+    assert features == extract(inputs, result, Person(), None, [])

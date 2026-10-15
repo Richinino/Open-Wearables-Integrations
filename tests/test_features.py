@@ -1,6 +1,7 @@
 import math
 from dataclasses import replace
 from datetime import date, datetime, timedelta
+from statistics import median, quantiles
 
 import pytest
 
@@ -115,6 +116,7 @@ def run(
     result: DayResult | None = None,
     lead_in=(),
     tonight=(),
+    awake_history=(),
 ) -> DayFeatures:
     inputs = DayInputs(
         day=DAY,
@@ -127,7 +129,7 @@ def run(
         lead_in_samples=tuple(lead_in),
         tonight_sleeps=tuple(tonight),
     )
-    return extract(inputs, result or make_result(), person, rest_hr)
+    return extract(inputs, result or make_result(), person, rest_hr, awake_history)
 
 
 # Day values
@@ -352,19 +354,47 @@ def test_sleep_rhr_needs_a_main_sleep():
     assert features.sleep_hr_low_at is None
 
 
-def test_night_hr_is_the_mean_until_seven_without_workouts():
+def test_night_hr_is_the_mean_of_minutes_asleep_until_seven():
+    night = session(
+        "night",
+        local(-1),
+        local(8),
+        (
+            (local(-1), local(2), "light"),
+            (local(2), local(2, 30), "awake"),
+            (local(2, 30), local(8), "deep"),
+        ),
+    )
     samples = [
-        *hr_minutes(local(0), [60.0] * 60),
-        *hr_minutes(local(1), [150.0] * 30),
-        *hr_minutes(local(7), [100.0] * 60),
+        *hr_minutes(local(0), [50.0] * 120),
+        *hr_minutes(local(2), [80.0] * 30),  # awake
+        *hr_minutes(local(2, 30), [52.0] * 270),
+        *hr_minutes(local(7), [60.0] * 60),  # after seven
     ]
-    workouts = [workout("night-run", local(1), 30)]
 
-    assert run(samples, workouts).night_hr == pytest.approx(60.0)
+    features = run(samples, sleeps=[night])
+
+    assert features.night_hr == pytest.approx((120 * 50.0 + 270 * 52.0) / 390)
 
 
-def test_night_hr_needs_an_hour_of_readings():
-    assert run(hr_minutes(local(0), [60.0] * 59)).night_hr is None
+def test_night_hr_leaves_out_time_awake_before_a_late_bedtime():
+    night = session("night", local(3), local(10))  # no stages: all of it counts as asleep
+    samples = [*hr_minutes(local(0), [75.0] * 180), *hr_minutes(local(3), [50.0] * 240)]
+
+    assert run(samples, sleeps=[night]).night_hr == pytest.approx(50.0)
+
+
+def test_night_hr_needs_an_hour_asleep_before_seven():
+    night = session("night", local(6, 1), local(10))
+    samples = hr_minutes(local(0), [50.0] * 600)
+
+    assert run(samples, sleeps=[night]).night_hr is None
+
+
+def test_night_hr_needs_a_main_sleep():
+    nap = session("nap", local(1), local(4), is_nap=True)
+
+    assert run(hr_minutes(local(0), [50.0] * 300), sleeps=[nap]).night_hr is None
 
 
 def test_max_hr_seen_ignores_single_minute_spikes():
@@ -477,6 +507,68 @@ def test_met_minutes_come_from_awake_heart_rate_and_vo2max():
     assert features.met_minutes_high == pytest.approx(35.0)
     assert features.inactive_hours == 0.0
     assert features.long_inactive_bouts == 0
+
+
+def awake_day(values: list[float]) -> list:
+    """A night at 40 bpm, then the given awake minutes from 08:00 and a hard workout."""
+    return [
+        *hr_minutes(local(0), [40.0] * 360),
+        *hr_minutes(local(8), values),
+        *hr_minutes(local(20), [170.0] * 60),
+    ]
+
+
+NIGHT = session("night", local(-1), local(6))
+WORKOUT = workout("run", local(20), 60)
+
+
+def test_awake_hr_p10_is_the_tenth_percentile_of_awake_minutes_outside_workouts():
+    values = [60.0 + i % 40 for i in range(400)]
+
+    features = run(awake_day(values), [WORKOUT], [NIGHT])
+
+    assert features.awake_hr_p10 == pytest.approx(quantiles(values, n=10, method="inclusive")[0])
+
+
+def test_awake_hr_p10_needs_300_awake_minutes():
+    features = run(awake_day([70.0] * 299), [WORKOUT], [NIGHT])
+
+    assert features.awake_hr_p10 is None
+
+
+def test_awake_reference_is_the_median_of_recent_days_and_the_day_itself():
+    features = run(awake_day([70.0] * 300), [WORKOUT], [NIGHT], awake_history=[60.0, 64.0, 75.0])
+
+    assert features.awake_hr_p10 == 70.0
+    assert features.awake_rest_hr == pytest.approx(median([60.0, 64.0, 75.0, 70.0]))
+
+
+def test_awake_reference_uses_recent_days_when_the_day_has_too_little():
+    features = run(awake_day([70.0] * 100), [WORKOUT], [NIGHT], awake_history=[60.0, 64.0])
+
+    assert features.awake_rest_hr == pytest.approx(62.0)
+
+
+def test_awake_reference_falls_back_to_the_sleep_based_one():
+    features = run(awake_day([70.0] * 100), [WORKOUT], [NIGHT])
+
+    assert features.awake_rest_hr == REST
+
+
+def test_mets_use_the_awake_reference_while_load_keeps_the_sleep_based_one():
+    # Awake reference 70: MET = 1 + 10 * reserve(hr, 70, 190).
+    values = [70.0] * 300 + [124.0] * 30  # 1 MET, then 5.5 MET
+    samples = awake_day(values)
+
+    features = run(samples, [WORKOUT], [NIGHT])
+
+    awake = minute_series(samples[360:])
+    assert features.awake_rest_hr == 70.0
+    assert features.inactive_hours == pytest.approx(5.0)
+    assert features.medium_minutes == 30
+    assert features.met_minutes_medium == pytest.approx(30 * 5.5)
+    assert features.high_minutes == 60  # the workout at 170 bpm
+    assert features.trimp == pytest.approx(load.trimp(awake, REST, MAX, MALE))
 
 
 def test_without_vo2max_met_fields_are_missing():

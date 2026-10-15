@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timedelta
-from statistics import fmean
+from statistics import fmean, median, quantiles
 from typing import Any
 
 from owi import heart, load, sleep
@@ -19,6 +19,7 @@ from owi.score_models import DayFeatures, Person
 SLEEP_RHR_MINUTES = 5
 NIGHT_HOURS = 7
 MIN_NIGHT_MINUTES = 60
+MIN_AWAKE_REST_MINUTES = 300
 MEDIUM_MET = 3.0
 HIGH_MET = 6.0
 INACTIVE_MET = 1.5
@@ -110,11 +111,27 @@ def _lowest_mean(minute_hr: Mapping[datetime, float], width: int) -> tuple[float
 
 
 def _night_hr(
-    minute_hr: Mapping[datetime, float], start: datetime, in_workout: set[datetime]
+    minute_hr: Mapping[datetime, float], start: datetime, main: SleepSession | None
 ) -> float | None:
+    """Mean heart rate over the minutes asleep in the main sleep from 00:00 to 07:00.
+
+    Alavi 2022 uses minutes without steps; without per-minute steps, time asleep is the
+    closest stand-in, and it leaves out the awake minutes of a late bedtime.
+    """
+    if main is None:
+        return None
+    asleep = _covered((i.start, i.end) for i in _timeline(main) if i.stage != AWAKE)
     end = start + timedelta(hours=NIGHT_HOURS)
-    values = [v for m, v in minute_hr.items() if start <= m < end and m not in in_workout]
+    values = [v for m, v in minute_hr.items() if start <= m < end and m in asleep]
     return fmean(values) if len(values) >= MIN_NIGHT_MINUTES else None
+
+
+def _awake_hr_p10(awake_hr: Mapping[datetime, float], in_workout: set[datetime]) -> float | None:
+    """10th percentile of the awake heart rate outside workouts: the day's awake rest."""
+    values = [v for m, v in awake_hr.items() if m not in in_workout]
+    if len(values) < MIN_AWAKE_REST_MINUTES:
+        return None
+    return quantiles(values, n=10, method="inclusive")[0]
 
 
 def _max_held(minute_hr: Mapping[datetime, float]) -> float | None:
@@ -258,13 +275,19 @@ def _sleep(main: SleepSession | None) -> dict[str, Any]:
 
 
 def extract(
-    inputs: DayInputs, result: DayResult, person: Person, rest_hr: float | None
+    inputs: DayInputs,
+    result: DayResult,
+    person: Person,
+    rest_hr: float | None,
+    awake_history: Sequence[float] = (),
 ) -> DayFeatures:
     """Features of one local day.
 
-    `rest_hr` is the reference resting heart rate for heart-rate reserve (the 14-day mean
-    of sleep_rhr); without it the day's own resting heart rate is used. Without either,
-    or without any heart-rate reading, load, MET and zone values are None.
+    `rest_hr` is the reference resting heart rate for load and zones (the 14-day mean of
+    sleep_rhr); without it the day's own resting heart rate is used. METs need an awake
+    resting heart rate instead: the median of `awake_history` (awake_hr_p10 of the 14 days
+    before) and the day's own awake_hr_p10, else `rest_hr`. Without a reference, or without
+    any heart-rate reading, load, MET and zone values are None.
     """
     minute_hr = heart.minute_series(inputs.samples)
     rest = rest_hr if rest_hr is not None else result.hr_resting
@@ -281,6 +304,12 @@ def extract(
     asleep = _covered((i.start, i.end) for i in (*timeline, *tonight) if i.stage != AWAKE)
     awake_hr = {m: v for m, v in minute_hr.items() if m not in asleep}
 
+    awake_p10 = _awake_hr_p10(awake_hr, in_workout)
+    # (A) Heart-rate reserve tracks VO2 reserve only from an awake resting heart rate; the
+    # sleeping minimum turned ordinary sitting into moderate activity.
+    awake_refs = [*awake_history, *([] if awake_p10 is None else [awake_p10])]
+    awake_rest = median(awake_refs) if awake_refs else rest
+
     in_main = _covered([(main.start, main.end)]) if main else set()
     night = heart.minute_series(inputs.lead_in_samples) | minute_hr if main else {}
     low = _lowest_mean({m: v for m, v in night.items() if m in in_main}, SLEEP_RHR_MINUTES)
@@ -288,16 +317,14 @@ def extract(
     if rest is None or not minute_hr:
         load_values = {**dict.fromkeys(_LOAD_FIELDS), "workout_strain": {}}
         zones = dict.fromkeys(_ZONE_FIELDS)
-        mets = dict.fromkeys(_MET_FIELDS)
     else:
         day = (inputs.start, inputs.end)
         load_values = _load(minute_hr, awake_hr, rest, max_hr, person.sex, asleep, workouts, day)
         zones = _zones(awake_hr, rest, max_hr)
-        mets = (
-            dict.fromkeys(_MET_FIELDS)
-            if vo2max is None
-            else _mets(awake_hr, rest, max_hr, vo2max, in_workout)
-        )
+    if awake_rest is None or vo2max is None or not minute_hr:
+        mets = dict.fromkeys(_MET_FIELDS)
+    else:
+        mets = _mets(awake_hr, awake_rest, max_hr, vo2max, in_workout)
 
     return DayFeatures(
         day=inputs.day,
@@ -306,9 +333,11 @@ def extract(
         resting_hr=result.hr_resting,
         sleep_rhr=low[0] if low else None,
         sleep_hr_low_at=low[1] if low else None,
-        night_hr=_night_hr(minute_hr, inputs.start, in_workout),
+        night_hr=_night_hr(minute_hr, inputs.start, main),
         max_hr_seen=_max_held(minute_hr),
         **load_values,
+        awake_hr_p10=awake_p10,
+        awake_rest_hr=awake_rest,
         **mets,
         **zones,
         active_kcal=result.activity_kcal_est,

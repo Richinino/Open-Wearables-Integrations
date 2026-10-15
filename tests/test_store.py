@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from dataclasses import replace
 from datetime import date
@@ -6,7 +7,7 @@ import pytest
 
 from owi.models import DayResult, WorkoutResult
 from owi.score_models import Score
-from owi.store import Store
+from owi.store import Store, jsonable
 from tests.factories import make_features, make_scores, utc
 
 DAY = date(2026, 10, 12)
@@ -286,6 +287,17 @@ def test_features_span_covers_all_stored_features(store):
     store.save_features(make_features(date(2026, 9, 28)))
 
     assert store.features_span() == (date(2026, 9, 28), date(2026, 10, 3))
+
+
+def test_features_stored_before_the_awake_reference_load_with_defaults(store):
+    features = make_features(DAY)
+    data = jsonable(features)
+    del data["awake_hr_p10"], data["awake_rest_hr"]
+    store._db.execute(
+        "INSERT INTO day_features VALUES (?, ?, ?)", (DAY.isoformat(), json.dumps(data), "x")
+    )
+
+    assert store.get_features(DAY) == replace(features, awake_hr_p10=None, awake_rest_hr=None)
 
 
 def make_old_database(path) -> None:
