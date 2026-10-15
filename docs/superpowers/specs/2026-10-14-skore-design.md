@@ -26,6 +26,7 @@ Dátum: 2026-10-14. Stav: schválené. Vzorce a zdroje: [`docs/skore.md`](../../
 - **Pohlavie** určuje konštanty TRIMP a strainu; bez neho sa použijú mužské (A).
 - **Neodmerané dni:** deň s menej ako 1 000 minútami tepu sa nepočíta do stavu záťaže (nie je to deň bez záťaže) a ukončený taký deň nemá strain ani Activity. Stav záťaže potrebuje aspoň 4 odmerané dni zo 7 a 14 z 28 (A).
 - **Bdelý pokojový tep pre MET a Uth VO2max:** medián 10. percentilu tepu v bdelých minútach mimo tréningov za deň a 14 dní pred ním, bez neho nočný základ (A; rezerva tepu zodpovedá rezerve VO2 len od bdelého pokojového tepu, nočné minimum nafukovalo MET). Uložený ako `awake_hr_p10` a `awake_rest_hr` v `DayFeatures`. Strain a TRIMP ostávajú na nočnom základe ako WHOOP.
+- **Pohyb z krokov (Activity):** kde deň má hodinové kroky, neaktívny čas a 50-minútové sedenia sú bdelé nosené hodiny pod 250 krokov bez tréningu a strednú či vysokú intenzitu potvrdí len tréning alebo hodina s aspoň 500 krokmi (A, Fitbit 250 krokov za hodinu). Bez hodinových krokov len tep.
 - **NightSignal:** nočný tep z minút spánku v 00:00–07:00 (aspoň 60) namiesto minút bez krokov, ktoré nemáme po minútach; bdenie pri neskorom zaspávaní ho už nezvyšuje (A).
 - **WHOOP Age:** súčet dopadov metrík sa násobí faktorom prekryvov 0,45 (A, nafitované na štyri typické profily z tabuľky 2 white paperu; WHOOP svoju úpravu nezverejňuje).
 

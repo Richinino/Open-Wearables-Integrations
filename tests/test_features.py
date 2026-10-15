@@ -10,6 +10,7 @@ from owi.features import extract
 from owi.heart import minute_series
 from owi.models import (
     HEART_RATE,
+    STEPS,
     DayInputs,
     DayResult,
     Profile,
@@ -18,7 +19,16 @@ from owi.models import (
     WorkoutResult,
 )
 from owi.score_models import MALE, DayFeatures, Person
-from tests.factories import HC_SHEALTH, SAMSUNG_WATCH, hr_minutes, sample, utc, workout
+from tests.factories import (
+    HC_PHONE,
+    HC_SHEALTH,
+    SAMSUNG_PHONE,
+    SAMSUNG_WATCH,
+    hr_minutes,
+    sample,
+    utc,
+    workout,
+)
 
 DAY = date(2026, 10, 12)
 START = utc(2026, 10, 11, 22)  # local midnight, Europe/Bratislava
@@ -569,6 +579,77 @@ def test_mets_use_the_awake_reference_while_load_keeps_the_sleep_based_one():
     assert features.met_minutes_medium == pytest.approx(30 * 5.5)
     assert features.high_minutes == 60  # the workout at 170 bpm
     assert features.trimp == pytest.approx(load.trimp(awake, REST, MAX, MALE))
+
+
+# Movement from hourly steps
+
+
+def hourly(hour: int, steps: float) -> object:
+    """Samsung's hourly step count for the local hour starting at `hour`."""
+    return sample(local(hour), STEPS, steps, SAMSUNG_PHONE)
+
+
+def test_inactive_hours_are_awake_worn_hours_under_250_steps_without_workouts():
+    samples = [
+        *hr_minutes(local(8), [70.0] * 420),  # 08:00-15:00
+        *hr_minutes(local(15), [70.0] * 20),  # worn too little
+        hourly(8, 100),
+        hourly(9, 300),
+        sample(local(10, 15), STEPS, 200, HC_PHONE),  # no Samsung hour: the phone counts
+        sample(local(10, 40), STEPS, 100, HC_PHONE),
+        hourly(11, 600),
+        hourly(12, 100),
+        sample(local(12, 30), STEPS, 5000, HC_PHONE),  # Samsung has this hour
+        sample(local(0), STEPS, 20000, HC_SHEALTH),  # the daily total is not hourly
+    ]
+    workouts = [workout("lift", local(12), 20, type_="strength_training")]
+
+    features = run(samples, workouts)
+
+    # 08:00 (100 steps), 13:00 and 14:00 (no steps at all).
+    assert features.inactive_hours == 3.0
+    assert features.long_inactive_bouts == 3
+
+
+def test_hours_asleep_are_not_inactive_hours():
+    night = session("night", local(-1), local(7, 45))
+    samples = [*hr_minutes(local(7), [50.0] * 120), hourly(7, 0), hourly(8, 0)]
+
+    features = run(samples, sleeps=[night])
+
+    assert features.inactive_hours == 1.0  # 08:00; 07:00 has only 15 minutes awake
+
+
+def test_with_hourly_steps_effort_counts_only_in_workouts_or_hours_of_500_steps():
+    # Awake reference 70 from earlier days: 124 bpm is 5.5 MET.
+    samples = [
+        *hr_minutes(local(9), [124.0] * 30),
+        *hr_minutes(local(10), [124.0] * 30),
+        *hr_minutes(local(11), [124.0] * 30),
+        hourly(9, 600),
+        hourly(10, 100),
+    ]
+    workouts = [workout("swim", local(11), 30, type_="pool_swimming")]
+
+    features = run(samples, workouts, awake_history=[70.0])
+
+    assert features.awake_rest_hr == 70.0
+    assert features.medium_minutes == 60
+    assert features.met_minutes_medium == pytest.approx(60 * 5.5)
+
+
+def test_without_hourly_steps_activity_comes_from_heart_rate_alone():
+    samples = [
+        *hr_minutes(local(9), [124.0] * 30),
+        *hr_minutes(local(10), [70.0] * 60),
+        sample(local(0), STEPS, 20000, HC_SHEALTH),
+    ]
+
+    features = run(samples, awake_history=[70.0])
+
+    assert features.medium_minutes == 30
+    assert features.inactive_hours == pytest.approx(1.0)
+    assert features.long_inactive_bouts == 1
 
 
 def test_without_vo2max_met_fields_are_missing():

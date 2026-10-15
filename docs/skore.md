@@ -96,6 +96,13 @@ Zložky a prahy **[V]**: neaktívny čas (≤ 5–8 h dobré, > 12 h zlé), pohy
 
 Bodovanie zložiek a váhy sú **[A]**: cieľ 0,25, neaktívny čas 0,20, objem 0,15, frekvencia 0,15, pohyb každú hodinu 0,10, odpočinok 0,15. Dôvera: nízka až stredná.
 
+Pohyb z krokov, kde má deň hodinové kroky (Samsung po hodinách, inak záznamy krokomera telefónu v hodine, kde začínajú; denný súčet Samsung Health nie) **[A, Fitbit 250 krokov za hodinu]**:
+
+- neaktívna hodina = bdelá hodina s aspoň 30 minútami tepu, pod 250 krokov a bez tréningu; neaktívny čas = počet takých hodín a každá sa ráta aj ako jedno 50-minútové sedenie (pohyb každú hodinu);
+- minúta sa do strednej a vysokej intenzity ráta len v tréningu alebo v hodine s aspoň 500 krokmi, lebo tep sám nerozlíši ľahkú námahu od strednej.
+
+Bez hodinových krokov ostáva odhad len z tepu (MET pod 1,5 = neaktívna minúta).
+
 ### Kalórie
 
 - Keytel 2005 (kJ/min, platí pre tréning, nie pre pokoj) **[PUB]**:

@@ -6,6 +6,7 @@ stretch of time (a workout, a sleep stage) when any part of it overlaps that str
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timedelta
 from statistics import fmean, median, quantiles
@@ -13,7 +14,16 @@ from typing import Any
 
 from owi import heart, load, sleep
 from owi.estimates import REST_VO2
-from owi.models import DayInputs, DayResult, SleepInterval, SleepSession, SourceRef, Workout
+from owi.models import (
+    STEPS,
+    DayInputs,
+    DayResult,
+    Sample,
+    SleepInterval,
+    SleepSession,
+    SourceRef,
+    Workout,
+)
 from owi.score_models import DayFeatures, Person
 
 SLEEP_RHR_MINUTES = 5
@@ -24,6 +34,12 @@ MEDIUM_MET = 3.0
 HIGH_MET = 6.0
 INACTIVE_MET = 1.5
 LONG_INACTIVE_MINUTES = 50
+# (A) Fitbit's hourly goal: an awake, worn hour under 250 steps is an inactive hour, and stands
+# for one of Oura's 50-minute sitting bouts. Heart rate alone cannot tell light from moderate
+# effort, so with hourly steps a minute counts as effort only in a workout or a 500-step hour.
+INACTIVE_HOUR_STEPS = 250
+EFFORT_HOUR_STEPS = 500
+MIN_WORN_HOUR_MINUTES = 30
 ZONE_LOW_RESERVE = 0.5
 ZONE_HIGH_RESERVE = 0.8
 MIN_AWAKE_BOUT = timedelta(minutes=1)
@@ -33,6 +49,7 @@ ASLEEP = "asleep"
 STAGES = ("deep", "rem", "light")
 
 _ONE_MINUTE = timedelta(minutes=1)
+_ONE_HOUR = timedelta(hours=1)
 _LOAD_FIELDS = ("trimp", "strain_load", "strain")
 _MET_FIELDS = (
     "met_minutes_medium",
@@ -181,24 +198,81 @@ def _zones(awake_hr: Mapping[datetime, float], rest_hr: float, max_hr: float) ->
     return {"zone_low_minutes": low, "zone_high_minutes": high}
 
 
+def _hour(moment: datetime, start: datetime) -> datetime:
+    """Start of the hour of the day that `moment` falls in, counted from the day's start."""
+    return start + (moment - start) // _ONE_HOUR * _ONE_HOUR
+
+
+def _hourly_steps(
+    samples: Iterable[Sample], start: datetime, end: datetime
+) -> dict[datetime, float] | None:
+    """Steps in each hour of the day; None when the day has no hourly step source.
+
+    Samsung's hourly counts win where they cover an hour, else the phone counter's records,
+    each counted in the hour it starts (OW gives no end; the records are short). Samsung
+    Health's daily total says nothing about hours and is left out.
+    """
+    samsung: dict[datetime, float] = {}
+    phone: dict[datetime, float] = {}
+    for item in samples:
+        if item.type != STEPS or not start <= item.timestamp < end:
+            continue
+        if item.source.is_samsung_direct:
+            counts = samsung
+        elif item.source.is_health_connect and not item.source.is_samsung_health_app:
+            counts = phone
+        else:
+            continue
+        hour = _hour(item.timestamp, start)
+        counts[hour] = counts.get(hour, 0.0) + item.value
+    if not samsung and not phone:
+        return None
+    hours = [start + i * _ONE_HOUR for i in range(int((end - start) / _ONE_HOUR))]
+    return {hour: samsung.get(hour, phone.get(hour, 0.0)) for hour in hours}
+
+
+def _inactive_hours(
+    steps: Mapping[datetime, float],
+    awake_hr: Mapping[datetime, float],
+    in_workout: set[datetime],
+    start: datetime,
+) -> dict[str, Any]:
+    """Awake, worn hours under 250 steps without workout minutes."""
+    worn = Counter(_hour(minute, start) for minute in awake_hr)
+    in_workouts = {_hour(minute, start) for minute in in_workout}
+    hours = sum(
+        1
+        for hour, count in steps.items()
+        if count < INACTIVE_HOUR_STEPS
+        and worn[hour] >= MIN_WORN_HOUR_MINUTES
+        and hour not in in_workouts
+    )
+    return {"inactive_hours": float(hours), "long_inactive_bouts": hours}
+
+
 def _mets(
     awake_hr: Mapping[datetime, float],
     rest_hr: float,
     max_hr: float,
     vo2max: float,
     in_workout: set[datetime],
+    effort: set[datetime] | None = None,
 ) -> dict[str, Any]:
-    """MET = 1 + r * (VO2max / 3.5 - 1): heart-rate reserve tracks VO2 reserve (Swain)."""
+    """MET = 1 + r * (VO2max / 3.5 - 1): heart-rate reserve tracks VO2 reserve (Swain).
+
+    With `effort`, only those minutes can count as medium or high.
+    """
     scale = vo2max / REST_VO2 - 1
     medium = high = inactive = bouts = run = 0
     medium_met = high_met = 0.0
     last_inactive: datetime | None = None
     for minute in sorted(awake_hr):
         met = 1 + load.hr_reserve(awake_hr[minute], rest_hr, max_hr) * scale
-        if met >= HIGH_MET:
+        counts = effort is None or minute in effort
+        if met >= HIGH_MET and counts:
             high += 1
             high_met += met
-        elif met >= MEDIUM_MET:
+        elif met >= MEDIUM_MET and counts:
             medium += 1
             medium_met += met
         elif met < INACTIVE_MET and minute not in in_workout:
@@ -321,10 +395,21 @@ def extract(
         day = (inputs.start, inputs.end)
         load_values = _load(minute_hr, awake_hr, rest, max_hr, person.sex, asleep, workouts, day)
         zones = _zones(awake_hr, rest, max_hr)
+    steps = _hourly_steps(inputs.samples, inputs.start, inputs.end)
     if awake_rest is None or vo2max is None or not minute_hr:
         mets = dict.fromkeys(_MET_FIELDS)
-    else:
+    elif steps is None:
         mets = _mets(awake_hr, awake_rest, max_hr, vo2max, in_workout)
+    else:
+        effort = {
+            m
+            for m in awake_hr
+            if m in in_workout or steps[_hour(m, inputs.start)] >= EFFORT_HOUR_STEPS
+        }
+        mets = {
+            **_mets(awake_hr, awake_rest, max_hr, vo2max, in_workout, effort),
+            **_inactive_hours(steps, awake_hr, in_workout, inputs.start),
+        }
 
     return DayFeatures(
         day=inputs.day,

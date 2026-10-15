@@ -58,7 +58,9 @@ class DayFeatures:
     met_minutes_high: float | None = None  # MET-minutes spent at 6+ MET
     medium_minutes: int | None = None  # minutes at 3-6 MET
     high_minutes: int | None = None  # minutes at 6+ MET
-    inactive_hours: float | None = None  # awake, worn, below 1.5 MET, outside workouts
+    # Awake, worn, below 1.5 MET, outside workouts; with hourly steps, awake worn hours under
+    # 250 steps without workouts, each also counted as one long bout.
+    inactive_hours: float | None = None
     long_inactive_bouts: int | None = None  # awake inactive stretches of 50+ minutes
     active_kcal: float | None = None  # DayResult.activity_kcal_est
     steps: int | None = None
