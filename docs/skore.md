@@ -66,6 +66,7 @@ Overenie: deň so štyrmi jazdami predpovedá 19,5–20,1, namerané 20,1; dodat
 - Záťaž tréningu = Banister TRIMP **[V/WP]**.
 - `strain = priemer dennej záťaže za 7 dní`, `tolerance = priemer za 28 dní` **[V]**.
 - `pomer = strain / tolerance`: < 0,8 detréning (alebo zotavovanie, ak bol v posledných 14 dňoch preťažený), 0,8–1,0 udržiavanie, 1,0–1,3 produktívny, > 1,3 preťaženie **[V]**. Potrebuje 3 tréningy za 28 dní **[V]**.
+- Deň s menej ako 1 000 minútami tepu je neodmeraný, nie deň bez záťaže: do priemerov sa nepočíta; treba aspoň 4 odmerané dni zo 7 a 14 z 28 **[A]**.
 - Úroveň tréningu oproti priemernému tréningu za 90 dní: < 0,5 veľmi nízka, 0,5–0,75 nízka, 0,75–1,25 stredná, 1,25–2 vysoká, ≥ 2 veľmi vysoká **[V]**.
 
 Dôvera: vysoká.
@@ -176,7 +177,7 @@ Nočný tep `A` = priemer tepu 00:00–07:00 z minút bez krokov; základ `M` = 
 ## 5. Dlhodobé ukazovatele
 
 - **VO2max podľa Uth–Sørensena**: `15,3·HRmax/HRrest` **[PUB, chyba 4,5 % pri nameranom HRmax]** – kontrola odhadu z hodiniek.
-- **WHOOP Age / Healthspan**: 9 metrík za 6 mesiacov (dĺžka a pravidelnosť spánku, kroky, minúty v zónach 1–3 a 4–5, silový tréning, VO2max, pokojový tep, podiel svalovej hmoty); dopad metriky `10·ln(HR)` rokov, kde HR je pomer rizika **[WP]**; úprava prekryvov nezverejnená. Ciele pre 30-ročného: 7–9 h, pravidelnosť ≥ 70 %, 8 000 krokov, zóny 1–3 ≥ 100 min a 4–5 ≥ 10 min týždenne, sila ≥ 40 min, VO2max muži > 44, pokojový tep muži < 60 **[WP]**. Dôvera: nízka.
+- **WHOOP Age / Healthspan**: 9 metrík za 6 mesiacov (dĺžka a pravidelnosť spánku, kroky, minúty v zónach 1–3 a 4–5, silový tréning, VO2max, pokojový tep, podiel svalovej hmoty); dopad metriky `10·ln(HR)` rokov, kde HR je pomer rizika **[WP]**; úprava prekryvov nezverejnená, owi násobí súčet dopadov faktorom 0,45 nafitovaným na štyri typické profily z tabuľky 2 **[A]**. Ciele pre 30-ročného: 7–9 h, pravidelnosť ≥ 70 %, 8 000 krokov, zóny 1–3 ≥ 100 min a 4–5 ≥ 10 min týždenne, sila ≥ 40 min, VO2max muži > 44, pokojový tep muži < 60 **[WP]**. Dôvera: nízka.
 
 ## 6. Návrh pre web
 

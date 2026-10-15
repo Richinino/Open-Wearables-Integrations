@@ -15,6 +15,7 @@ DISTANCE = "distance_walking_running"
 WEIGHT = "weight"
 VO2_MAX = "vo2_max"
 BASAL_ENERGY = "basal_energy"
+BODY_FAT = "body_fat_percentage"
 
 DEFAULT_MAX_HR = 190.0
 
@@ -103,11 +104,16 @@ class Profile:
     vo2max: float | None = None
     basal_kcal_per_day: float | None = None
     max_hr: float = DEFAULT_MAX_HR
+    body_fat_pct: float | None = None
 
 
 @dataclass(frozen=True)
 class DayInputs:
-    """Everything fetched for one local day, already clipped to its window."""
+    """Everything fetched for one local day, already clipped to its window.
+
+    The last two fields reach outside the window. Only the score features read them, so the
+    DayResult stays a pure function of the day itself.
+    """
 
     day: date
     start: datetime  # window start, UTC
@@ -118,6 +124,10 @@ class DayInputs:
     profile: Profile
     complete: bool = True
     elapsed_fraction: float = 1.0
+    # Heart rate before `start`, back to the start of the night's sleep.
+    lead_in_samples: tuple[Sample, ...] = ()
+    # Sleeps that start in the window and end after it: tonight's.
+    tonight_sleeps: tuple[SleepSession, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -35,6 +35,9 @@ YOGA_LOAD_PER_MINUTE = 0.3
 CARDIO_ACUTE_DAYS = 7
 CARDIO_CHRONIC_DAYS = 28
 CARDIO_MIN_LOADED_DAYS = 3
+# (A) At least half of each window must be measured. TRIMP here covers the whole day, so a
+# day without measurement is unknown, not a rest day (docs/skore.md §6).
+CARDIO_MIN_MEASURED = {CARDIO_ACUTE_DAYS: 4, CARDIO_CHRONIC_DAYS: 14}
 
 _ONE_MINUTE = timedelta(minutes=1)
 
@@ -131,17 +134,20 @@ def _status(ratio: float, overreached_recently: bool) -> str:
 def cardio_load(daily_trimp: Sequence[float | None], overreached_recently: bool) -> CardioLoad:
     """Polar Cardio Load status from daily TRIMP, oldest first, the last value being today.
 
-    Days without data count as no load. Polar needs three sessions in 28 days.
+    None marks a day that was not measured; it is left out of the means instead of counting
+    as no load. Polar needs three sessions in 28 days.
     """
-    loads = [0.0 if value is None else value for value in daily_trimp]
-    chronic = loads[-CARDIO_CHRONIC_DAYS:]
+    acute = [v for v in daily_trimp[-CARDIO_ACUTE_DAYS:] if v is not None]
+    chronic = [v for v in daily_trimp[-CARDIO_CHRONIC_DAYS:] if v is not None]
     if (
-        len(loads) < CARDIO_CHRONIC_DAYS
+        len(daily_trimp) < CARDIO_CHRONIC_DAYS
+        or len(acute) < CARDIO_MIN_MEASURED[CARDIO_ACUTE_DAYS]
+        or len(chronic) < CARDIO_MIN_MEASURED[CARDIO_CHRONIC_DAYS]
         or sum(1 for value in chronic if value > 0) < CARDIO_MIN_LOADED_DAYS
     ):
         return CardioLoad(strain_7d=None, tolerance_28d=None, ratio=None, status=None)
 
-    strain = fmean(loads[-CARDIO_ACUTE_DAYS:])
+    strain = fmean(acute)
     tolerance = fmean(chronic)
     ratio = strain / tolerance if tolerance else None
     return CardioLoad(

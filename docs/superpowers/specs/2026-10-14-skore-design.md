@@ -24,13 +24,15 @@ Dátum: 2026-10-14. Stav: schválené. Vzorce a zdroje: [`docs/skore.md`](../../
 - **Vek pod 18:** potreba spánku 8–10 h namiesto 7–9 h (NSF 14–17 rokov, AASM 13–18 rokov). Týka sa WHOOP potreby spánku a Oura bilancie spánku.
 - **Zóny pre WHOOP Age:** podiel rezervy tepu, 50–80 % = zóny 1–3, ≥ 80 % = zóny 4–5 (A, WHOOP zóny sú na rezerve tepu).
 - **Pohlavie** určuje konštanty TRIMP a strainu; bez neho sa použijú mužské (A).
+- **Neodmerané dni:** deň s menej ako 1 000 minútami tepu sa nepočíta do stavu záťaže (nie je to deň bez záťaže) a ukončený taký deň nemá strain ani Activity. Stav záťaže potrebuje aspoň 4 odmerané dni zo 7 a 14 z 28 (A).
+- **WHOOP Age:** súčet dopadov metrík sa násobí faktorom prekryvov 0,45 (A, nafitované na štyri typické profily z tabuľky 2 white paperu; WHOOP svoju úpravu nezverejňuje).
 
 ## Architektúra
 
 Dva stupne. Dátové štruktúry sú v `src/owi/score_models.py` a sú záväzné pre všetky moduly.
 
-1. **Znaky dňa** (`features.py`): z `DayInputs` a `DayResult` jedného dňa vznikne `DayFeatures`. Potrebuje referenčný pokojový tep (14-dňový priemer `sleep_rhr` z uložených dní; bez histórie `hr_resting` dňa).
-2. **Skóre** (`scoring.py`): z uložených `DayFeatures` (najstaršie prvé, posledný = počítaný deň) a skóre predošlého dňa vznikne `DayScores`.
+1. **Znaky dňa** (`features.py`): z `DayInputs` a `DayResult` jedného dňa vznikne `DayFeatures`. Potrebuje referenčný pokojový tep (14-dňový priemer `sleep_rhr` z uložených dní; bez histórie `hr_resting` dňa). `DayInputs` nesie navyše tep od začiatku nočného spánku pred polnocou (pre `sleep_rhr`) a dnešný večerný spánok, ktorý končí až zajtra (minúty v ňom nie sú bdenie). `DayResult` z nich nečerpá a ostáva bez zmeny.
+2. **Skóre** (`scoring.py`): z uložených `DayFeatures` posledných 180 dní (najstaršie prvé, posledný = počítaný deň) a uložených skóre predošlých 14 dní vznikne `DayScores`. Medián „všetkých predošlých nocí“ pre NightSignal a základ potreby spánku tak siahajú najviac 180 dní dozadu.
 
 | Modul | Funkcie | Vlastník |
 |---|---|---|
@@ -47,9 +49,11 @@ Dva stupne. Dátové štruktúry sú v `src/owi/score_models.py` a sú záväzn�
 
 ## Uloženie a API
 
-- SQLite: nové tabuľky `day_features` a `day_scores` (deň, JSON, čas výpočtu). Existujúce tabuľky ostávajú.
-- `GET /v1/days`: každý deň dostane objekt `scores` (tvar `DayScores`, dátumy a časy ako ISO). Ostatné polia sa nemenia.
-- `owi rescore [--from D --to D]` prepočíta znaky aj skóre z uložených dát bez sťahovania; `owi sync` po uložení dní prepočíta ich skóre.
+- SQLite: nové tabuľky `day_features` a `day_scores` (deň, JSON, čas výpočtu). Existujúce tabuľky ostávajú; starú databázu `owi serve` číta ďalej, len bez skóre.
+- `GET /v1/days`: každý deň dostane objekt `scores` (tvar `DayScores`, dátumy a časy ako ISO; `null`, kým deň nemá skóre) a `sleep_timeline` (fázy hlavného spánku a zdriemnutí, `[]` bez spánku). Každý tréning dostane `strain` (`null`, ak chýba). Ostatné polia sa nemenia.
+- `owi sync` po uložení dní uloží ich znaky a prepočíta skóre od najskoršieho zmeneného dňa po posledný uložený deň (skóre na seba nadväzujú), aj keď neskoršia dávka zlyhá.
+- `owi rescore [--from D --to D]` prepočíta len skóre z uložených znakov, nič nesťahuje. Nové znaky dá len `owi sync`.
+- Profil pre skóre: vek a pohlavie z `.env` (`OWI_AGE`, `OWI_SEX`), maximálny tep podľa rovnakého pravidla ako zvyšok owi (nastavený, z kalibrácie, inak najvyšší uložený), váha a telesný tuk posledné známe zo znakov. Výšku žiadny vzorec nepoužíva, preto sa neukladá.
 
 ## Testy a overenie
 

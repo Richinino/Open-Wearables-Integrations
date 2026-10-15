@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
 
-from owi.longterm import vo2max_target, vo2max_uth, whoop_age
+from owi.longterm import OVERLAP_FACTOR, vo2max_target, vo2max_uth, whoop_age
 from owi.score_models import FEMALE, MALE, DayFeatures, Person
 
 D = date(2026, 10, 14)
@@ -229,7 +229,13 @@ def test_age_impact_is_ten_times_the_log_hazard_ratio():
     assert score.components["resting_hr"] == pytest.approx(10 * math.log(1.09))
     assert score.components["vo2max"] == pytest.approx(-10 * math.log(0.87))
     assert score.components["lean_mass"] == pytest.approx(10 * math.log(1.11))
-    assert score.value == pytest.approx(30 + sum(score.components.values()), abs=0.05)
+
+
+def test_overlap_factor_shrinks_the_summed_impacts():
+    score = whoop_age(lifestyle(resting_hr=70.0, vo2max=40.5, body_fat=30.0), MAN_30)
+
+    assert OVERLAP_FACTOR == 0.45
+    assert score.value == pytest.approx(30 + 0.45 * sum(score.components.values()), abs=0.05)
 
 
 def test_short_sleep_adds_years_per_hour_and_long_sleep_has_no_effect():
@@ -286,7 +292,7 @@ def test_without_body_fat_lean_mass_is_left_out():
     score = whoop_age(days, MAN_30)
 
     assert score.components["lean_mass"] is None
-    assert score.value == pytest.approx(30 + 10 * math.log(1.09), abs=0.05)
+    assert score.value == pytest.approx(30 + 0.45 * 10 * math.log(1.09), abs=0.05)
 
 
 def test_body_fat_falls_back_to_the_profile():

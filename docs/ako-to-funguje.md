@@ -1,6 +1,6 @@
 # Ako to funguje
 
-Stav k 2026-10-14. Čo zbierame, z akých zdrojov, čo z toho presne počítame a čo len odhadujeme. Vzorce skóre sú zvlášť v [`skore.md`](skore.md).
+Stav k 2026-10-15. Čo zbierame, z akých zdrojov, čo z toho presne počítame a čo len odhadujeme. Vzorce skóre sú zvlášť v [`skore.md`](skore.md).
 
 Konkrétne počty záznamov a dátumy pre tvoj účet sú len lokálne v `data/prehlad-dat.md` (mimo gitu).
 
@@ -77,21 +77,28 @@ Samsung Health tieto hodnoty počíta sám a nikam ich neposiela, takže ich len
 
 **Kalibrácia:** dĺžka kroku, prah tepu a koeficient kalórií sa ladia príkazom `owi calibrate` podľa hodnôt, ktoré pre konkrétne dni ukazuje Samsung Health (súbor `data/truth.csv`). Čím viac dní, tým presnejšie; zatiaľ sú naladené dva dni.
 
-## Skóre (plán)
+## Skóre
 
-Rozhodnuté zatiaľ takto, vzorce v [`skore.md`](skore.md):
+Vzorce v [`skore.md`](skore.md), návrh v [`superpowers/specs/2026-10-14-skore-design.md`](superpowers/specs/2026-10-14-skore-design.md). Počítajú sa v dvoch krokoch: `owi sync` z každého dňa uloží **znaky dňa** (tabuľka `day_features`) a z nich prepočíta **skóre** (tabuľka `day_scores`) od prvého zmeneného dňa dopredu, lebo skóre na seba nadväzujú. `owi rescore` prepočíta skóre zo znakov bez sťahovania.
 
 | Kedy | Čo | Podľa |
 |---|---|---|
-| ráno | **Pripravenosť** (regenerácia) | Oura Readiness bez HRV a teploty, ako odhad |
-| ráno | **Spánok** | WHOOP Sleep Performance alebo Apple Sleep Score; vyberieme po porovnaní na skutočných nociach |
-| ráno | **Aktivita** (včerajšok a trend) | Oura Activity |
-| večer | **Strain dňa** (0–21) | WHOOP |
-| večer | **Potreba spánku na dnešnú noc** | WHOOP |
-| týždeň | **Stav záťaže** | Polar Cardio Load |
-| kedykoľvek | **Varovanie pred chorobou alebo preťažením** + upozornenie | NightSignal (nočný tep o ≥ 4 bpm nad normálom dve noci po sebe) |
+| ráno | **Readiness** (regenerácia) | Oura Readiness bez HRV a teploty, ako odhad; po 14 nociach |
+| ráno | **Sleep Performance** (hlavné číslo), **Sleep Score** (prepínač) | WHOOP, Apple |
+| ráno | **Pravidelnosť spánku** | Sleep Regularity Index za 14 dní |
+| ráno | **Activity** (včerajšok a týždeň) | Oura Activity |
+| večer | **Strain dňa** aj tréningov (0–21) | WHOOP |
+| večer | **Potreba spánku na nasledujúcu noc** | WHOOP |
+| týždeň | **Stav záťaže** | Polar Cardio Load; po 28 dňoch |
+| kedykoľvek | **Varovanie pred chorobou alebo preťažením** | NightSignal (nočný tep o ≥ 4 bpm nad normálom dve noci po sebe) |
+| denne | **Skóre dňa** | priemer Readiness, Sleep Performance a Activity; pri červenom varovaní najviac 50 |
+| dlhodobo | **VO2max** (hodinky a Uth–Sørensen), **WHOOP Age** | Samsung, WHOOP white paper |
 
-**Vek 17 rokov:** odporúčania pre spánok sú pre tínedžerov iné ako pre dospelých, 8–10 h (National Sleep Foundation pre 14–17 rokov, AASM pre 13–18 rokov). Výrobcovia pracujú s dospelými hodnotami okolo 7–9 h, preto spodnú hranicu potreby spánku nastavíme na 8 h.
+Web ich dostane cez `owi serve` ako `scores` pri každom dni, k tomu `sleep_timeline` (fázy spánku) a `strain` pri tréningoch.
+
+**Vek 17 rokov:** odporúčania pre spánok sú pre tínedžerov iné ako pre dospelých, 8–10 h (National Sleep Foundation pre 14–17 rokov, AASM pre 13–18 rokov). Výrobcovia pracujú s dospelými hodnotami okolo 7–9 h, preto je spodná hranica potreby spánku 8 h.
+
+**Dni bez dát:** deň s menej ako 1 000 minútami tepu (hodinky neboli nosené alebo sa tep neprenášal) sa nerátá do základov ani do stavu záťaže a ukončený taký deň nemá strain ani Activity. Chýbajúca hodnota je vždy `null` s poznámkou, nikdy nula.
 
 ## Kde čo beží
 

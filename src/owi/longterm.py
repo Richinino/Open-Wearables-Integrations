@@ -5,8 +5,8 @@ page numbers as printed). Each metric's average over the last 180 days gets an a
 10 * ln(HR) years, HR being its hazard ratio against WHOOP's target (WP p. 12), and WHOOP Age
 is the person's age plus the impacts (WP p. 18). WHOOP also shrinks the hazard ratios for
 overlap between correlated metrics with factors it does not publish (WP p. 15); this estimate
-cannot, so it lands further from the real age than WHOOP would. Values marked (A) are our
-assumptions where WP gives no figure.
+uses one overall factor instead (OVERLAP_FACTOR). Values marked (A) are our assumptions where
+WP gives no figure.
 """
 
 from __future__ import annotations
@@ -29,6 +29,9 @@ MIN_WORN_DAYS = 30
 MIN_WEAR_MINUTES = 1000  # less worn days undercount activity (docs/skore.md §6)
 MIN_METRIC_DAYS = 7
 YEARS_PER_LOG_HR = 10.0  # all-cause mortality rises about 10 % per year of age (WP p. 12)
+# (A) WHOOP does not publish its overlap adjustment (WP p. 15); 0.45 multiplies the summed
+# impacts and was fitted to the four typical profiles of WP Table 2 (p. 35).
+OVERLAP_FACTOR = 0.45
 OLDER_ADULT_AGE = 60  # WP p. 25 cites Paluch 2022, which splits at 60
 DAY_MINUTES = 1440
 
@@ -105,7 +108,11 @@ def vo2max_target(age: int, sex: str | None) -> float:
 
 
 def whoop_age(history: Sequence[DayFeatures], person: Person) -> Score:
-    """WHOOP Age from the last 180 days; components are each metric's impact in years."""
+    """WHOOP Age from the last 180 days.
+
+    Components are each metric's own impact in years, before the overlap factor, so they
+    add up to more than the difference between WHOOP Age and age.
+    """
     if person.age is None:
         return Score(None, note="age missing")
     if not history:
@@ -119,7 +126,7 @@ def whoop_age(history: Sequence[DayFeatures], person: Person) -> Score:
     impacts = [v for v in components.values() if v is not None]
     if not impacts:
         return Score(None, components, "no data")
-    return Score(round(person.age + sum(impacts), 1), components, ESTIMATE)
+    return Score(round(person.age + OVERLAP_FACTOR * sum(impacts), 1), components, ESTIMATE)
 
 
 def _impacts(

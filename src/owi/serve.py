@@ -13,7 +13,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from owi.models import DayResult
-from owi.store import Store
+from owi.score_models import DayFeatures, DayScores
+from owi.store import Store, jsonable
 
 MAX_DAYS = 400
 MIN_TOKEN_LENGTH = 32
@@ -41,12 +42,21 @@ def _iso(value: Any) -> Any:
     return value.isoformat() if isinstance(value, date) else value  # datetime is a date too
 
 
-def _day(result: DayResult) -> dict[str, Any]:
+def _day(
+    result: DayResult, features: DayFeatures | None, scores: DayScores | None
+) -> dict[str, Any]:
+    """The stored day, plus its scores and sleep timeline and each workout's strain."""
+    strain = features.workout_strain if features else {}
     day = {name: _iso(value) for name, value in asdict(result).items() if name != "workouts"}
     day["workouts"] = [
-        {name: _iso(value) for name, value in asdict(workout).items()}
+        {
+            **{name: _iso(value) for name, value in asdict(workout).items()},
+            "strain": strain.get(workout.id),
+        }
         for workout in result.workouts
     ]
+    day["sleep_timeline"] = jsonable(features.sleep_intervals) if features else []
+    day["scores"] = jsonable(scores)
     return day
 
 
@@ -63,9 +73,10 @@ def _days(query: dict[str, list[str]], db_path: Path, timezone: str) -> Response
     try:
         with Store(db_path, readonly=True) as store:
             span = store.span()
-            if span is None:
-                found: list[DayResult] = []
-            else:
+            found: list[DayResult] = []
+            features: dict[date, DayFeatures] = {}
+            scores: dict[date, DayScores] = {}
+            if span is not None:
                 last = last or span[1]
                 first = first or last - timedelta(days=MAX_DAYS - 1)
                 if first > last:
@@ -73,6 +84,8 @@ def _days(query: dict[str, list[str]], db_path: Path, timezone: str) -> Response
                 if (last - first).days >= MAX_DAYS:
                     return _error(400, f"range is longer than {MAX_DAYS} days")
                 found = store.days(first, last)
+                features = {f.day: f for f in store.features(first, last)}
+                scores = {s.day: s for s in store.scores(first, last)}
     except sqlite3.OperationalError:
         # No database yet, or the sync is writing to it right now.
         return _error(503, "no data yet")
@@ -85,7 +98,9 @@ def _days(query: dict[str, list[str]], db_path: Path, timezone: str) -> Response
             "first_day": _iso(first_day),
             "last_day": _iso(last_day),
             "synced_at": _iso(synced_at),
-            "days": [_day(result) for result in found],
+            "days": [
+                _day(result, features.get(result.day), scores.get(result.day)) for result in found
+            ],
         },
     )
 

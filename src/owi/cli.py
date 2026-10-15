@@ -1,4 +1,4 @@
-"""Command line entry point: owi sync | day | calibrate | check | serve."""
+"""Command line entry point: owi sync | rescore | day | calibrate | check | serve."""
 
 from __future__ import annotations
 
@@ -10,12 +10,21 @@ from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from owi import scoring
 from owi.calibration import Truth, compare, fit, load_params, load_truth, save_params
 from owi.client import OWClient, OWError
 from owi.config import Settings, load_settings
 from owi.days import day_window, today
 from owi.models import DEFAULT_MAX_HR, HEART_RATE, DayInputs, DayResult, Params, Profile
-from owi.pipeline import compute, fetch_day, has_data, load_profile_samples, profile_for
+from owi.pipeline import (
+    compute,
+    day_features,
+    fetch_day,
+    has_data,
+    load_profile_samples,
+    profile_for,
+)
+from owi.score_models import Person
 from owi.serve import MIN_TOKEN_LENGTH, make_server
 from owi.store import MAX_PLAUSIBLE_HR, Store
 
@@ -91,9 +100,25 @@ def _line(result: DayResult) -> str:
     )
 
 
-def _sync_batch(settings: Settings, days: list[date], now: datetime) -> None:
-    """Fetch the whole batch before saving any of it, so a failed batch changes nothing."""
+def _person(settings: Settings, profile: Profile) -> Person:
+    """What the features of a day need, with the maximum heart rate the day was computed with."""
+    return Person(
+        age=settings.age,
+        sex=settings.sex,
+        weight_kg=profile.weight_kg,
+        body_fat_pct=profile.body_fat_pct,
+        max_hr=profile.max_hr,
+    )
+
+
+def _sync_batch(settings: Settings, days: list[date], now: datetime) -> list[date]:
+    """Fetch the whole batch before saving any of it, so a failed batch changes nothing.
+
+    Days are saved in date order, so each day's features see those of the days before it.
+    Returns the days that were saved.
+    """
     params = load_params(settings.params_path)
+    saved: list[date] = []
     with Store(settings.db_path) as store, OWClient(settings.api_url, settings.api_key) as client:
         inputs = _fetch(settings, params.max_hr, client, store, days, now)
         for day in sorted(inputs):
@@ -102,14 +127,41 @@ def _sync_batch(settings: Settings, days: list[date], now: datetime) -> None:
                 continue
             result = compute(item, params, settings.timezone)
             store.save_day(result)
+            store.save_features(day_features(store, item, result, _person(settings, item.profile)))
+            saved.append(day)
             print(_line(result))
+    return saved
 
 
 def _sync_once(settings: Settings, days: list[date], now: datetime) -> None:
-    """Long ranges go in batches to bound memory; finished batches stay saved."""
-    for offset in range(0, len(days), SYNC_BATCH_DAYS):
-        _sync_batch(settings, days[offset : offset + SYNC_BATCH_DAYS], now)
-        sys.stdout.flush()
+    """Long ranges go in batches to bound memory; finished batches stay saved.
+
+    Scores chain from day to day, so every stored day from the first saved one on is
+    rescored, also when a later batch fails.
+    """
+    first_saved: date | None = None
+    try:
+        for offset in range(0, len(days), SYNC_BATCH_DAYS):
+            saved = _sync_batch(settings, days[offset : offset + SYNC_BATCH_DAYS], now)
+            if saved and first_saved is None:
+                first_saved = min(saved)
+            sys.stdout.flush()
+    finally:
+        if first_saved is not None:
+            _rescore(settings, first_saved)
+
+
+def _rescore(settings: Settings, first: date, last: date | None = None) -> None:
+    """Recompute scores from stored features, from `first` to `last` or the last stored day."""
+    params = load_params(settings.params_path)
+    base = Person(age=settings.age, sex=settings.sex, max_hr=settings.max_hr or params.max_hr)
+    with Store(settings.db_path) as store:
+        span = store.features_span()
+        if span is None:
+            return
+        last = last or span[1]
+        count = scoring.rescore(store, first, last, base, settings.timezone)
+    print(f"skóre prepočítané od {first} do {last}, počet dní: {count}")
 
 
 def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
@@ -128,6 +180,20 @@ def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
             return 0
         sys.stdout.flush()
         time.sleep(args.loop)
+
+
+def _cmd_rescore(args: argparse.Namespace, settings: Settings) -> int:
+    with Store(settings.db_path) as store:
+        span = store.features_span()
+    if span is None:
+        print("nie sú uložené žiadne znaky dní; spusti owi sync", file=sys.stderr)
+        return 1
+    first, last = args.from_ or span[0], args.to or span[1]
+    if first > last:
+        print(f"chyba: {first} je po {last}", file=sys.stderr)
+        return 1
+    _rescore(settings, first, last)
+    return 0
 
 
 def _cmd_day(args: argparse.Namespace, settings: Settings) -> int:
@@ -244,6 +310,11 @@ def _parser() -> argparse.ArgumentParser:
     sync.add_argument("--to", type=_date, help="posledný deň (YYYY-MM-DD)")
     sync.add_argument("--loop", type=int, help="opakovať každých N sekúnd")
     sync.set_defaults(run=_cmd_sync)
+
+    rescore = commands.add_parser("rescore", help="prepočíta skóre z uložených znakov dní")
+    rescore.add_argument("--from", dest="from_", type=_date, help="prvý deň (YYYY-MM-DD)")
+    rescore.add_argument("--to", type=_date, help="posledný deň (YYYY-MM-DD)")
+    rescore.set_defaults(run=_cmd_rescore)
 
     day = commands.add_parser("day", help="vypíše uložený deň")
     day.add_argument("day", type=_date)

@@ -276,11 +276,14 @@ def extract(
     main, naps = _choose_sleeps(inputs)
     sessions = [main, *naps] if main else naps
     timeline = sorted((i for s in sessions for i in _timeline(s)), key=lambda i: i.start)
-    asleep = _covered((i.start, i.end) for i in timeline if i.stage != AWAKE)
+    # Tonight's sleep belongs to tomorrow, but its minutes before midnight are not awake ones.
+    tonight = [i for s in sleep.dedupe(inputs.tonight_sleeps) for i in _timeline(s)]
+    asleep = _covered((i.start, i.end) for i in (*timeline, *tonight) if i.stage != AWAKE)
     awake_hr = {m: v for m, v in minute_hr.items() if m not in asleep}
 
     in_main = _covered([(main.start, main.end)]) if main else set()
-    low = _lowest_mean({m: v for m, v in minute_hr.items() if m in in_main}, SLEEP_RHR_MINUTES)
+    night = heart.minute_series(inputs.lead_in_samples) | minute_hr if main else {}
+    low = _lowest_mean({m: v for m, v in night.items() if m in in_main}, SLEEP_RHR_MINUTES)
 
     if rest is None or not minute_hr:
         load_values = {**dict.fromkeys(_LOAD_FIELDS), "workout_strain": {}}

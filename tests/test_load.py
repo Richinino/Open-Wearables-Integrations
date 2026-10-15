@@ -172,12 +172,28 @@ def test_cardio_load_needs_three_days_with_load_in_the_last_28():
     assert cardio_load([0.0] * 25 + [100.0] * 3, False).status is not None
 
 
-def test_cardio_load_counts_missing_days_as_zero():
-    result = cardio_load([None] * 21 + [100.0] * 7, False)
+def test_cardio_load_leaves_unmeasured_days_out_of_the_means():
+    daily = [None] * 7 + [50.0] * 14 + [100.0] * 3 + [None] * 2 + [100.0] * 2
+
+    result = cardio_load(daily, False)
 
     assert result.strain_7d == pytest.approx(100.0)
-    assert result.tolerance_28d == pytest.approx(25.0)
-    assert result.ratio == pytest.approx(4.0)
+    assert result.tolerance_28d == pytest.approx((14 * 50.0 + 5 * 100.0) / 19)
+    assert result.status == "overreaching"
+
+
+def test_cardio_load_needs_half_of_each_window_measured():
+    empty = CardioLoad(None, None, None, None)
+
+    assert cardio_load([100.0] * 21 + [None] * 4 + [100.0] * 3, False) == empty
+    assert cardio_load([None] * 15 + [100.0] * 13, False) == empty
+    assert cardio_load([None] * 14 + [100.0] * 14, False).status == "productive"
+
+
+def test_measured_days_without_load_still_count():
+    result = cardio_load([0.0] * 14 + [100.0] * 14, False)
+
+    assert result.tolerance_28d == pytest.approx(50.0)
     assert result.status == "overreaching"
 
 

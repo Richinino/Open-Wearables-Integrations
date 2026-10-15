@@ -43,7 +43,26 @@ uv run owi sync --from 2026-07-01 --to 2026-07-31
 uv run owi day 2026-07-15 --json
 ```
 
-Výsledky sú v `data/owi.db` (SQLite), tabuľky `daily` a `workouts`.
+Výsledky sú v `data/owi.db` (SQLite), tabuľky `daily` a `workouts`; skóre pozri nižšie.
+
+### Skóre
+
+Z uložených dní `owi` počíta aj skóre: Readiness (Oura bez HRV, odhad), Sleep Performance a potrebu spánku (WHOOP), Sleep Score (Apple), pravidelnosť spánku (SRI), Activity (Oura), strain dňa a tréningov (WHOOP, 0–21), stav záťaže (Polar), NightSignal, skóre dňa, VO2max a WHOOP Age. Vzorce sú v [`docs/skore.md`](docs/skore.md), návrh v [`docs/superpowers/specs/2026-10-14-skore-design.md`](docs/superpowers/specs/2026-10-14-skore-design.md).
+
+Vzorce potrebujú v `.env` vek a pohlavie (`OWI_AGE`, `OWI_SEX` = `male` alebo `female`).
+
+```bash
+uv run owi sync             # uloží dni, ich znaky a prepočíta skóre od prvého zmeneného dňa
+uv run owi rescore          # prepočíta len skóre z uložených znakov, nič nesťahuje
+uv run owi rescore --from 2026-10-01 --to 2026-10-14
+```
+
+| Tabuľka | Obsah |
+|---|---|
+| `day_features` | znaky dňa (`DayFeatures`) ako JSON: tep v spánku, záťaž, MET, spánok s fázami |
+| `day_scores` | skóre dňa (`DayScores`) ako JSON s ich zložkami a poznámkou, prečo hodnota chýba |
+
+Kým nie je dosť histórie, skóre je `null` s poznámkou (napr. Readiness po 14 nociach, stav záťaže po 28 dňoch). Dni s menej ako 1 000 minútami tepu sa nerátajú do základov a ukončený taký deň nemá strain ani Activity.
 
 ### Ladenie odhadov
 
@@ -76,6 +95,8 @@ curl -H "Authorization: Bearer $OWI_SERVE_TOKEN" "http://127.0.0.1:8787/v1/days?
 | `GET /health` | `{"status": "ok"}`, bez tokenu |
 | `GET /v1/days` | posledných najviac 400 dní aj s tréningmi |
 | `GET /v1/days?from=…&to=…` | dni v rozsahu vrátane okrajov |
+
+Každý deň má navyše `scores` (skóre dňa, `null` kým nie je spočítané) a `sleep_timeline` (fázy hlavného spánku a zdriemnutí, `[]` bez spánku); každý tréning má `strain` (0–21 alebo `null`). Typy sú v [`web/src/lib/types.ts`](web/src/lib/types.ts).
 
 Presný tvar odpovede je v [`docs/superpowers/specs/2026-10-13-web-design.md`](docs/superpowers/specs/2026-10-13-web-design.md).
 

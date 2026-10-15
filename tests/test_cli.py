@@ -7,7 +7,7 @@ from owi import cli
 from owi.client import OWError
 from owi.models import STEPS
 from owi.store import Store
-from tests.factories import HC_SHEALTH, hr_minutes, sample, utc
+from tests.factories import HC_SHEALTH, hr_minutes, make_features, sample, sleep_session, utc
 from tests.fakes import FakeClient
 
 DAY = date(2026, 10, 12)
@@ -21,7 +21,15 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("OWI_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("OWI_TIMEZONE", "Europe/Bratislava")
     monkeypatch.setenv("OWI_API_KEY", "test-key")
-    for name in ("OWI_USER_ID", "OWI_MAX_HR", "OWI_WEIGHT_KG", "OWI_VO2MAX", "OWI_BASAL_KCAL"):
+    for name in (
+        "OWI_USER_ID",
+        "OWI_MAX_HR",
+        "OWI_WEIGHT_KG",
+        "OWI_VO2MAX",
+        "OWI_BASAL_KCAL",
+        "OWI_AGE",
+        "OWI_SEX",
+    ):
         monkeypatch.delenv(name, raising=False)
     return tmp_path
 
@@ -46,6 +54,77 @@ def test_sync_stores_the_requested_days(env, monkeypatch, capsys):
     with Store(env / "data" / "owi.db") as store:
         assert store.get_day(DAY).steps == 12345
     assert "2026-10-12" in capsys.readouterr().out
+
+
+def test_sync_stores_features_and_scores_with_the_profile_from_settings(env, monkeypatch):
+    monkeypatch.setenv("OWI_AGE", "17")
+    monkeypatch.setenv("OWI_SEX", "male")
+    # Worn long enough (1000 minutes) for the finished day to get a strain.
+    samples = [sample(START, STEPS, 12345, HC_SHEALTH), *hr_minutes(START, [55.0] * 1000)]
+    night = sleep_session("night", utc(2026, 10, 11, 21), utc(2026, 10, 12, 5))
+    use_client(monkeypatch, FakeClient(samples, sleeps=[night]))
+
+    assert cli.main(["sync", "--from", "2026-10-12", "--to", "2026-10-12"]) == 0
+
+    with Store(env / "data" / "owi.db") as store:
+        features = store.get_features(DAY)
+        scores = store.get_scores(DAY)
+    assert features.steps == 12345
+    assert features.sleep_start == utc(2026, 10, 11, 21)
+    assert scores.day == DAY
+    assert scores.strain == features.strain
+    # A 17-year-old's sleep need starts at 8 h (7.5 h for adults); strain 0 adds under a minute.
+    assert scores.sleep_need_minutes == pytest.approx(480.0, abs=1.0)
+
+
+def test_sync_rescores_the_stored_days_after_the_synced_ones(env, monkeypatch, capsys):
+    data = env / "data"
+    with Store(data / "owi.db") as store:
+        store.save_features(make_features(date(2026, 10, 14)))
+    use_client(monkeypatch, FakeClient([sample(START, STEPS, 500, HC_SHEALTH)]))
+
+    assert cli.main(["sync", "--from", "2026-10-12", "--to", "2026-10-12"]) == 0
+
+    with Store(data / "owi.db") as store:
+        assert [s.day for s in store.scores(DAY, date(2026, 10, 31))] == [
+            DAY,
+            date(2026, 10, 14),
+        ]
+    assert "počet dní: 2" in capsys.readouterr().out
+
+
+def test_rescore_recomputes_scores_from_stored_features_only(env, monkeypatch, capsys):
+    def no_client(*args, **kwargs):
+        raise AssertionError("rescore must not download anything")
+
+    monkeypatch.setattr(cli, "OWClient", no_client)
+    with Store(env / "data" / "owi.db") as store:
+        for day in (10, 11, 13):
+            store.save_features(make_features(date(2026, 10, day), strain=float(day)))
+
+    assert cli.main(["rescore"]) == 0
+
+    with Store(env / "data" / "owi.db") as store:
+        scores = store.scores(date(2026, 10, 1), date(2026, 10, 31))
+    assert [(s.day.day, s.strain) for s in scores] == [(10, 10.0), (11, 11.0), (13, 13.0)]
+    assert "počet dní: 3" in capsys.readouterr().out
+
+
+def test_rescore_limits_itself_to_the_given_range(env):
+    with Store(env / "data" / "owi.db") as store:
+        for day in (10, 11, 12, 13):
+            store.save_features(make_features(date(2026, 10, day)))
+
+    assert cli.main(["rescore", "--from", "2026-10-11", "--to", "2026-10-12"]) == 0
+
+    with Store(env / "data" / "owi.db") as store:
+        scored = [s.day.day for s in store.scores(date(2026, 10, 1), date(2026, 10, 31))]
+    assert scored == [11, 12]
+
+
+def test_rescore_without_stored_features_exits_non_zero(env, capsys):
+    assert cli.main(["rescore"]) == 1
+    assert "owi sync" in capsys.readouterr().err
 
 
 def test_sync_skips_past_days_without_data(env, monkeypatch):
@@ -150,6 +229,9 @@ def test_long_ranges_are_synced_in_batches_so_finished_batches_survive_a_failure
     with Store(env / "data" / "owi.db") as store:
         assert store.get_day(date(2026, 10, 1)).steps == 111
         assert store.get_day(date(2026, 10, 20)) is None
+        # The finished batch is scored even though a later one failed.
+        assert store.get_scores(date(2026, 10, 1)) is not None
+        assert store.get_features(date(2026, 10, 20)) is None
 
 
 def test_calibrate_without_a_truth_file_explains_what_is_missing(env, capsys):

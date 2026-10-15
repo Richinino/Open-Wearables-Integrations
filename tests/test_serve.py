@@ -1,14 +1,17 @@
 import json
+import sqlite3
 import threading
+from dataclasses import fields, replace
 from datetime import date, timedelta
 
 import httpx
 import pytest
 
 from owi import cli
+from owi.models import DayResult, SleepInterval
 from owi.serve import MAX_DAYS, Response, make_server, respond
-from owi.store import Store
-from tests.factories import utc
+from owi.store import Store, jsonable
+from tests.factories import make_features, make_scores, utc
 from tests.test_store import make_day, make_workout
 
 TOKEN = "t" * 40
@@ -16,17 +19,37 @@ TIMEZONE = "Europe/Bratislava"
 AUTH = f"Bearer {TOKEN}"
 
 
+TIMELINE = (
+    SleepInterval(utc(2026, 10, 1, 21), utc(2026, 10, 2, 1), "light"),
+    SleepInterval(utc(2026, 10, 2, 1), utc(2026, 10, 2, 1, 5), "awake"),
+    SleepInterval(utc(2026, 10, 2, 13), utc(2026, 10, 2, 13, 30), "asleep"),
+)
+
+
+LATER_WORKOUT = replace(
+    make_workout("unscored", date(2026, 10, 2)),
+    start=utc(2026, 10, 12, 19),
+    end=utc(2026, 10, 12, 20),
+)
+
+
 @pytest.fixture
 def db_path(tmp_path):
+    """Three days; day 2 has two workouts, features and scores, day 1 only features."""
     path = tmp_path / "owi.db"
     with Store(path) as store:
         for offset in (1, 2, 3):
             day = date(2026, 10, offset)
-            workouts = (make_workout(f"w{offset}", day),) if offset == 2 else ()
+            workouts = (make_workout(f"w{offset}", day), LATER_WORKOUT) if offset == 2 else ()
             store.save_day(
                 make_day(day, steps=offset * 1000, workouts=workouts),
                 computed_at=utc(2026, 10, 3, offset),
             )
+        store.save_features(make_features(date(2026, 10, 1), sleep_intervals=()))
+        store.save_features(
+            make_features(date(2026, 10, 2), sleep_intervals=TIMELINE, workout_strain={"w2": 9.5})
+        )
+        store.save_scores(make_scores(date(2026, 10, 2)))
     return path
 
 
@@ -64,16 +87,80 @@ def test_a_day_carries_every_stored_field_and_its_workouts(db_path):
     body = get(db_path, "/v1/days?from=2026-10-02&to=2026-10-02").body
 
     (day,) = body["days"]
+    stored = {f.name for f in fields(DayResult)}
+    assert set(day) == stored | {"scores", "sleep_timeline"}
     assert day["complete"] is True
     assert day["steps_source"] == "samsung_health_total"
     assert day["total_kcal_est"] == 2550.5
     assert day["sleep_start"] == "2026-10-11T22:00:00+00:00"
-    (workout,) = day["workouts"]
+    workout, _ = day["workouts"]
     assert workout["id"] == "w2"
     assert workout["day"] == "2026-10-02"
     assert workout["start"] == "2026-10-12T16:30:00+00:00"
     assert workout["duration_s"] == 3600
     assert workout["kcal_est"] == 812.5
+
+
+def test_a_day_carries_its_scores_or_null_before_it_is_scored(db_path):
+    body = get(db_path, "/v1/days").body
+
+    scored, unscored = body["days"][1], body["days"][2]
+    assert scored["scores"] == jsonable(make_scores(date(2026, 10, 2)))
+    assert scored["scores"]["day"] == "2026-10-02"
+    assert scored["scores"]["cardio_load"]["status"] == "productive"
+    assert scored["scores"]["whoop_age"] == {
+        "value": 15.2,
+        "components": {"steps": -0.5, "vo2max": None},
+        "note": "estimate",
+    }
+    assert unscored["scores"] is None
+
+
+def test_a_day_carries_its_sleep_timeline(db_path):
+    body = get(db_path, "/v1/days").body
+
+    assert body["days"][1]["sleep_timeline"] == [
+        {
+            "start": "2026-10-01T21:00:00+00:00",
+            "end": "2026-10-02T01:00:00+00:00",
+            "stage": "light",
+        },
+        {
+            "start": "2026-10-02T01:00:00+00:00",
+            "end": "2026-10-02T01:05:00+00:00",
+            "stage": "awake",
+        },
+        {
+            "start": "2026-10-02T13:00:00+00:00",
+            "end": "2026-10-02T13:30:00+00:00",
+            "stage": "asleep",
+        },
+    ]
+    # Features without sleep, and a day without features at all.
+    assert body["days"][0]["sleep_timeline"] == []
+    assert body["days"][2]["sleep_timeline"] == []
+
+
+def test_workouts_carry_their_strain_or_null(db_path):
+    body = get(db_path, "/v1/days?from=2026-10-02&to=2026-10-02").body
+
+    scored, unscored = body["days"][0]["workouts"]
+    assert scored["strain"] == 9.5
+    assert unscored["strain"] is None
+
+
+def test_a_database_from_before_scores_still_serves_its_days(db_path):
+    with sqlite3.connect(db_path) as db:
+        db.execute("DROP TABLE day_features")
+        db.execute("DROP TABLE day_scores")
+    db.close()
+
+    body = get(db_path, "/v1/days").body
+
+    assert [d["steps"] for d in body["days"]] == [1000, 2000, 3000]
+    assert [d["scores"] for d in body["days"]] == [None, None, None]
+    assert [d["sleep_timeline"] for d in body["days"]] == [[], [], []]
+    assert [w["strain"] for w in body["days"][1]["workouts"]] == [None, None]
 
 
 def test_range_is_inclusive_and_the_span_still_describes_the_whole_database(db_path):

@@ -1,16 +1,18 @@
-"""Fetch one local day from Open Wearables and turn it into a DayResult."""
+"""Fetch one local day from Open Wearables and turn it into a DayResult and DayFeatures."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date, datetime, timedelta
+from statistics import fmean
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
-from owi import estimates, heart, sleep, steps, workouts
+from owi import estimates, features, heart, sleep, steps, workouts
 from owi.days import day_window, elapsed_fraction, today
 from owi.models import (
     BASAL_ENERGY,
+    BODY_FAT,
     DISTANCE,
     HEART_RATE,
     STEPS,
@@ -24,12 +26,15 @@ from owi.models import (
     SleepSession,
     Workout,
 )
+from owi.score_models import DayFeatures, Person
+from owi.store import Store
 
 DAY_TYPES = (STEPS, HEART_RATE, DISTANCE)
-PROFILE_TYPES = (WEIGHT, VO2_MAX, BASAL_ENERGY)
+PROFILE_TYPES = (WEIGHT, VO2_MAX, BASAL_ENERGY, BODY_FAT)
 PROFILE_LOOKBACK = timedelta(days=400)
 # A night's sleep starts on the previous local day.
 SLEEP_LOOKBACK = timedelta(days=1)
+REST_HR_DAYS = 14
 
 
 class Client(Protocol):
@@ -43,7 +48,7 @@ class Client(Protocol):
 
 
 def load_profile_samples(client: Client, user_id: str, until: datetime) -> list[Sample]:
-    """Weight, VO2max and basal energy change rarely; one wide fetch serves a whole sync."""
+    """Weight, VO2max, basal energy and body fat change rarely; one wide fetch serves a sync."""
     return client.timeseries(user_id, PROFILE_TYPES, until - PROFILE_LOOKBACK, until)
 
 
@@ -57,6 +62,7 @@ def profile_for(samples: Sequence[Sample], until: datetime, defaults: Profile) -
         vo2max=latest(VO2_MAX, defaults.vo2max),
         basal_kcal_per_day=latest(BASAL_ENERGY, defaults.basal_kcal_per_day),
         max_hr=defaults.max_hr,
+        body_fat_pct=latest(BODY_FAT, defaults.body_fat_pct),
     )
 
 
@@ -64,19 +70,26 @@ def fetch_day(
     client: Client, user_id: str, day: date, tz: ZoneInfo, profile: Profile, now: datetime
 ) -> DayInputs:
     start, end = day_window(day, tz)
-    samples = client.timeseries(user_id, DAY_TYPES, start, end)
-    found_workouts = client.workouts(user_id, start, end)
     found_sleeps = client.sleeps(user_id, start - SLEEP_LOOKBACK, end)
+    sleeps = tuple(s for s in found_sleeps if start <= s.end < end)
+    # One fetch also covers the part of the night before midnight.
+    lead_in = min([start, *(s.start for s in sleeps if not s.is_nap)])
+    samples = client.timeseries(user_id, DAY_TYPES, lead_in, end)
+    found_workouts = client.workouts(user_id, start, end)
     return DayInputs(
         day=day,
         start=start,
         end=end,
         samples=tuple(s for s in samples if start <= s.timestamp < end),
         workouts=tuple(workouts.dedupe(w for w in found_workouts if start <= w.start < end)),
-        sleeps=tuple(s for s in found_sleeps if start <= s.end < end),
+        sleeps=sleeps,
         profile=profile,
         complete=day < today(tz, now),
         elapsed_fraction=elapsed_fraction(day, tz, now),
+        lead_in_samples=tuple(
+            s for s in samples if s.type == HEART_RATE and lead_in <= s.timestamp < start
+        ),
+        tonight_sleeps=tuple(s for s in found_sleeps if start <= s.start < end <= s.end),
     )
 
 
@@ -138,3 +151,13 @@ def compute(inputs: DayInputs, params: Params, timezone: str) -> DayResult:
             for w in inputs.workouts
         ),
     )
+
+
+def day_features(store: Store, inputs: DayInputs, result: DayResult, person: Person) -> DayFeatures:
+    """Features of one day. The reference resting heart rate is the mean sleep_rhr of the
+    stored days in the 14 before it; without any, extract() uses the day's own."""
+    earlier = store.features(
+        inputs.day - timedelta(days=REST_HR_DAYS), inputs.day - timedelta(days=1)
+    )
+    values = [f.sleep_rhr for f in earlier if f.sleep_rhr is not None]
+    return features.extract(inputs, result, person, fmean(values) if values else None)

@@ -113,6 +113,8 @@ def run(
     person: Person = PERSON,
     profile: Profile = PROFILE,
     result: DayResult | None = None,
+    lead_in=(),
+    tonight=(),
 ) -> DayFeatures:
     inputs = DayInputs(
         day=DAY,
@@ -122,6 +124,8 @@ def run(
         workouts=tuple(workouts),
         sleeps=tuple(sleeps),
         profile=profile,
+        lead_in_samples=tuple(lead_in),
+        tonight_sleeps=tuple(tonight),
     )
     return extract(inputs, result or make_result(), person, rest_hr)
 
@@ -250,6 +254,28 @@ def test_minutes_asleep_do_not_count_towards_load():
     assert features.strain_load == pytest.approx(30 * strain_weight(0.6))
 
 
+def test_tonights_sleep_counts_as_asleep_but_is_not_the_days_sleep():
+    tonight = session(
+        "tonight",
+        local(22),
+        local(30),
+        ((local(22), local(22, 30), "awake"), (local(22, 30), local(30), "light")),
+    )
+    samples = [
+        *hr_minutes(local(10), [hr_at(0.6)] * 30),
+        *hr_minutes(local(21), [52.0] * 60),  # awake and inactive
+        *hr_minutes(local(22), [52.0] * 30),  # awake in bed
+        *hr_minutes(local(22, 30), [hr_at(0.6)] * 90),  # asleep
+    ]
+
+    features = run(samples, tonight=[tonight])
+
+    assert features.strain_load == pytest.approx(30 * strain_weight(0.6))
+    assert features.inactive_hours == pytest.approx(90 / 60)
+    assert features.sleep_start is None
+    assert features.sleep_intervals == ()
+
+
 def test_awake_intervals_inside_the_main_sleep_count_as_awake():
     night = session(
         "night",
@@ -282,6 +308,31 @@ def test_sleep_rhr_is_the_lowest_five_minute_mean_during_the_main_sleep():
 
     assert features.sleep_rhr == pytest.approx(45.0)
     assert features.sleep_hr_low_at == local(2)
+
+
+def test_sleep_rhr_counts_the_part_of_the_night_before_midnight():
+    night = session("night", local(-2), local(5))
+    lead_in = hr_minutes(local(-2), [44.0] * 5 + [55.0] * 115)
+    samples = hr_minutes(local(0), [55.0] * 300)
+
+    features = run(samples, sleeps=[night], lead_in=lead_in)
+
+    assert features.sleep_rhr == pytest.approx(44.0)
+    assert features.sleep_hr_low_at == local(-2)
+    # Everything else still covers the local day only.
+    assert features.wear_minutes == 300
+    assert features.max_hr_seen == 55.0
+
+
+def test_sleep_rhr_runs_across_midnight():
+    night = session("night", local(-1), local(5))
+    lead_in = hr_minutes(local(-1), [55.0] * 57 + [45.0] * 3)
+    samples = hr_minutes(local(0), [45.0] * 2 + [55.0] * 298)
+
+    features = run(samples, sleeps=[night], lead_in=lead_in)
+
+    assert features.sleep_rhr == pytest.approx(45.0)
+    assert features.sleep_hr_low_at == local(-1, 57)
 
 
 def test_sleep_rhr_needs_five_consecutive_minutes():

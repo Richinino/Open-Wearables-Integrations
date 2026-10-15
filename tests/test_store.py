@@ -5,8 +5,9 @@ from datetime import date
 import pytest
 
 from owi.models import DayResult, WorkoutResult
+from owi.score_models import Score
 from owi.store import Store
-from tests.factories import utc
+from tests.factories import make_features, make_scores, utc
 
 DAY = date(2026, 10, 12)
 
@@ -194,3 +195,140 @@ def test_readonly_store_does_not_create_a_missing_database(tmp_path):
         Store(path, readonly=True)
 
     assert not path.parent.exists()
+
+
+# Features and scores
+
+
+def test_saved_features_read_back_identical(store):
+    features = make_features(DAY)
+
+    store.save_features(features)
+
+    loaded = store.get_features(DAY)
+    assert loaded == features
+    assert isinstance(loaded.sleep_intervals, tuple)
+    assert isinstance(loaded.strength_minutes, float)
+
+
+def test_features_with_empty_values_read_back_identical(store):
+    features = make_features(
+        DAY,
+        sleep_rhr=None,
+        sleep_hr_low_at=None,
+        strain=None,
+        workout_strain={},
+        sleep_start=None,
+        sleep_end=None,
+        sleep_intervals=(),
+        vo2max=None,
+    )
+
+    store.save_features(features)
+
+    assert store.get_features(DAY) == features
+
+
+def test_saved_scores_read_back_identical(store):
+    scores = make_scores(DAY)
+
+    store.save_scores(scores)
+
+    assert store.get_scores(DAY) == scores
+
+
+def test_scores_with_empty_values_read_back_identical(store):
+    scores = make_scores(
+        DAY,
+        strain=None,
+        sleep_need_minutes=None,
+        sleep_performance=Score(None, {}, "no data"),
+        day_score=None,
+        whoop_age=Score(None),
+    )
+
+    store.save_scores(scores)
+
+    assert store.get_scores(DAY) == scores
+
+
+def test_features_and_scores_ranges_are_inclusive_and_oldest_first(store):
+    for offset in (3, 1, 2, 5):
+        store.save_features(make_features(date(2026, 10, offset), steps=offset))
+        store.save_scores(make_scores(date(2026, 10, offset), strain=float(offset)))
+
+    features = store.features(date(2026, 10, 2), date(2026, 10, 5))
+    scores = store.scores(date(2026, 10, 1), date(2026, 10, 3))
+
+    assert [f.steps for f in features] == [2, 3, 5]
+    assert [s.strain for s in scores] == [1.0, 2.0, 3.0]
+
+
+def test_saving_features_or_scores_again_replaces_them(store):
+    store.save_features(make_features(DAY, steps=1))
+    store.save_scores(make_scores(DAY, strain=1.0))
+
+    store.save_features(make_features(DAY, steps=2))
+    store.save_scores(make_scores(DAY, strain=2.0))
+
+    assert store.get_features(DAY).steps == 2
+    assert store.get_scores(DAY).strain == 2.0
+
+
+def test_missing_features_and_scores_are_none(store):
+    assert store.get_features(DAY) is None
+    assert store.get_scores(DAY) is None
+    assert store.features_span() is None
+
+
+def test_features_span_covers_all_stored_features(store):
+    store.save_features(make_features(date(2026, 10, 3)))
+    store.save_features(make_features(date(2026, 9, 28)))
+
+    assert store.features_span() == (date(2026, 9, 28), date(2026, 10, 3))
+
+
+def make_old_database(path) -> None:
+    """A database written before features and scores existed."""
+    with Store(path) as old:
+        old.save_day(make_day())
+    with sqlite3.connect(path) as db:
+        db.execute("DROP TABLE day_features")
+        db.execute("DROP TABLE day_scores")
+    db.close()
+
+
+def test_an_old_database_gains_the_new_tables_and_keeps_its_days(tmp_path):
+    path = tmp_path / "owi.db"
+    make_old_database(path)
+
+    with Store(path) as store:
+        assert store.get_day(DAY) == make_day()
+        store.save_features(make_features(DAY))
+        store.save_scores(make_scores(DAY))
+        assert store.get_scores(DAY) == make_scores(DAY)
+
+
+def test_readonly_store_reads_an_old_database_without_features_or_scores(tmp_path):
+    path = tmp_path / "owi.db"
+    make_old_database(path)
+
+    with Store(path, readonly=True) as reader:
+        assert reader.get_day(DAY) == make_day()
+        assert reader.features(DAY, DAY) == []
+        assert reader.scores(DAY, DAY) == []
+        assert reader.get_features(DAY) is None
+        assert reader.features_span() is None
+
+
+def test_readonly_store_reads_features_and_scores_but_cannot_write_them(tmp_path):
+    path = tmp_path / "owi.db"
+    with Store(path) as writer:
+        writer.save_features(make_features(DAY))
+        writer.save_scores(make_scores(DAY))
+
+    with Store(path, readonly=True) as reader:
+        assert reader.get_features(DAY) == make_features(DAY)
+        assert reader.scores(DAY, DAY) == [make_scores(DAY)]
+        with pytest.raises(sqlite3.OperationalError):
+            reader.save_scores(make_scores(DAY, strain=1.0))
