@@ -10,6 +10,7 @@ import { WithData } from "@/components/shell/shell";
 import { addDays, todayIn } from "@/lib/dates";
 import { formatDay } from "@/lib/format";
 import { indexByDay } from "@/lib/metrics";
+import { latestDay } from "@/lib/latest-day";
 import { insights } from "@/lib/overview";
 import {
   bedtimeFor,
@@ -45,7 +46,10 @@ function Overview({ dataset, now, override }: { dataset: Dataset; now: Date; ove
   const bedtime = bedtimeFor(day?.scores?.sleep_need_minutes ?? null, typicalWake(dataset.days, tz, addDays(date, 1)));
   const sentence = morning ? morningSummary(day?.scores) : eveningSummary(day?.scores, bedtime);
   const observations = insights(dataset.days, date);
-  const todayProps = { dataset, day, date, isToday };
+  // While today is still an empty shell (no steps, no sleep yet), the today tiles show the
+  // latest day with data and say how old it is; partial values of today win once they exist.
+  const shown = latestDay(dataset.days, focus, today);
+  const todayProps = { dataset, day: shown.day, date: shown.date, isToday: shown.date === today, latest: shown.label };
 
   return (
     <>

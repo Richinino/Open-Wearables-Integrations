@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { SleepView } from "./sleep";
+import { SleepView } from "@/components/detail/sleep/sleep-view";
 
 export const metadata: Metadata = { title: "Spánok" };
 

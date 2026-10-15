@@ -26,6 +26,19 @@ interface TodayProps {
   day: Day | null;
   date: string;
   isToday: boolean;
+  /** "posledné dáta: včera" when the tiles show an older day because today has no data yet. */
+  latest?: string | null;
+}
+
+/** The small note that the tile shows an older day while today has no data yet. */
+function LatestNote({ text }: { text?: string | null }) {
+  if (!text) return null;
+  return (
+    <span className="mono inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-[3px] text-[11px] tracking-[0.04em] text-ink2">
+      <span aria-hidden="true" className="size-1.5 rounded-full bg-warn" />
+      {text}
+    </span>
+  );
 }
 
 function values(dataset: Dataset, end: string, length: number, key: NumericDayKey): (number | null)[] {
@@ -36,7 +49,7 @@ function values(dataset: Dataset, end: string, length: number, key: NumericDayKe
 }
 
 /** Steps of the day in big, with the last 30 days as an area. */
-export function StepsTile({ dataset, day, date, isToday }: TodayProps) {
+export function StepsTile({ dataset, day, date, isToday, latest }: TodayProps) {
   // useId may contain characters that url(#…) does not accept.
   const gradient = `steps${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const month = values(dataset, date, 30, "steps");
@@ -55,6 +68,7 @@ export function StepsTile({ dataset, day, date, isToday }: TodayProps) {
           <div className="figure mt-1 text-[clamp(64px,9vw,120px)] tracking-[-0.045em]">{formatInt(day?.steps ?? null)}</div>
         </div>
         <div className="flex flex-col items-start gap-1 pb-2.5 sm:items-end">
+          <LatestNote text={latest} />
           <div className="text-[14px] text-ink2">30 dní · priemer {formatInt(summary.average)}</div>
           {percent !== null && percent !== 0 && (
             <div className={`text-[13px] ${percent > 0 ? "text-good-ink" : "text-ink2"}`}>
@@ -148,7 +162,7 @@ const LEGEND: { stage: "deep" | "rem" | "light" | "awake"; key: keyof Day }[] = 
 ];
 
 /** Last night: length, the stage strip, the stages in minutes and the usual times. */
-export function SleepTile({ dataset, day, date }: TodayProps) {
+export function SleepTile({ dataset, day, date, latest }: TodayProps) {
   const tz = dataset.timezone;
   const hasSleep = day?.sleep_minutes != null;
   const segments = sleepSegments(day);
@@ -156,7 +170,10 @@ export function SleepTile({ dataset, day, date }: TodayProps) {
   return (
     <TileShell className="flex-auto gap-4 p-6 sm:p-7">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <TileTitle href={ROUTES.sleep}>Spánok</TileTitle>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <TileTitle href={ROUTES.sleep}>Spánok</TileTitle>
+          <LatestNote text={latest} />
+        </div>
         {hasSleep && (
           <div className="mono text-[12px] text-ink2">
             {formatClock(day?.sleep_start, tz)} → {formatClock(day?.sleep_end, tz)}
@@ -191,7 +208,7 @@ export function SleepTile({ dataset, day, date }: TodayProps) {
 }
 
 /** Resting heart rate of the day and its last 30 days. */
-export function RestingTile({ dataset, day, date, isToday }: TodayProps) {
+export function RestingTile({ dataset, day, date, isToday, latest }: TodayProps) {
   const month = values(dataset, date, 30, "hr_resting");
   const present = month.filter((value): value is number => value !== null);
   const low = present.length ? Math.min(...present) - 2 : 40;
@@ -213,7 +230,7 @@ export function RestingTile({ dataset, day, date, isToday }: TodayProps) {
     day?.hr_min != null && day.hr_max != null ? ` · ${isToday ? "dnes" : "v ten deň"} ${formatInt(day.hr_min)} – ${formatInt(day.hr_max)}` : "";
 
   return (
-    <Tile href={ROUTES.heart} label="Pokojový tep" className="gap-3.5 p-6 sm:p-7">
+    <Tile href={ROUTES.heart} label="Pokojový tep" aside={latest ? <LatestNote text={latest} /> : undefined} className="gap-3.5 p-6 sm:p-7">
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
         <div className="figure text-[48px] leading-none tracking-[-0.03em]">{formatInt(day?.hr_resting ?? null)}</div>
         <div className="text-[14px] text-ink2">bpm{range}</div>
