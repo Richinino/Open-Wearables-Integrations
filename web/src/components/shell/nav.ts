@@ -39,6 +39,8 @@ export const TILE_ONLY_NAV: NavItem[] = [
 ];
 
 export function isActive(pathname: string, href: string): boolean {
-  if (href === "/") return pathname === "/" || pathname.startsWith("/den/");
+  if (href === "/") return pathname === "/";
+  // A day page sits under the calendar: its breadcrumb leads back there.
+  if (href === ROUTES.calendar && pathname.startsWith("/den/")) return true;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
