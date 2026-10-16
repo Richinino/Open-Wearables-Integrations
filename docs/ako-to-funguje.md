@@ -109,6 +109,6 @@ Web ich dostane cez `owi serve` ako `scores` pri každom dni, k tomu `sleep_time
 | Open Wearables (API, databáza, admin portál) | Docker na notebooku, `localhost:8000` a `:3000` |
 | owi (prepočet) a owi serve (API pre web) | Docker, kontajnery `owi-owi-1` a `owi-api-1`, API na `127.0.0.1:8787` |
 | Verejná adresa | Tailscale Funnel: `/` pre telefón, `/owi` pre web |
-| Web | priečinok `web/`, lokálne `npm run dev -- -p 3100`; na Vercel zatiaľ nenasadený |
+| Web | priečinok `web/`, nasadený na Vercel (projekt `zdravie`, root `web`, nasadí sa po každom pushi do vetvy); lokálne `npm run dev -- -p 3100` |
 
 Po reštarte notebooku treba spustiť Docker Desktop a appku Tailscale; kontajnery potom nabehnú samy.

@@ -9,7 +9,7 @@ Moja inštancia [Open Wearables](https://github.com/the-momentum/open-wearables)
 | MCP pre Claude | lokálne, volá API backendu | beží |
 | Denné metriky (`owi`) | toto repo | beží |
 | Čítacie API pre web (`owi serve`) | toto repo, Docker | beží |
-| Web so súhrnmi | `web/`, Vercel | pripravený lokálne |
+| Web so súhrnmi | `web/`, Vercel | nasadený, s prihlásením |
 
 Tajomstvá (API kľúče, heslá, `.env`) ani zdravotné dáta do tohto repa nepatria. Priečinok `data/` je v `.gitignore`.
 
