@@ -15,7 +15,6 @@ export class DatasetUnavailableError extends Error {
 const DEMO_TIME_ZONE = "Europe/Bratislava";
 const DEMO_DAYS = 120;
 const DEMO_SYNC_AGE_MS = 7 * 60 * 1000;
-const REVALIDATE_SECONDS = 300;
 const TIMEOUT_MS = 10_000;
 
 function hasDays(body: unknown): body is Dataset {
@@ -45,9 +44,9 @@ export async function loadDataset(): Promise<Dataset> {
   try {
     response = await fetch(`${baseUrl.replace(/\/+$/, "")}/v1/days`, {
       headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-      // Kept in the Next.js data cache for five minutes. Past that, the stored copy is still
-      // served while a refresh runs in the background, and it stays if that refresh fails.
-      next: { revalidate: REVALIDATE_SECONDS },
+      // Fresh on every request: a cached copy made a reload show the previous data. owi serves
+      // the whole history gzipped in well under a second, so there is little to save.
+      cache: "no-store",
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (error) {

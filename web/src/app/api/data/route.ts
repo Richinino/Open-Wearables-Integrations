@@ -2,8 +2,7 @@ import { hasValidSession } from "@/lib/auth";
 import { DatasetUnavailableError, loadDataset } from "@/lib/owi";
 
 // No `dynamic = "force-dynamic"` here: reading the session cookie already makes every call
-// run at request time, and that setting would also switch off the five-minute cache of the
-// upstream fetch in loadDataset.
+// run at request time, and loadDataset asks owi afresh each time.
 
 const NO_STORE = { "Cache-Control": "private, no-store" };
 

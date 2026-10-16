@@ -249,6 +249,21 @@ def test_served_over_http(base_url):
     assert [d["day"] for d in response.json()["days"]] == ["2026-10-02", "2026-10-03"]
 
 
+def test_compressed_when_the_client_accepts_gzip(base_url):
+    # The web fetches every day on each load through the tunnel; gzip makes that ~10x smaller.
+    url = f"{base_url}/v1/days?from=2026-10-02"
+    plain = httpx.get(url, headers={"Authorization": AUTH, "Accept-Encoding": "identity"})
+    packed = httpx.get(url, headers={"Authorization": AUTH, "Accept-Encoding": "br, gzip;q=0.8"})
+    refused = httpx.get(url, headers={"Authorization": AUTH, "Accept-Encoding": "gzip;q=0"})
+
+    assert "content-encoding" not in plain.headers
+    assert packed.headers["content-encoding"] == "gzip"
+    assert packed.headers["vary"] == "Accept-Encoding"
+    assert int(packed.headers["content-length"]) < len(plain.content)
+    assert packed.json() == plain.json()
+    assert "content-encoding" not in refused.headers
+
+
 def test_http_errors_are_json(base_url):
     unauthorized = httpx.get(f"{base_url}/v1/days")
     not_allowed = httpx.post(f"{base_url}/v1/days", headers={"Authorization": AUTH})

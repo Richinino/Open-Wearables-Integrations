@@ -102,7 +102,7 @@ Presný tvar odpovede je v [`docs/superpowers/specs/2026-10-13-web-design.md`](d
 
 ### Docker
 
-Dva kontajnery z jedného image: `owi` prepočítava posledných 14 dní každých 30 minút (telefón niekedy pošle dáta až o pár dní), `api` sprístupňuje výsledky na `127.0.0.1:8787`. Kontajner `api` má `data/` pripojené len na čítanie a nedostane kľúč k Open Wearables.
+Dva kontajnery z jedného image: `owi` prepočítava posledných 14 dní každých 10 minút (telefón niekedy pošle dáta až o pár dní), `api` sprístupňuje výsledky na `127.0.0.1:8787`. Kontajner `api` má `data/` pripojené len na čítanie a nedostane kľúč k Open Wearables.
 
 ```bash
 docker compose --env-file .env -f docker/compose.yml up -d --build
@@ -128,7 +128,7 @@ Testy bežia na umelých dátach z `tests/factories.py`.
 
 ## Web
 
-Stránka v [`web/`](web/) (Next.js) ukazuje výsledky `owi`: dnešok, posledné obdobie, spánok, tréningy a detail dňa. Dáta ostávajú doma; web si ich číta cez `owi serve` a drží ich v cache 5 minút.
+Stránka v [`web/`](web/) (Next.js) ukazuje výsledky `owi`: dnešok, posledné obdobie, spánok, tréningy a detail dňa. Dáta ostávajú doma; web si ich pri každom načítaní číta cez `owi serve` a otvorená stránka sa obnovuje každú minútu.
 
 - Prihlásenie jedným heslom (`SITE_PASSWORD`). Bez prihlásenia sa nezobrazí stránka ani `/api/*`.
 - Token k dátam (`OWI_API_TOKEN`) pozná len server na Verceli, do prehliadača sa nedostane.

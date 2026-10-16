@@ -13,7 +13,7 @@ hodinky a telefón Samsung
 appka Open Wearables v telefóne ──► Tailscale Funnel (HTTPS) ──► Open Wearables v Dockeri (notebook, neskôr PC)
                                                                       │  surové dáta v Postgrese
                                                                       ▼
-                                                     owi (každých 30 min prepočíta posledných 14 dní)
+                                                     owi (každých 10 min prepočíta posledných 14 dní)
                                                                       │  denné výsledky v data/owi.db
                                                                       ▼
                                        owi serve (len čítanie, token) ──► Funnel /owi ──► web (Vercel) ──► prehliadač

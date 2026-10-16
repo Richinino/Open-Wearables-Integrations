@@ -44,7 +44,7 @@ afterEach(() => {
 });
 
 describe("loadDataset with a configured source", () => {
-  it("asks the API with the bearer token, a five-minute cache and a timeout", async () => {
+  it("asks the API with the bearer token, without a cache and with a timeout", async () => {
     configure({ url: API_URL, token: TOKEN, production: true });
     fetchMock.mockResolvedValue(Response.json(BODY));
 
@@ -54,9 +54,9 @@ describe("loadDataset with a configured source", () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("https://owi.example.test/owi/v1/days");
     expect(new Headers(init?.headers).get("authorization")).toBe(`Bearer ${TOKEN}`);
-    expect((init as { next?: { revalidate?: number } }).next).toEqual({ revalidate: 300 });
+    expect(init?.cache).toBe("no-store");
+    expect((init as { next?: unknown }).next).toBeUndefined();
     expect(init?.signal).toBeInstanceOf(AbortSignal);
-    expect(init?.cache).toBeUndefined();
   });
 
   it("strips a trailing slash from the base URL", async () => {

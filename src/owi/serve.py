@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import hmac
 import json
 import sqlite3
@@ -19,6 +20,7 @@ from owi.store import Store, jsonable
 MAX_DAYS = 400
 MIN_TOKEN_LENGTH = 32
 REQUEST_TIMEOUT_S = 15
+GZIP_LEVEL = 6  # the whole history is ~1.3 MB of JSON; level 6 brings it to about a tenth
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,20 @@ def _authorized(authorization: str | None, token: str) -> bool:
     if not token or scheme.lower() != "bearer":
         return False
     return hmac.compare_digest(supplied.strip().encode(), token.encode())
+
+
+def _accepts_gzip(accept_encoding: str | None) -> bool:
+    """True when the Accept-Encoding header lists gzip without q=0."""
+    for item in (accept_encoding or "").split(","):
+        name, _, params = item.strip().partition(";")
+        if name.strip().lower() != "gzip":
+            continue
+        quality = params.strip().removeprefix("q=").strip() if params.strip() else "1"
+        try:
+            return float(quality) > 0
+        except ValueError:
+            return False
+    return False
 
 
 def _iso(value: Any) -> Any:
@@ -137,9 +153,15 @@ class _Handler(BaseHTTPRequestHandler):
             self.command, self.path, self.headers.get("Authorization"), **self.server.context
         )
         payload = json.dumps(response.body).encode()
+        gzipped = _accepts_gzip(self.headers.get("Accept-Encoding"))
+        if gzipped:
+            payload = gzip.compress(payload, compresslevel=GZIP_LEVEL)
         self.send_response(response.status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
+        if gzipped:
+            self.send_header("Content-Encoding", "gzip")
+        self.send_header("Vary", "Accept-Encoding")
         self.send_header("Cache-Control", "no-store")
         if response.status == 401:
             self.send_header("WWW-Authenticate", "Bearer")

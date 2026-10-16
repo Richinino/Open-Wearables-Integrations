@@ -12,4 +12,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 ENV OWI_DATA_DIR=/data
 
 # 14 days: the phone app can upload days late, and late data should still land.
-CMD ["owi", "sync", "--days", "14", "--loop", "1800"]
+CMD ["owi", "sync", "--days", "14", "--loop", "600"]

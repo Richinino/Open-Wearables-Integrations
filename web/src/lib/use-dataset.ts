@@ -5,7 +5,7 @@ import useSWR from "swr";
 import type { Dataset } from "./types";
 
 const DATA_URL = "/api/data";
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const REFRESH_INTERVAL_MS = 60 * 1000;
 
 async function fetchDataset(url: string): Promise<Dataset> {
   const response = await fetch(url, { cache: "no-store", credentials: "same-origin" });

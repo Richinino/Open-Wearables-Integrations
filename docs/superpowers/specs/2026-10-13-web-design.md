@@ -88,7 +88,7 @@ Next.js (App Router, TypeScript) v priečinku `web/`, texty po slovensky.
 
 **Ochrana.** Každá stránka okrem `/login` aj každý route handler okrem prihlásenia overuje session: stránky presmerujú na `/login`, `/api/*` vráti `401`. Vyhľadávače majú zákaz indexovania.
 
-**Dáta.** Server volá `GET {OWI_API_URL}/v1/days` s tokenom `OWI_API_TOKEN` a výsledok drží v cache 5 minút; pri výpadku ďalej vracia posledný úspešný. Prehliadač volá len `/api/data` a obnovuje ho každých 5 minút. Keď je `synced_at` staršie než 90 minút, web ukáže, že zdroj je offline.
+**Dáta.** Server volá `GET {OWI_API_URL}/v1/days` s tokenom `OWI_API_TOKEN` pri každej požiadavke, bez cache (zmena 2026-10-16: cache 5 minút spôsobila, že obnovenie stránky ukázalo staré dáta; owi odpovedá gzipom). Pri výpadku zdroja ukáže nová stránka „Dáta sú teraz nedostupné“, otvorená stránka si nechá posledné načítané. Prehliadač volá len `/api/data` a obnovuje ho každú minútu. Keď je `synced_at` staršie než 90 minút, web ukáže, že zdroj je offline.
 
 | Stránka | Obsah |
 |---|---|
