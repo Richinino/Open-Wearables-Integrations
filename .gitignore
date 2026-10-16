@@ -8,7 +8,7 @@ backups/
 node_modules/
 .next/
 .vercel/
-data/
+/data/
 .venv/
 __pycache__/
 .pytest_cache/
