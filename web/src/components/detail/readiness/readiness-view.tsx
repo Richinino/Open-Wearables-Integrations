@@ -17,7 +17,14 @@ import type { Dataset } from "@/lib/types";
 import { DetailHead, riseStyle } from "../common/bits";
 import { ChartTile } from "../common/controls";
 import { focusOf } from "../common/focus";
-import { FlaggedNightsTile, NightSignalTile, ReadinessPartsTile, ReadinessTile, RestingBaselineTile } from "./readiness-tiles";
+import {
+  EnergyScoreTile,
+  FlaggedNightsTile,
+  NightSignalTile,
+  ReadinessPartsTile,
+  ReadinessTile,
+  RestingBaselineTile,
+} from "./readiness-tiles";
 
 const TREND_DAYS = 30;
 const SIGNAL_DAYS = 90;
@@ -49,8 +56,13 @@ function Readiness({ dataset, now }: { dataset: Dataset; now: Date }) {
         <div className="rise grid min-w-0" style={riseStyle(1)}>
           <ReadinessTile day={day} isToday={isToday} />
         </div>
-        <div className="rise grid min-w-0" style={riseStyle(2)}>
-          <ReadinessPartsTile day={day} previous={previous} />
+        <div className="flex min-w-0 flex-col gap-[18px]">
+          <div className="rise grid min-w-0" style={riseStyle(2)}>
+            <ReadinessPartsTile day={day} previous={previous} />
+          </div>
+          <div className="rise grid min-w-0 flex-auto" style={riseStyle(3)}>
+            <EnergyScoreTile day={day} isToday={isToday} />
+          </div>
         </div>
       </div>
 

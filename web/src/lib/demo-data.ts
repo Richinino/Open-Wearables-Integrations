@@ -7,8 +7,26 @@
 // generators of their own, so adding them did not change any of the values below.
 
 import { addDays, dateRange, diffDays, isValidDay, localDay, localMinutesOfDay, weekdayIndex } from "./dates";
-import { demoScores, demoTimeline, nightElevation, workoutStrain } from "./demo-scores";
-import type { Dataset, Day, StepsSource, Workout } from "./types";
+import {
+  demoEnergyScore,
+  demoSamsungSleep,
+  demoScores,
+  demoTimeline,
+  nightElevation,
+  workoutStrain,
+} from "./demo-scores";
+import { owiFigure } from "./samsung";
+import type {
+  Calibration,
+  CalibrationParams,
+  Dataset,
+  Day,
+  DayScores,
+  Entry,
+  QualityTarget,
+  StepsSource,
+  Workout,
+} from "./types";
 
 const TIME_ZONE = "Europe/Bratislava";
 const MINUTE_MS = 60_000;
@@ -363,6 +381,104 @@ function buildDay(day: string, cutoffMs: number | null): Day {
   };
 }
 
+// ---------------------------------------------------------------------------------------
+// Entries copied from Samsung Health, and owi's calibration on them
+
+/** The demo user starts copying numbers from Samsung Health on this day. */
+const ENTRIES_FROM = "2026-08-20";
+/** Shares of days with an entry, and of entries with each score filled in. */
+const ENTRY_SHARE = 0.7;
+const SLEEP_SCORE_SHARE = 0.9;
+const ENERGY_SCORE_SHARE = 0.12;
+
+const DEFAULT_PARAMS: CalibrationParams = { stride_m: 0.74, active_hr_delta: 30, kcal_scale: 1, basal_kcal: null };
+const TUNED_PARAMS: CalibrationParams = { stride_m: 0.77, active_hr_delta: 27, kcal_scale: 0.91, basal_kcal: null };
+/** previous_error as a multiple of error: below 1 the last tuning made the figure worse. */
+const PREVIOUS_ERROR: Partial<Record<QualityTarget, number>> = {
+  distance_km: 1.4,
+  active_minutes: 1.3,
+  active_kcal: 1.1,
+  total_kcal: 0.95,
+};
+
+interface EntryPlan {
+  has: boolean;
+  sleep: boolean;
+  energy: boolean;
+}
+
+/** Which days get an entry, from the date alone, so a day keeps it whatever `today` is. */
+function entryPlan(day: string): EntryPlan {
+  if (day < ENTRIES_FROM) return { has: false, sleep: false, energy: false };
+  const random = seeded(hashText(`owi-demo-entry-plan:${day}`));
+  const has = random() < ENTRY_SHARE;
+  const sleep = random() < SLEEP_SCORE_SHARE;
+  const energy = random() < ENERGY_SCORE_SHARE;
+  return { has, sleep: has && sleep, energy: has && energy };
+}
+
+/** Entries of one score saved on the days before `day`. */
+function entriesBefore(day: string, score: "sleep" | "energy"): number {
+  if (day <= ENTRIES_FROM) return 0;
+  return dateRange(ENTRIES_FROM, addDays(day, -1)).filter((item) => entryPlan(item)[score]).length;
+}
+
+/** What Samsung Health showed for a finished day: close to owi's figures, not the same. */
+function demoEntry(base: Day, scores: DayScores, random: Random): Entry | null {
+  const plan = entryPlan(base.day);
+  if (!plan.has || !base.complete) return null;
+  const vary = (low: number, high: number) => between(random, [low, high]);
+  const steps = base.steps === null ? null : Math.round(base.steps * vary(0.98, 1.02));
+  const activeKcal = base.activity_kcal_est === null ? null : Math.round(base.activity_kcal_est * vary(0.85, 0.97));
+  const apple = scores.apple_sleep.value;
+  const performance = scores.sleep_performance.value;
+  const readiness = scores.readiness.value;
+  const entry: Entry = {
+    day: base.day,
+    steps,
+    distance_km: steps === null ? null : Math.round((steps * vary(0.76, 0.8)) / 10) / 100,
+    active_minutes: base.active_minutes_est === null ? null : Math.round(base.active_minutes_est * vary(1, 1.25)),
+    active_kcal: activeKcal,
+    total_kcal: activeKcal === null || base.basal_kcal === null ? null : Math.round(base.basal_kcal * vary(0.97, 1.03)) + activeKcal,
+    sleep_score:
+      plan.sleep && apple !== null ? Math.round(clamp(0.55 * apple + 0.45 * (performance ?? apple) + vary(-6, 6), 0, 100)) : null,
+    energy_score: plan.energy && readiness !== null ? Math.round(clamp(readiness + vary(-8, 8), 0, 100)) : null,
+    // Saved the same evening, so it is never later than the data around it.
+    saved_at: isoUtc(instantAt(base.day, at(21, 30))),
+  };
+  const filled = [entry.steps, entry.distance_km, entry.active_minutes, entry.active_kcal, entry.total_kcal, entry.sleep_score, entry.energy_score];
+  return filled.some((value) => value !== null) ? entry : null;
+}
+
+/** owi's calibration as `GET /v1/days` reports it, measured on the entries of the window. */
+function demoCalibration(days: Day[], fittedAt: string): Calibration {
+  const withEntry = days.filter((day) => day.samsung);
+  if (withEntry.length === 0) {
+    return { fitted_at: null, entries: 0, params: DEFAULT_PARAMS, defaults: DEFAULT_PARAMS, quality: {} };
+  }
+  const quality: Calibration["quality"] = {};
+  const targets: QualityTarget[] = ["distance_km", "active_minutes", "active_kcal", "total_kcal", "sleep_score", "energy_score"];
+  for (const key of targets) {
+    const pairs = withEntry.flatMap((day) => {
+      const owi = owiFigure(day, key);
+      const samsung = day.samsung?.[key] ?? null;
+      return owi === null || samsung === null || samsung <= 0 ? [] : [[owi, samsung] as const];
+    });
+    if (pairs.length === 0) continue;
+    const isScore = key === "sleep_score" || key === "energy_score";
+    const deviations = pairs.map(([owi, samsung]) => (isScore ? Math.abs(owi - samsung) : (Math.abs(owi - samsung) / samsung) * 100));
+    const error = oneDecimal(total(deviations) / deviations.length);
+    const factor = PREVIOUS_ERROR[key];
+    quality[key] = {
+      n: pairs.length,
+      error,
+      previous_error: factor === undefined ? null : oneDecimal(error * factor),
+      unit: isScore ? "body" : "%",
+    };
+  }
+  return { fitted_at: fittedAt, entries: withEntry.length, params: TUNED_PARAMS, defaults: DEFAULT_PARAMS, quality };
+}
+
 /**
  * `days` calendar days ending at `today`, minus a few gaps. The last day is still in progress
  * and holds only what happened before `syncedAt` (default: 08:00 UTC on `today`).
@@ -390,10 +506,16 @@ export function demoDataset(today: string, days: number = 120, syncedAt?: string
     const day = addDays(today, -offset);
     const base = offset === 0 ? buildDay(day, cutoffMs) : finishedDay(day);
     const history = dateRange(addDays(day, -HISTORY_DAYS), addDays(day, -1)).map(finishedDay);
+    const scores = demoScores(base, history, seeded(hashText(`owi-demo-scores:${day}`)));
+    // The Samsung-style scores draw from generators of their own, so the others stay as they were.
+    const samsungRandom = seeded(hashText(`owi-demo-samsung:${day}`));
+    scores.samsung_sleep = demoSamsungSleep(base, entriesBefore(day, "sleep"), samsungRandom);
+    scores.energy_score = demoEnergyScore(base, history, scores, entriesBefore(day, "energy"), samsungRandom);
     result.push({
       ...base,
       sleep_timeline: demoTimeline(base, seeded(hashText(`owi-demo-timeline:${day}`))),
-      scores: demoScores(base, history, seeded(hashText(`owi-demo-scores:${day}`))),
+      scores,
+      samsung: demoEntry(base, scores, seeded(hashText(`owi-demo-entry:${day}`))),
     });
   }
 
@@ -403,5 +525,6 @@ export function demoDataset(today: string, days: number = 120, syncedAt?: string
     last_day: result.length > 0 ? result[result.length - 1].day : null,
     synced_at: result.length > 0 ? synced : null,
     days: result,
+    calibration: demoCalibration(result, synced),
   };
 }

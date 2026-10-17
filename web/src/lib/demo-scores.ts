@@ -442,3 +442,65 @@ export function demoScores(day: Day, history: Day[], random: Random): DayScores 
     whoop_age: whoopAge,
   };
 }
+
+// ---------------------------------------------------------------------------------------
+// Samsung-style scores, tuned in owi on the user's entries
+
+/** Entries of a score owi waits for before it shows its estimate. */
+export const SAMSUNG_NEEDED = 10;
+
+// Part names as in owi's samsung_scores.py.
+const SAMSUNG_SLEEP_WEIGHTS = { duration: 0.35, deep: 0.15, rem: 0.15, efficiency: 0.15, interruptions: 0.1, latency: 0.1 };
+const ENERGY_WEIGHTS = { sleep: 0.3, regularity: 0.15, timing: 0.15, load: 0.2, night_hr: 0.2 };
+
+function learning(entries: number): Score {
+  return { value: null, components: { entries, needed: SAMSUNG_NEEDED }, note: "learning" };
+}
+
+/** Samsung Sleep Score of the night that ended on `day`; "learning" below SAMSUNG_NEEDED entries. */
+export function demoSamsungSleep(day: Day, entries: number, random: Random): Score {
+  if (entries < SAMSUNG_NEEDED) return learning(entries);
+  const sleep = day.sleep_minutes;
+  if (sleep === null || sleep <= 0) {
+    const components = Object.fromEntries(Object.keys(SAMSUNG_SLEEP_WEIGHTS).map((key) => [key, null]));
+    return { value: null, components, note: "no sleep recorded" };
+  }
+  const awake = day.sleep_awake_min ?? 0;
+  return score(
+    rounded({
+      duration: 100 * Math.min(1, sleep / 480),
+      deep: 100 * Math.min(1, (day.sleep_deep_min ?? 0) / sleep / 0.2),
+      rem: 100 * Math.min(1, (day.sleep_rem_min ?? 0) / sleep / 0.23),
+      efficiency: (100 * sleep) / (sleep + awake),
+      interruptions: 100 - Math.min(100, Math.max(0, awake - 10) * 2),
+      latency: between(random, 65, 100),
+    }),
+    SAMSUNG_SLEEP_WEIGHTS,
+    null,
+  );
+}
+
+/** Samsung Energy Score of `day` from the week's sleep, regularity, yesterday's load and the night. */
+export function demoEnergyScore(day: Day, history: Day[], scores: DayScores, entries: number, random: Random): Score {
+  if (entries < SAMSUNG_NEEDED) return learning(entries);
+  if (day.hr_resting === null) {
+    const components = Object.fromEntries(Object.keys(ENERGY_WEIGHTS).map((key) => [key, null]));
+    return { value: null, components, note: "no data" };
+  }
+  const week = [...history.filter((item) => item.day >= addDays(day.day, -6)), day];
+  const sleepWeek = mean(week.map((item) => item.sleep_minutes));
+  const previous = history.find((item) => item.day === addDays(day.day, -1)) ?? null;
+  const previousStrain = previous ? dayStrain(previous) : null;
+  const delta = scores.night_signal.delta;
+  return score(
+    rounded({
+      sleep: sleepWeek === null ? null : 100 * Math.min(1, sleepWeek / 480),
+      regularity: scores.sleep_regularity === null ? null : (scores.sleep_regularity - 50) * 2,
+      timing: between(random, 60, 100),
+      load: previousStrain === null ? null : 100 - Math.abs(previousStrain - 10) * 6,
+      night_hr: delta === null ? null : 100 - Math.max(0, delta) * 12,
+    }),
+    ENERGY_WEIGHTS,
+    null,
+  );
+}

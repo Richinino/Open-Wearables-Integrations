@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isActive, ROUTES } from "./nav";
+import { DETAIL_NAV, isActive, ROUTES } from "./nav";
 
 describe("isActive", () => {
   it("marks the overview only on the home page", () => {
@@ -13,6 +13,13 @@ describe("isActive", () => {
     expect(isActive(ROUTES.calendar, ROUTES.calendar)).toBe(true);
     expect(isActive(ROUTES.day("2026-10-14"), ROUTES.calendar)).toBe(true);
     expect(isActive("/spanok", ROUTES.calendar)).toBe(false);
+  });
+
+  it("lists the entry page among the details, with a link that opens one day", () => {
+    expect(DETAIL_NAV.at(-1)).toEqual({ href: "/zapis", label: "Zápis", note: "doplň čísla zo Samsungu" });
+    expect(isActive("/zapis", ROUTES.entries)).toBe(true);
+    expect(isActive("/zapis", ROUTES.calendar)).toBe(false);
+    expect(ROUTES.entryFor("2026-10-14")).toBe("/zapis?den=2026-10-14");
   });
 
   it("matches a route and its subpaths but not a longer name", () => {

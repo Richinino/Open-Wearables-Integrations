@@ -10,6 +10,9 @@ export const ROUTES = {
   heart: "/tep",
   workouts: "/treningy",
   longTerm: "/dlhodobe",
+  entries: "/zapis",
+  /** /zapis with one day open, e.g. from the day page. */
+  entryFor: (date: string) => `/zapis?den=${date}`,
   day: (date: string) => `/den/${date}`,
 } as const;
 
@@ -30,6 +33,7 @@ export const DETAIL_NAV: NavItem[] = [
   { href: ROUTES.activity, label: "Aktivita", note: "Activity, Strain a záťaž" },
   { href: ROUTES.workouts, label: "Tréningy", note: "zoznam a intenzita" },
   { href: ROUTES.longTerm, label: "Dlhodobé", note: "VO2max, vek tela, rekordy" },
+  { href: ROUTES.entries, label: "Zápis", note: "doplň čísla zo Samsungu" },
 ];
 
 /** Routes reached from overview tiles that have no menu entry of their own. */

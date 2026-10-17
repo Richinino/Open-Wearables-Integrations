@@ -35,6 +35,7 @@ import { average, indexByDay, periodSummary, windowEnding } from "@/lib/metrics"
 import { activityBand, cardioStatusLabel, formatScore, formatStrain, noteText, scoreValue, strainBand } from "@/lib/scores";
 import type { Dataset, Day } from "@/lib/types";
 import { Figure, NoteLine, PartsList, RunningHint, ScoreDial, VendorLine } from "../common/bits";
+import { ACTIVITY_TARGETS, CalibrationNote } from "../common/calibration";
 import { ChartTile } from "../common/controls";
 import { partRows } from "../common/score-parts";
 import { TrendChart } from "../common/trend-chart";
@@ -354,6 +355,7 @@ export function EstimatesTile({ dataset, day, isToday, length = 30 }: { dataset:
         <Figure label="Z aktivity" value={approx(formatInt(day.activity_kcal_est))} unit="kcal" />
         <Figure label="Bazálny výdaj" value={formatInt(day.basal_kcal)} unit="kcal" note={running ? "zatiaľ za časť dňa" : "za celý deň"} />
       </div>
+      <CalibrationNote calibration={dataset.calibration} targets={ACTIVITY_TARGETS} />
       <ColumnChart
         points={points}
         color="var(--accent)"

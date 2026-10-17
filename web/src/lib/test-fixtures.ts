@@ -1,6 +1,6 @@
 // Builders for invented days in tests. Not imported by the app.
 
-import type { Day, DayScores, Score, Workout } from "./types";
+import type { Calibration, Day, DayScores, Entry, Score, Workout } from "./types";
 
 export const ZONE = "Europe/Bratislava";
 
@@ -59,6 +59,26 @@ export function makeWorkout(id: string, values: Partial<Workout> = {}): Workout 
 
 export function makeScore(value: number | null, components: Record<string, number | null> = {}, note: string | null = null): Score {
   return { value, components, note };
+}
+
+export function makeEntry(day: string, values: Partial<Entry> = {}): Entry {
+  return {
+    day,
+    steps: null,
+    distance_km: null,
+    active_minutes: null,
+    active_kcal: null,
+    total_kcal: null,
+    sleep_score: null,
+    energy_score: null,
+    saved_at: "2026-10-16T09:00:00+00:00",
+    ...values,
+  };
+}
+
+export function makeCalibration(values: Partial<Calibration> = {}): Calibration {
+  const params = { stride_m: 0.74, active_hr_delta: 30, kcal_scale: 1, basal_kcal: null };
+  return { fitted_at: null, entries: 0, params, defaults: params, quality: {}, ...values };
 }
 
 export function makeScores(day: string, values: Partial<DayScores> = {}): DayScores {

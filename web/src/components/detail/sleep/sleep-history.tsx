@@ -8,8 +8,9 @@ import { ColumnChart, RangeChart } from "@/components/charts/charts";
 import { tickPlain } from "@/components/charts/points";
 import { DataTable } from "@/components/ui/parts";
 import { TileShell } from "@/components/ui/tile";
-import { clockSummary, needCoverage, SLEEP_KINDS, SRI_MEDIAN, type NightPoint, type SleepKind } from "@/lib/detail-sleep";
+import { clockSummary, needCoverage, SLEEP_KINDS, sleepScoreOf, SRI_MEDIAN, type NightPoint, type SleepKind } from "@/lib/detail-sleep";
 import {
+  approx,
   DASH,
   formatClock,
   formatClockMinutes,
@@ -21,6 +22,7 @@ import {
   plural,
 } from "@/lib/format";
 import { average, sleepNights } from "@/lib/metrics";
+import { learningText } from "@/lib/samsung";
 import { formatScore, scoreValue } from "@/lib/scores";
 import type { Dataset } from "@/lib/types";
 import { Keys } from "../common/bits";
@@ -51,8 +53,10 @@ export function SleepHistory({
   const period = points.length;
   const scored = points.filter((point) => point.score !== null);
   const mean = average(scored.map((point) => point.score));
-  const topFrom = kind === "performance" ? 85 : 81;
+  const topFrom = info.top;
   const strong = scored.filter((point) => (point.score as number) >= topFrom).length;
+  const shownScore = (value: number) => (info.estimate ? approx(formatInt(value)) : formatInt(value));
+  const learning = learningText(sleepScoreOf(points[points.length - 1].data, kind));
   const coverage = needCoverage(points);
   const clock = clockSummary(dataset.days, tz, end, period);
   const nights = sleepNights(
@@ -72,12 +76,14 @@ export function SleepHistory({
           label={`${info.label} po nociach`}
           note={
             scored.length === 0
-              ? "Za toto obdobie zatiaľ bez skóre."
-              : `Priemer ${formatInt(mean)} · ${topFrom} a viac v ${formatInt(strong)} z ${formatInt(scored.length)} ${nightsWord(scored.length)} · metóda podľa ${info.vendor}`
+              ? learning
+                ? `${info.label} ${learning}.`
+                : "Za toto obdobie zatiaľ bez skóre."
+              : `Priemer ${shownScore(mean as number)} · ${topFrom} a viac v ${formatInt(strong)} z ${formatInt(scored.length)} ${nightsWord(scored.length)} · metóda podľa ${info.vendor}${info.estimate ? ", odhad" : ""}`
           }
           table={{
             columns: ["Deň", info.label, "Pásmo"],
-            rows: scored.map((point) => [formatDay(point.day), formatInt(point.score), info.band(point.score)?.label ?? DASH]).reverse(),
+            rows: scored.map((point) => [formatDay(point.day), shownScore(point.score as number), info.band(point.score)?.label ?? DASH]).reverse(),
           }}
         >
           <ColumnChart
@@ -89,9 +95,9 @@ export function SleepHistory({
             }))}
             color="var(--sleep)"
             ticks={[0, 25, 50, 75, 100]}
-            reference={mean === null ? null : { value: mean, label: `priemer ${formatInt(mean)}` }}
+            reference={mean === null ? null : { value: mean, label: `priemer ${shownScore(mean)}` }}
             ariaLabel={`${info.label} za posledných ${period} nocí, priemer ${formatInt(mean)}`}
-            formatValue={(value) => formatInt(value)}
+            formatValue={shownScore}
             formatTick={tickPlain}
             onSelect={open}
           />
@@ -208,6 +214,7 @@ function NightsTable({ dataset, points }: { dataset: Dataset; points: NightPoint
         formatDuration(point.need),
         scoreValue(day.scores?.sleep_performance) === null ? DASH : formatScore(day.scores?.sleep_performance),
         scoreValue(day.scores?.apple_sleep) === null ? DASH : formatScore(day.scores?.apple_sleep),
+        approx(formatInt(scoreValue(day.scores?.samsung_sleep))),
         formatDuration(day.sleep_deep_min),
         formatDuration(day.sleep_rem_min),
         formatDuration(day.sleep_light_min),
@@ -226,7 +233,7 @@ function NightsTable({ dataset, points }: { dataset: Dataset; points: NightPoint
         <p className="text-[14px] text-ink2">Za toto obdobie nie sú žiadne noci.</p>
       ) : (
         <DataTable
-          columns={["Deň", "Zaspatie", "Zobudenie", "Spánok", "Potreba", "Sleep Perf.", "Sleep Score", "Hlboký", "REM", "Ľahký", "Bdenie", "Zdriemnutie"]}
+          columns={["Deň", "Zaspatie", "Zobudenie", "Spánok", "Potreba", "Sleep Perf.", "Sleep Score", "Samsung", "Hlboký", "REM", "Ľahký", "Bdenie", "Zdriemnutie"]}
           rows={rows}
           maxHeight={460}
         />

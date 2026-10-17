@@ -17,6 +17,7 @@ import {
   type SleepKind,
 } from "@/lib/detail-sleep";
 import {
+  approx,
   DASH,
   formatClock,
   formatDay,
@@ -27,23 +28,25 @@ import {
   formatTimeOfDay,
 } from "@/lib/format";
 import { sleepSegments } from "@/lib/overview";
+import { learningText, scoreParts } from "@/lib/samsung";
 import { formatScore, formatStrain, noteText, scoreValue, strainBand } from "@/lib/scores";
 import type { Day } from "@/lib/types";
 import { Figure, NoteLine, PartsList, RunningHint, ScoreDial, Swatch, VendorLine } from "../common/bits";
+import { LearningBox } from "../common/calibration";
 import { Switch } from "../common/controls";
-import { partRows } from "../common/score-parts";
+import { partRows, presentPartRows } from "../common/score-parts";
 import { Hypnogram } from "./hypnogram";
 
-const KIND_OPTIONS: { value: SleepKind; label: string }[] = [
-  { value: "performance", label: SLEEP_KINDS.performance.label },
-  { value: "apple", label: SLEEP_KINDS.apple.label },
-];
+const KIND_OPTIONS: { value: SleepKind; label: string }[] = (["performance", "apple", "samsung"] as const).map((kind) => ({
+  value: kind,
+  label: SLEEP_KINDS[kind].option ?? SLEEP_KINDS[kind].label,
+}));
 
 function isNumber(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-/** Last night's score; the switch picks Sleep Performance (WHOOP) or Sleep Score (Apple). */
+/** Last night's score; the switch picks Sleep Performance (WHOOP), Sleep Score (Apple) or Samsung. */
 export function SleepScoreTile({
   night,
   previous,
@@ -61,40 +64,62 @@ export function SleepScoreTile({
   const score = sleepScoreOf(night, kind);
   const value = scoreValue(score);
   const band = info.band(value);
-  const note = noteText(score?.note);
+  const learning = learningText(score);
+  const note = learning || info.estimate ? null : noteText(score?.note);
   const minutes = night?.sleep_minutes ?? null;
   const awake = night?.sleep_awake_min ?? null;
   const need = previous?.scores?.sleep_need_minutes ?? null;
+  const asleep = isNumber(minutes) ? `${formatDuration(minutes)} spánku` : null;
+  const awakeFact = isNumber(awake) ? `bdenie ${formatDuration(awake)}` : null;
+  const deepFact = isNumber(night?.sleep_deep_min) ? `${formatDuration(night?.sleep_deep_min)} hlbokého` : null;
+  const remFact = isNumber(night?.sleep_rem_min) ? `${formatDuration(night?.sleep_rem_min)} REM` : null;
   const facts: Record<string, string | null> =
     kind === "performance"
       ? {
           hours_vs_needed: isNumber(minutes) && isNumber(need) ? `${formatDuration(minutes)} z ${formatDuration(need)}` : null,
-          efficiency: isNumber(awake) ? `bdenie ${formatDuration(awake)}` : null,
+          efficiency: awakeFact,
         }
-      : {
-          duration: isNumber(minutes) ? `${formatDuration(minutes)} spánku` : null,
-          bedtime: night?.sleep_start ? `zaspatie ${formatClock(night.sleep_start, timeZone)}` : null,
-          interruptions: isNumber(awake) ? `bdenie ${formatDuration(awake)}` : null,
-        };
+      : kind === "apple"
+        ? {
+            duration: asleep,
+            bedtime: night?.sleep_start ? `zaspatie ${formatClock(night.sleep_start, timeZone)}` : null,
+            interruptions: awakeFact,
+          }
+        : { duration: asleep, deep: deepFact, rem: remFact, interruptions: awakeFact };
+  const shown = value === null ? DASH : info.estimate ? approx(formatInt(value)) : formatScore(score);
+  const rows = info.onlyPresent ? presentPartRows(scoreParts(score), info.parts) : partRows(score, info.parts);
 
   return (
     <TileShell className="gap-5 p-6 sm:p-[30px]">
       <div className="flex flex-col gap-3">
         <h2 className="eyebrow">Skóre spánku</h2>
         <Switch options={KIND_OPTIONS} value={kind} onChange={onKind} label="Ktoré skóre spánku ukázať" />
-        <VendorLine>Metóda podľa {info.vendor}</VendorLine>
+        <VendorLine>
+          Metóda podľa {info.vendor}
+          {info.estimate ? " · odhad" : ""}
+        </VendorLine>
       </div>
       <ScoreDial
         share={value === null ? 0 : value / 100}
         color="var(--sleep)"
-        value={formatScore(score)}
-        band={band?.label ?? note ?? "zatiaľ bez skóre"}
-        sub="zo 100"
-        label={value === null ? `${info.label} zatiaľ nie je` : `${info.label} ${formatInt(value)} zo 100, ${band?.label ?? ""}`}
+        value={shown}
+        band={learning ? "učí sa" : (band?.label ?? note ?? "zatiaľ bez skóre")}
+        sub={info.estimate ? "odhad · zo 100" : "zo 100"}
+        label={
+          value === null
+            ? `${info.label} zatiaľ nie je${learning ? `, ${learning}` : ""}`
+            : `${info.label} ${info.estimate ? "približne " : ""}${formatInt(value)} zo 100, ${band?.label ?? ""}`
+        }
       />
       <p className="text-[13px] text-ink2">{info.about}</p>
-      {note && value !== null && <NoteLine>Poznámka: {note}</NoteLine>}
-      <PartsList rows={partRows(score, info.parts)} color="var(--sleep)" facts={facts} />
+      {learning ? (
+        <LearningBox score={score} what="Sleep Score" />
+      ) : (
+        <>
+          {note && value !== null && <NoteLine>Poznámka: {note}</NoteLine>}
+          {rows.length > 0 && <PartsList rows={rows} color="var(--sleep)" facts={facts} />}
+        </>
+      )}
     </TileShell>
   );
 }

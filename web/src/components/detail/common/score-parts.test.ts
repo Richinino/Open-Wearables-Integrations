@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { makeScore } from "@/lib/test-fixtures";
-import { partRows, partTone } from "./score-parts";
+import { partRows, partTone, presentPartRows } from "./score-parts";
 
 describe("partRows", () => {
   const specs = [
@@ -22,6 +22,20 @@ describe("partRows", () => {
     expect(rows[0]).toMatchObject({ value: null, share: null, tone: null });
     expect(rows[1].value).toBeNull();
     expect(partRows(null, specs)).toHaveLength(2);
+  });
+});
+
+describe("presentPartRows", () => {
+  it("drops listed parts the score lacks but keeps its own extra parts", () => {
+    const specs = [
+      { key: "deep", max: 100, explain: "hlboký" },
+      { key: "deep_sleep", max: 100, explain: "hlboký" },
+      { key: "rem", max: 100, explain: "REM" },
+    ];
+    const rows = presentPartRows(makeScore(80, { rem: 60, deep_sleep: 90, latency: 70 }), specs);
+    expect(rows.map((row) => row.key)).toEqual(["deep_sleep", "rem", "latency"]);
+    expect(rows[0].explain).toBe("hlboký");
+    expect(presentPartRows(null, specs)).toEqual([]);
   });
 });
 

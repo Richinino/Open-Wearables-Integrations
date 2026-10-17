@@ -5,7 +5,15 @@
 
 import { addDays, dateRange, localMinutesOfDay } from "./dates";
 import { average, indexByDay, sleepNights } from "./metrics";
-import { appleSleepBand, bedtimeFor, scoreValue, sleepPerformanceBand, typicalWake, type Band } from "./scores";
+import {
+  appleSleepBand,
+  bedtimeFor,
+  samsungSleepBand,
+  scoreValue,
+  sleepPerformanceBand,
+  typicalWake,
+  type Band,
+} from "./scores";
 import type { Day, Score, SleepStage } from "./types";
 
 const MINUTE_MS = 60_000;
@@ -21,9 +29,9 @@ function isNumber(value: number | null | undefined): value is number {
 // ---------------------------------------------------------------------------------------
 // The two scores
 
-export type SleepKind = "performance" | "apple";
+export type SleepKind = "performance" | "apple" | "samsung";
 
-/** localStorage key of the viewer's choice between the two scores. */
+/** localStorage key of the viewer's choice between the scores. */
 export const SLEEP_KIND_KEY = "zdravie-sleep-score";
 
 export interface PartInfo {
@@ -37,11 +45,22 @@ export interface PartInfo {
 export interface SleepKindInfo {
   kind: SleepKind;
   label: string;
+  /** Text of the switch option when it differs from the label. */
+  option?: string;
   /** Whose method it follows; shown subtly in the detail only. */
   vendor: string;
   about: string;
   band: (value: number | null | undefined) => Band | null;
+  /** Nights from this score on count as strong in the history. */
+  top: number;
+  /** Every value is an estimate (≈), whatever its note says. */
+  estimate?: boolean;
+  /**
+   * Known parts in display order. With `onlyPresent` only the ones the score has are shown,
+   * so a part owi leaves out never shows as an empty row; parts beyond the list always show.
+   */
   parts: PartInfo[];
+  onlyPresent?: boolean;
 }
 
 export const SLEEP_KINDS: Record<SleepKind, SleepKindInfo> = {
@@ -51,6 +70,7 @@ export const SLEEP_KINDS: Record<SleepKind, SleepKindInfo> = {
     vendor: "WHOOP",
     about: "Koľko z potrebného spánku si naozaj naspal. 100 znamená, že si potrebu pokryl celú.",
     band: sleepPerformanceBand,
+    top: 85,
     parts: [
       { key: "hours_vs_needed", max: 100, explain: "koľko percent potreby spánku z predošlého dňa si naspal" },
       { key: "consistency", max: 100, explain: "ako sa časy zaspatia a vstávania zhodujú s poslednými nocami" },
@@ -63,22 +83,45 @@ export const SLEEP_KINDS: Record<SleepKind, SleepKindInfo> = {
     vendor: "Apple",
     about: "Súčet troch častí: dĺžka spánku do 50 bodov, čas zaspatia do 30 a prerušenia do 20.",
     band: appleSleepBand,
+    top: 81,
     parts: [
       { key: "duration", max: 50, explain: "plný počet od asi 7 h 50 min spánku; uberá aj málo hlbokého spánku či REM" },
       { key: "bedtime", max: 30, explain: "zaspatie oproti tvojmu bežnému času za posledných 13 nocí" },
       { key: "interruptions", max: 20, explain: "bdenie počas noci a počet prebudení" },
     ],
   },
+  samsung: {
+    kind: "samsung",
+    label: "Samsung Sleep Score",
+    option: "Samsung (odhad)",
+    vendor: "Samsung",
+    about:
+      "Odhad skóre zo Samsung Health. Časti sú podľa toho, ako Samsung skóre popisuje, ich váhy owi dolaďuje podľa tvojich zápisov.",
+    band: samsungSleepBand,
+    top: 90,
+    estimate: true,
+    onlyPresent: true,
+    // Keys as owi's samsung_scores.py names them.
+    parts: [
+      { key: "duration", max: 100, explain: "celkový čas spánku oproti potrebe, pri tvojom veku 8 h" },
+      { key: "deep", max: 100, explain: "hlboký spánok, fyzická regenerácia" },
+      { key: "rem", max: 100, explain: "REM spánok, psychická regenerácia" },
+      { key: "efficiency", max: 100, explain: "koľko z času v posteli si naozaj spal" },
+      { key: "interruptions", max: 100, explain: "bdenie po zaspaní" },
+      { key: "latency", max: 100, explain: "ako dlho ti trvá zaspať" },
+    ],
+  },
 };
 
 export function isSleepKind(value: unknown): value is SleepKind {
-  return value === "performance" || value === "apple";
+  return value === "performance" || value === "apple" || value === "samsung";
 }
 
 export function sleepScoreOf(day: Day | null | undefined, kind: SleepKind): Score | null {
   const scores = day?.scores;
   if (!scores) return null;
-  return (kind === "performance" ? scores.sleep_performance : scores.apple_sleep) ?? null;
+  const score = kind === "performance" ? scores.sleep_performance : kind === "apple" ? scores.apple_sleep : scores.samsung_sleep;
+  return score ?? null;
 }
 
 // ---------------------------------------------------------------------------------------

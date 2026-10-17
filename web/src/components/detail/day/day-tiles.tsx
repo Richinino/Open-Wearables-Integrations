@@ -1,9 +1,13 @@
 // The tiles of one day: the day score with its three parts, strain and sleep need, the night,
 // activity, heart and workouts. Every score names the vendor its method comes from.
 
+import Link from "next/link";
+import { ACTIVITY_TARGETS, CalibrationNote } from "@/components/detail/common/calibration";
 import { Chip, Rows, Swatch, VENDOR, VendorLine } from "@/components/detail/shared-b/parts";
 import { WorkoutHeader, WorkoutRow, ZoneLegend } from "@/components/detail/shared-b/workout-row";
-import { mix, Ring, ScoreBar, STAGE_COLORS, STAGE_LABELS, StageStrip, TileShell, ZoneBar } from "@/components/ui/tile";
+import { ROUTES } from "@/components/shell/nav";
+import { Arrow, mix, Ring, ScoreBar, STAGE_COLORS, STAGE_LABELS, StageStrip, TileShell, ZoneBar } from "@/components/ui/tile";
+import { ENTRY_FIELDS, hasEntry } from "@/lib/entries";
 import {
   approx,
   DASH,
@@ -34,7 +38,8 @@ import {
   subScores,
   type SubScore,
 } from "@/lib/scores";
-import type { Day, Score } from "@/lib/types";
+import { difference, owiFigure, owiFigureText } from "@/lib/samsung";
+import type { Calibration, Day, EntryField, Score } from "@/lib/types";
 import { Hypnogram } from "./hypnogram";
 
 const SUB_COLOR: Record<SubScore["key"], string> = {
@@ -264,7 +269,7 @@ export function SleepTile({ day, previous, timeZone }: { day: Day; previous: Day
 
 // ---------------------------------------------------------------------------------------
 
-export function ActivityTile({ day }: { day: Day }) {
+export function ActivityTile({ day, calibration }: { day: Day; calibration?: Calibration | null }) {
   const running = day.complete === false;
   return (
     <TileShell className={TILE}>
@@ -285,6 +290,76 @@ export function ActivityTile({ day }: { day: Day }) {
         ]}
       />
       <p className="text-[12px] text-muted">≈ odhad z tepu a krokov; hodinky tieto čísla neposielajú.</p>
+      <CalibrationNote calibration={calibration} targets={DAY_TARGETS} />
+    </TileShell>
+  );
+}
+
+const DAY_TARGETS = [{ key: "distance_km", label: "vzdialenosť" }, ...ACTIVITY_TARGETS] as const;
+
+// ---------------------------------------------------------------------------------------
+
+const ENTRY_LABELS: Record<EntryField, string> = {
+  steps: "Kroky",
+  distance_km: "Vzdialenosť",
+  active_minutes: "Aktívny čas",
+  active_kcal: "Kalórie z aktivity",
+  total_kcal: "Kalórie spolu",
+  sleep_score: "Sleep Score",
+  energy_score: "Energy Score",
+};
+
+function entryNumber(field: EntryField, value: number | null): { value: string; unit?: string } {
+  if (value === null) return { value: DASH };
+  if (field === "distance_km") return { value: formatDecimal(value, 2), unit: "km" };
+  if (field === "active_minutes") return { value: formatInt(value), unit: "min" };
+  if (field === "active_kcal" || field === "total_kcal") return { value: formatInt(value), unit: "kcal" };
+  return { value: formatInt(value) };
+}
+
+/** The day's numbers from Samsung Health next to owi's own; only for days with an entry. */
+export function SamsungTile({ day }: { day: Day }) {
+  const entry = day.samsung;
+  if (!hasEntry(entry)) return null;
+  const cells = ENTRY_FIELDS.flatMap((spec) => {
+    const samsung = entry[spec.key];
+    const owi = owiFigure(day, spec.key);
+    if (samsung === null && owi === null) return [];
+    return [{ key: spec.key, samsung, owi }];
+  });
+  return (
+    <TileShell className={TILE}>
+      <Heading
+        aside={
+          <Link href={ROUTES.entryFor(day.day)} className="title-link inline-flex items-center gap-1.5 text-[13px] font-semibold text-ink2">
+            Upraviť zápis <Arrow />
+          </Link>
+        }
+      >
+        Samsung a owi
+      </Heading>
+      <p className="text-[12px] text-muted">
+        Hore číslo zo Samsung Health, pod ním owi a jeho rozdiel. Sleep Score je za noc, ktorá skončila v tento deň.
+      </p>
+      <dl className="grid grid-cols-2 gap-x-5 gap-y-4 sm:grid-cols-4 xl:grid-cols-7">
+        {cells.map((cell) => {
+          const shown = entryNumber(cell.key, cell.samsung);
+          const diff = difference(cell.key, cell.owi, cell.samsung);
+          return (
+            <div key={cell.key} className="flex min-w-0 flex-col gap-1.5 border-t border-line pt-3">
+              <dt className="text-[12px] text-ink2">{ENTRY_LABELS[cell.key]}</dt>
+              <dd className="flex flex-wrap items-baseline gap-x-1.5">
+                <span className="figure-sm text-[24px] whitespace-nowrap">{shown.value}</span>
+                {shown.unit && cell.samsung !== null && <span className="text-[13px] text-ink2">{shown.unit}</span>}
+              </dd>
+              <dd className="text-[12px] text-muted">
+                owi {owiFigureText(day, cell.key)}
+                {diff && <span className="whitespace-nowrap"> · {diff}</span>}
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
     </TileShell>
   );
 }

@@ -67,6 +67,29 @@ export interface Day {
   sleep_timeline?: SleepInterval[] | null;
   /** Scores computed by owi for this day; absent until owi has scored it. */
   scores?: DayScores | null;
+  /** Numbers the user copied from Samsung Health for this day; absent in older responses. */
+  samsung?: Entry | null;
+}
+
+/** The seven numbers of a Samsung Health entry, as `PUT /v1/entries/{day}` takes them. */
+export interface EntryValues {
+  steps: number | null;
+  distance_km: number | null;
+  active_minutes: number | null;
+  active_kcal: number | null;
+  total_kcal: number | null;
+  /** The night that ended on this day. */
+  sleep_score: number | null;
+  energy_score: number | null;
+}
+
+export type EntryField = keyof EntryValues;
+
+/** One saved entry. Every field null and `saved_at` null means the entry was deleted. */
+export interface Entry extends EntryValues {
+  day: string;
+  /** ISO 8601. */
+  saved_at: string | null;
 }
 
 /** A score with the parts it was built from. Mirrors owi's score_models.Score. */
@@ -118,6 +141,51 @@ export interface DayScores {
   vo2max_uth: number | null;
   /** Estimated body age in years; components are per-metric impacts in years. */
   whoop_age: Score;
+  /**
+   * Samsung-style Sleep Score of last night, weights tuned on the user's entries. Until there
+   * are enough entries: value null, note "learning", components {entries, needed}.
+   * Absent in older responses.
+   */
+  samsung_sleep?: Score | null;
+  /** Samsung-style Energy Score of the day, tuned and "learning" like samsung_sleep. */
+  energy_score?: Score | null;
+}
+
+/** Numbers in the formulas that owi tunes on the entries. */
+export interface CalibrationParams {
+  stride_m: number | null;
+  active_hr_delta: number | null;
+  kcal_scale: number | null;
+  basal_kcal: number | null;
+}
+
+/** What `calibration.quality` measures, keyed like the entry fields they compare against. */
+export type QualityTarget =
+  | "distance_km"
+  | "active_minutes"
+  | "active_kcal"
+  | "total_kcal"
+  | "sleep_score"
+  | "energy_score";
+
+/** How far owi's figure is from Samsung's on days the fit has not seen. */
+export interface Quality {
+  /** Entries behind the figure. */
+  n: number;
+  /** Mean deviation: percent for estimates, points for scores. */
+  error: number | null;
+  /** The same deviation of the previous parameters on the same days; null on the first fit. */
+  previous_error: number | null;
+  unit: "%" | "body";
+}
+
+export interface Calibration {
+  /** ISO 8601; null before the first fit. */
+  fitted_at: string | null;
+  entries: number;
+  params: CalibrationParams;
+  defaults: CalibrationParams;
+  quality: Partial<Record<QualityTarget, Quality>>;
 }
 
 export interface Dataset {
@@ -129,4 +197,6 @@ export interface Dataset {
   synced_at: string | null;
   /** Oldest first. Days without any data are absent. */
   days: Day[];
+  /** How owi's estimates are tuned on the entries; absent in older responses. */
+  calibration?: Calibration | null;
 }

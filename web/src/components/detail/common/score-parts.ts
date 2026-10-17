@@ -45,6 +45,15 @@ export function partTone(share: number | null): PartTone | null {
   return "attention";
 }
 
+/**
+ * Like partRows, but the listed parts appear only when the score has them: for the scores
+ * whose part names owi may choose, so a guessed name never shows as an empty row.
+ */
+export function presentPartRows(score: Score | null | undefined, specs: PartSpec[]): PartRow[] {
+  const components = score?.components ?? {};
+  return partRows(score, specs.filter((spec) => Object.hasOwn(components, spec.key)));
+}
+
 export function partRows(score: Score | null | undefined, specs: PartSpec[]): PartRow[] {
   const components = score?.components ?? {};
   const known = new Set(specs.map((spec) => spec.key));

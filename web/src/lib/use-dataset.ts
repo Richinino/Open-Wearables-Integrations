@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import useSWR from "swr";
 
 import type { Dataset } from "./types";
@@ -28,11 +29,19 @@ export function useDataset(): {
   error: Error | undefined;
   isLoading: boolean;
   isValidating: boolean;
+  /** Changes the loaded dataset in place, e.g. after a save, without asking owi again. */
+  update: (change: (dataset: Dataset) => Dataset) => void;
 } {
-  const { data, error, isLoading, isValidating } = useSWR<Dataset, Error>(DATA_URL, fetchDataset, {
+  const { data, error, isLoading, isValidating, mutate } = useSWR<Dataset, Error>(DATA_URL, fetchDataset, {
     refreshInterval: REFRESH_INTERVAL_MS,
     revalidateOnFocus: true,
     keepPreviousData: true,
   });
-  return { dataset: data, error, isLoading, isValidating };
+  const update = useCallback(
+    (change: (dataset: Dataset) => Dataset) => {
+      void mutate((current) => (current ? change(current) : current), { revalidate: false });
+    },
+    [mutate],
+  );
+  return { dataset: data, error, isLoading, isValidating, update };
 }

@@ -25,6 +25,7 @@ import { windowEnding } from "@/lib/metrics";
 import { WEEKDAY_LETTERS } from "@/lib/overview";
 import type { Dataset, Day } from "@/lib/types";
 import { DetailHead, Figure, riseStyle, RunningHint } from "../common/bits";
+import { CalibrationNote } from "../common/calibration";
 import { ChartTile, Switch } from "../common/controls";
 import { latestFocusOf } from "../common/focus";
 import { Chip } from "../shared-b/parts";
@@ -187,6 +188,7 @@ function DistanceTile({ dataset, day }: { dataset: Dataset; day: Day }) {
         <Figure label="Posledných 7 dní" value={approx(formatDistance(week.distance))} note="ukončené dni" />
         <Figure label="Posledných 30 dní" value={approx(formatDistance(month.distance))} note="ukončené dni" />
       </div>
+      <CalibrationNote calibration={dataset.calibration} targets={[{ key: "distance_km" }]} />
       <p className="text-[12px] text-muted">
         Vzdialenosť je kroky krát dĺžka kroku, naladená podľa dní zo Samsung Health. Tréningy s GPS majú vlastnú presnejšiu
         vzdialenosť.

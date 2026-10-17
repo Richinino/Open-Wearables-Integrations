@@ -1,17 +1,21 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import { HeatmapTile, RecordsTile, WeekTile, WorkoutsTile } from "@/components/overview/history-tiles";
 import { DayScoreTile, EveningTile } from "@/components/overview/score-tiles";
 import { NightBanner, SummaryTile } from "@/components/overview/summary-tiles";
 import { Minis, RestingTile, SleepTile, StepsTile } from "@/components/overview/today-tiles";
+import { ROUTES } from "@/components/shell/nav";
 import { WithData } from "@/components/shell/shell";
+import { Arrow } from "@/components/ui/tile";
 import { addDays, todayIn } from "@/lib/dates";
 import { formatDay } from "@/lib/format";
 import { indexByDay } from "@/lib/metrics";
 import { latestDay } from "@/lib/latest-day";
 import { insights } from "@/lib/overview";
+import { missingDaysText, missingEntryDays } from "@/lib/samsung";
 import {
   bedtimeFor,
   eveningSummary,
@@ -50,6 +54,7 @@ function Overview({ dataset, now, override }: { dataset: Dataset; now: Date; ove
   // latest day with data and say how old it is; partial values of today win once they exist.
   const shown = latestDay(dataset.days, focus, today);
   const todayProps = { dataset, day: shown.day, date: shown.date, isToday: shown.date === today, latest: shown.label };
+  const missing = missingEntryDays(dataset.days, today).length;
 
   return (
     <>
@@ -74,6 +79,18 @@ function Overview({ dataset, now, override }: { dataset: Dataset; now: Date; ove
           <RestingTile {...todayProps} />
         </div>
       </div>
+
+      {missing > 0 && (
+        <div className="-my-1.5 flex justify-end px-1">
+          <Link
+            href={ROUTES.entries}
+            className="title-link -my-2 inline-flex min-h-11 items-center gap-1.5 text-[13px] text-ink2"
+            title="Doplň čísla zo Samsung Health, owi podľa nich doladí odhady"
+          >
+            {missingDaysText(missing)} <Arrow />
+          </Link>
+        </div>
+      )}
 
       <SummaryTile morning={morning} sentence={sentence} insights={observations} />
       <WeekTile dataset={dataset} date={date} isToday={isToday} />

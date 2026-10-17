@@ -39,21 +39,31 @@ describe("sleep kinds", () => {
     expect(SLEEP_KINDS.performance.parts.map((part) => part.key)).toEqual(["hours_vs_needed", "consistency", "efficiency"]);
   });
 
-  it("accepts only the two stored values", () => {
+  it("accepts only the three stored values", () => {
     expect(isSleepKind("apple")).toBe(true);
     expect(isSleepKind("performance")).toBe(true);
+    expect(isSleepKind("samsung")).toBe(true);
     expect(isSleepKind("whoop")).toBe(false);
     expect(isSleepKind(null)).toBe(false);
   });
 
+  it("marks the Samsung score as an estimate whose parts owi names", () => {
+    expect(SLEEP_KINDS.samsung).toMatchObject({ option: "Samsung (odhad)", vendor: "Samsung", estimate: true, onlyPresent: true, top: 90 });
+    expect(SLEEP_KINDS.samsung.band(90)?.label).toBe("výborné");
+    expect(SLEEP_KINDS.samsung.band(49)?.label).toBe("slabé");
+  });
+
   it("picks the score of the chosen kind", () => {
     const day = makeDay(END, {
-      scores: makeScores(END, { sleep_performance: makeScore(91), apple_sleep: makeScore(77) }),
+      scores: makeScores(END, { sleep_performance: makeScore(91), apple_sleep: makeScore(77), samsung_sleep: makeScore(83) }),
     });
     expect(sleepScoreOf(day, "performance")?.value).toBe(91);
     expect(sleepScoreOf(day, "apple")?.value).toBe(77);
+    expect(sleepScoreOf(day, "samsung")?.value).toBe(83);
     expect(sleepScoreOf(makeDay(END), "apple")).toBeNull();
     expect(sleepScoreOf(null, "apple")).toBeNull();
+    // Older responses have no Samsung score at all.
+    expect(sleepScoreOf(makeDay(END, { scores: makeScores(END) }), "samsung")).toBeNull();
   });
 });
 

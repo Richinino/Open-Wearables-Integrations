@@ -12,8 +12,8 @@ export class DatasetUnavailableError extends Error {
   }
 }
 
-const DEMO_TIME_ZONE = "Europe/Bratislava";
-const DEMO_DAYS = 120;
+export const DEMO_TIME_ZONE = "Europe/Bratislava";
+export const DEMO_DAYS = 120;
 const DEMO_SYNC_AGE_MS = 7 * 60 * 1000;
 const TIMEOUT_MS = 10_000;
 

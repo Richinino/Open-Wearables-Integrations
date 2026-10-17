@@ -29,6 +29,8 @@ export const SCORE_NAMES = {
   cardioLoad: "Stav záťaže",
   nightSignal: "Nočný tep",
   whoopAge: "Vek tela",
+  samsungSleep: "Samsung Sleep Score",
+  energy: "Energy Score",
 } as const;
 
 /** Where each score comes from; shown in detail views only, never on the main cards. */
@@ -78,6 +80,15 @@ export const COMPONENT_LABELS: Readonly<Record<string, string>> = {
   strength: "silový tréning",
   vo2max: "VO2max",
   lean_mass: "svalová hmota",
+  // Samsung Sleep Score and Energy Score (estimates); duration, efficiency, interruptions
+  // and sleep are named above.
+  deep: "hlboký spánok",
+  rem: "REM spánok",
+  latency: "zaspávanie",
+  timing: "načasovanie spánku",
+  regularity: "pravidelnosť spánku",
+  load: "včerajšia záťaž",
+  night_hr: "nočný tep",
 };
 
 export function componentLabel(key: string): string {
@@ -92,6 +103,7 @@ const NOTE_TEXTS: Readonly<Record<string, string>> = {
   "no sleep need from the day before": "chýba potreba spánku z predošlého dňa",
   "age missing": "chýba vek",
   "no sleep stages, no stage deductions": "bez fáz spánku",
+  learning: "učí sa",
 };
 
 /** owi's English score notes in Slovak; unknown notes pass through unchanged. */
@@ -203,6 +215,19 @@ export function appleSleepBand(value: number | null | undefined): Band | null {
       [41, { key: "low", label: "nízke", tone: "fair" }],
     ],
     { key: "very_low", label: "veľmi nízke", tone: "low" },
+  );
+}
+
+/** Samsung Health Sleep Score bands: 90+ excellent, 70-89 good, 50-69 fair, below 50 attention. */
+export function samsungSleepBand(value: number | null | undefined): Band | null {
+  return pick(
+    value,
+    [
+      [90, { key: "excellent", label: "výborné", tone: "top" }],
+      [70, { key: "good", label: "dobré", tone: "good" }],
+      [50, { key: "fair", label: "priemerné", tone: "fair" }],
+    ],
+    { key: "attention", label: "slabé", tone: "low" },
   );
 }
 

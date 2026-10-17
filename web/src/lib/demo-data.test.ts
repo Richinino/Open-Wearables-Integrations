@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { addDays, dateRange, diffDays, localDay, localMinutesOfDay, weekdayIndex } from "./dates";
 import { demoDataset } from "./demo-data";
-import type { Dataset, Day } from "./types";
+import { checkBody, ENTRY_FIELDS, hasEntry } from "./entries";
+import type { Dataset, Day, Entry } from "./types";
 
 const ZONE = "Europe/Bratislava";
 const TODAY = "2026-10-13";
@@ -105,12 +106,14 @@ describe("demoDataset", () => {
     expect(demoDataset(TODAY, 30).days[0].day).toBe(addDays(TODAY, -29));
     expect(demoDataset(TODAY, 30).days).toHaveLength(28);
     expect(demoDataset(TODAY, 1).days.map((day) => day.day)).toEqual([TODAY]);
+    const params = { stride_m: 0.74, active_hr_delta: 30, kcal_scale: 1, basal_kcal: null };
     expect(demoDataset(TODAY, 0)).toEqual({
       timezone: ZONE,
       first_day: null,
       last_day: null,
       synced_at: null,
       days: [],
+      calibration: { fitted_at: null, entries: 0, params, defaults: params, quality: {} },
     });
   });
 
@@ -583,5 +586,80 @@ describe("demo scores, sleep timelines and workout strain", () => {
       const firstDeep = timeline.find((interval) => interval.stage === "deep")!;
       expect(minutesBetween(day.sleep_start, firstDeep.start), day.day).toBeLessThan(90);
     }
+  });
+});
+
+describe("demo entries from Samsung Health and calibration", () => {
+  const live = demoDataset("2026-10-16");
+  const days = live.days;
+  const today = days[days.length - 1];
+  const finishedWindow = days.filter((day) => day.complete && day.day >= addDays("2026-10-16", -30));
+
+  it("gives some recent days an entry and leaves others missing, never the running day", () => {
+    const withEntry = finishedWindow.filter((day) => hasEntry(day.samsung));
+    expect(withEntry.length).toBeGreaterThan(10);
+    expect(finishedWindow.length - withEntry.length).toBeGreaterThan(3);
+    expect(today.samsung).toBeNull();
+    // Before the demo user started, there are none.
+    expect(days.filter((day) => day.day < "2026-08-20").every((day) => day.samsung === null)).toBe(true);
+  });
+
+  it("keeps every entry inside owi's ranges, on its own day", () => {
+    for (const day of days) {
+      if (!day.samsung) continue;
+      expect(day.samsung.day, day.day).toBe(day.day);
+      const entry = day.samsung;
+      const values = Object.fromEntries(ENTRY_FIELDS.map((spec) => [spec.key, entry[spec.key]]));
+      expect(checkBody(values), day.day).toEqual({ ok: true, values });
+      expect(Date.parse(String(entry.saved_at)), day.day).toBeGreaterThan(Date.parse(`${day.day}T00:00:00Z`));
+    }
+    const filled = (key: keyof Entry) => days.filter((day) => day.samsung && day.samsung[key] !== null).length;
+    expect(filled("sleep_score")).toBeGreaterThan(filled("energy_score"));
+    expect(filled("energy_score")).toBeGreaterThan(0);
+  });
+
+  it("has a Samsung Sleep Score on recent nights, still learning on early ones", () => {
+    const sleep = days.map((day) => day.scores!.samsung_sleep!);
+    expect(sleep.some((score) => score.note === "learning")).toBe(true);
+    expect(sleep[0]).toEqual({ value: null, components: { entries: 0, needed: 10 }, note: "learning" });
+    const last = days.filter((day) => day.sleep_minutes !== null).at(-1)!.scores!.samsung_sleep!;
+    expect(last.note).toBeNull();
+    expect(last.value!).toBeGreaterThan(30);
+    expect(last.value!).toBeLessThanOrEqual(100);
+  });
+
+  it("keeps the Energy Score learning, with fewer than ten entries", () => {
+    const energy = today.scores!.energy_score!;
+    expect(energy.note).toBe("learning");
+    expect(energy.components.needed).toBe(10);
+    expect(energy.components.entries!).toBeGreaterThan(0);
+    expect(energy.components.entries!).toBeLessThan(10);
+    // Later on enough entries exist and it shows.
+    const later = demoDataset("2027-03-01", 30).days.at(-1)!.scores!.energy_score!;
+    expect(later.value).not.toBeNull();
+  });
+
+  it("reports calibration measured on the entries of the window", () => {
+    const calibration = live.calibration!;
+    expect(calibration.entries).toBe(days.filter((day) => day.samsung).length);
+    expect(calibration.fitted_at).toBe(live.synced_at);
+    expect(calibration.params.stride_m).not.toBe(calibration.defaults.stride_m);
+    const quality = calibration.quality;
+    expect(Object.keys(quality).sort()).toEqual(["active_kcal", "active_minutes", "distance_km", "sleep_score", "total_kcal"]);
+    expect(quality.distance_km!.unit).toBe("%");
+    expect(quality.sleep_score!.unit).toBe("body");
+    expect(quality.sleep_score!.previous_error).toBeNull();
+    expect(quality.distance_km!.error!).toBeLessThan(quality.distance_km!.previous_error!);
+    expect(quality.total_kcal!.error!).toBeGreaterThan(quality.total_kcal!.previous_error!);
+    for (const item of Object.values(quality)) {
+      expect(item.n).toBeGreaterThan(0);
+      expect(item.error!).toBeGreaterThan(0);
+      expect(item.error!).toBeLessThan(25);
+    }
+  });
+
+  it("has no calibration to speak of before the first entry", () => {
+    const early = demoDataset("2026-06-01", 30).calibration!;
+    expect(early).toMatchObject({ fitted_at: null, entries: 0, quality: {} });
   });
 });

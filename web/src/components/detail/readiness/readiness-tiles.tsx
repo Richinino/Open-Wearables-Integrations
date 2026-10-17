@@ -4,7 +4,7 @@
 // baseline, the night signal of last night and the flagged nights of the last 90 days.
 
 import Link from "next/link";
-import { TileShell } from "@/components/ui/tile";
+import { Ring, TileShell } from "@/components/ui/tile";
 import { addDays, dateRange } from "@/lib/dates";
 import {
   READINESS_PARTS,
@@ -17,11 +17,13 @@ import {
 } from "@/lib/detail-heart";
 import { DASH, formatDay, formatDayMonth, formatDecimal, formatDuration, formatInt, plural } from "@/lib/format";
 import { indexByDay } from "@/lib/metrics";
-import { formatScore, formatStrain, noteText, readinessBand, scoreValue } from "@/lib/scores";
+import { learningText, scoreParts } from "@/lib/samsung";
+import { formatScore, formatStrain, noteText, readinessBand, SCORE_NAMES, scoreValue } from "@/lib/scores";
 import type { Dataset, Day } from "@/lib/types";
 import { Figure, Keys, NoteLine, PartsList, ScoreDial, VendorLine } from "../common/bits";
+import { LearningBox } from "../common/calibration";
 import { ChartTile } from "../common/controls";
-import { partRows } from "../common/score-parts";
+import { partRows, presentPartRows, type PartSpec } from "../common/score-parts";
 import { TrendChart } from "../common/trend-chart";
 
 function isNumber(value: number | null | undefined): value is number {
@@ -73,6 +75,60 @@ export function ReadinessPartsTile({ day, previous }: { day: Day; previous: Day 
         <p className="text-[12px] text-muted">každá časť 0–100, váha podľa Oura</p>
       </div>
       <PartsList rows={partRows(score, READINESS_PARTS)} color="var(--heart)" facts={facts} columns={2} />
+    </TileShell>
+  );
+}
+
+/** Parts of the Energy Score in display order, keyed as owi's samsung_scores.py names them. */
+const ENERGY_PARTS: PartSpec[] = [
+  { key: "sleep", max: 100, explain: "spánok za 7 dní oproti potrebe" },
+  { key: "regularity", max: 100, explain: "pravidelnosť spánku, SRI za 14 dní" },
+  { key: "timing", max: 100, explain: "stred spánku oproti posledným 14 dňom" },
+  { key: "load", max: 100, explain: "včerajšia záťaž oproti 4 týždňom" },
+  { key: "night_hr", max: 100, explain: "nočný tep oproti tvojmu normálu" },
+];
+
+/** Samsung-style Energy Score: an estimate tuned on the entries, "učí sa" until there are enough. */
+export function EnergyScoreTile({ day, isToday }: { day: Day; isToday: boolean }) {
+  const score = day.scores?.energy_score ?? null;
+  const value = scoreValue(score);
+  const learning = learningText(score);
+  const rows = presentPartRows(scoreParts(score), ENERGY_PARTS);
+  return (
+    <TileShell className="gap-5 p-6 sm:p-[30px]">
+      <div className="flex flex-col gap-2">
+        <h2 className="eyebrow">
+          {SCORE_NAMES.energy} (odhad) · {isToday ? "dnes" : formatDay(day.day)}
+        </h2>
+        <VendorLine>Metóda podľa Samsung · bez HRV</VendorLine>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
+        <Ring
+          share={value === null ? 0 : value / 100}
+          color="var(--heart)"
+          sweep={0.75}
+          from={225}
+          thickness={9}
+          size={132}
+          label={
+            value === null
+              ? `${SCORE_NAMES.energy} zatiaľ nie je${learning ? `, ${learning}` : ""}`
+              : `${SCORE_NAMES.energy} približne ${formatInt(value)} zo 100`
+          }
+        >
+          <span className="figure text-[46px] leading-none tracking-[-0.04em]">{formatInt(value)}</span>
+          <span className="mt-1 text-[12px] text-ink2">{learning ? "učí sa" : "odhad"}</span>
+        </Ring>
+        <p className="min-w-0 flex-1 basis-[220px] text-[13px] text-ink2">
+          Koľko energie má telo na deň, podobne ako v Samsung Health: spánok, jeho pravidelnosť a načasovanie, včerajšia
+          záťaž a nočný tep. HRV hodinky neposielajú, preto v odhade chýba.
+        </p>
+      </div>
+      {learning ? (
+        <LearningBox score={score} what="Energy Score" />
+      ) : (
+        rows.length > 0 && <PartsList rows={rows} color="var(--heart)" columns={2} />
+      )}
     </TileShell>
   );
 }

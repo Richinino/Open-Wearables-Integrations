@@ -8,10 +8,11 @@ import { WithData } from "@/components/shell/shell";
 import { EmptyState } from "@/components/ui/parts";
 import { Arrow, PageHead } from "@/components/ui/tile";
 import { addDays, isValidDay, todayIn } from "@/lib/dates";
+import { hasEntry } from "@/lib/entries";
 import { formatDay, formatDayLong } from "@/lib/format";
 import { indexByDay } from "@/lib/metrics";
 import type { Dataset } from "@/lib/types";
-import { ActivityTile, DayScoreTile, DayWorkoutsTile, HeartTile, SleepTile, StrainTile } from "./day-tiles";
+import { ActivityTile, DayScoreTile, DayWorkoutsTile, HeartTile, SamsungTile, SleepTile, StrainTile } from "./day-tiles";
 
 function Head({ date, today, previous, next, chip }: { date: string; today: string; previous: string | null; next: string | null; chip?: React.ReactNode }) {
   return (
@@ -102,13 +103,18 @@ function DayDetail({ dataset, now, date }: { dataset: Dataset; now: Date; date: 
       </div>
       <div className="grid gap-[18px] md:grid-cols-2">
         <div className="rise flex min-w-0 flex-col" style={riseStyle(4)}>
-          <ActivityTile day={day} />
+          <ActivityTile day={day} calibration={dataset.calibration} />
         </div>
         <div className="rise flex min-w-0 flex-col" style={riseStyle(5)}>
           <HeartTile day={day} />
         </div>
       </div>
-      <div className="rise" style={riseStyle(6)}>
+      {hasEntry(day.samsung) && (
+        <div className="rise flex min-w-0 flex-col" style={riseStyle(6)}>
+          <SamsungTile day={day} />
+        </div>
+      )}
+      <div className="rise" style={riseStyle(7)}>
         <DayWorkoutsTile day={day} timeZone={tz} />
       </div>
     </>
