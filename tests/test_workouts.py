@@ -3,7 +3,7 @@ from datetime import date, timedelta
 import pytest
 
 from owi.estimates import kcal_per_minute
-from owi.models import DISTANCE, Params, Profile
+from owi.models import DISTANCE, STEPS, Params, Profile
 from owi.workouts import dedupe, enrich
 from tests.factories import (
     HC_PHONE,
@@ -89,3 +89,25 @@ def test_distance_stays_empty_without_a_matching_sample():
     samples = [sample(START + timedelta(minutes=5), DISTANCE, 900.0, HC_SHEALTH)]
 
     assert enrich(item, samples, DAY, 50.0, PROFILE, Params()).distance_m is None
+
+
+def test_phone_steps_are_the_phone_counters_records_inside_the_workout():
+    item = workout("w1", START, 30, distance_m=4000.0)
+    samples = [
+        sample(START - timedelta(minutes=1), STEPS, 999, HC_PHONE),
+        sample(START, STEPS, 2000, HC_PHONE),
+        sample(START + timedelta(minutes=15), STEPS, 2500, HC_PHONE),
+        sample(START + timedelta(minutes=30), STEPS, 999, HC_PHONE),
+        # Samsung's own counts are not the phone's pedometer.
+        sample(START + timedelta(minutes=5), STEPS, 777, HC_SHEALTH),
+        sample(START + timedelta(minutes=5), STEPS, 777, SAMSUNG_WATCH),
+    ]
+
+    assert enrich(item, samples, DAY, 50.0, PROFILE, Params()).phone_steps == 4500
+
+
+def test_phone_steps_stay_empty_without_phone_records():
+    item = workout("w1", START, 30)
+    samples = [sample(START + timedelta(minutes=5), STEPS, 777, HC_SHEALTH)]
+
+    assert enrich(item, samples, DAY, 50.0, PROFILE, Params()).phone_steps is None

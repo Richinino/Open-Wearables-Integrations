@@ -1,20 +1,31 @@
-"""Command line entry point: owi sync | rescore | day | calibrate | check | serve."""
+"""Command line entry point: owi sync | rescore | day | calibrate | check | entries | serve."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 import time
 from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from owi import scoring
-from owi.calibration import Truth, compare, fit, load_params, load_truth, save_params
+from owi import entries, samsung_scores, scoring, tuning
+from owi.calibration import (
+    FIT_WINDOW_DAYS,
+    RefDay,
+    compare,
+    load_params,
+    load_truth,
+    save_params,
+    stride_samples,
+)
 from owi.client import OWClient, OWError
 from owi.config import Settings, load_settings
 from owi.days import day_window, today
+from owi.entries import Entry
 from owi.models import DEFAULT_MAX_HR, HEART_RATE, DayInputs, DayResult, Params, Profile
 from owi.pipeline import (
     compute,
@@ -30,7 +41,10 @@ from owi.store import MAX_PLAUSIBLE_HR, Store
 
 DEFAULT_SYNC_DAYS = 3
 SYNC_BATCH_DAYS = 14
-TRUTH_HEADER = "date,steps,active_minutes,activity_kcal,total_kcal,distance_km"
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _date(value: str) -> date:
@@ -154,24 +168,149 @@ def _sync_once(settings: Settings, days: list[date], now: datetime) -> None:
 def _rescore(settings: Settings, first: date, last: date | None = None) -> None:
     """Recompute scores from stored features, from `first` to `last` or the last stored day."""
     params = load_params(settings.params_path)
+    models = samsung_scores.load_models(settings.score_weights_path)
     base = Person(age=settings.age, sex=settings.sex, max_hr=settings.max_hr or params.max_hr)
     with Store(settings.db_path) as store:
         span = store.features_span()
         if span is None:
             return
         last = last or span[1]
-        count = scoring.rescore(store, first, last, base, settings.timezone)
+        count = scoring.rescore(store, first, last, base, settings.timezone, models)
     print(f"skóre prepočítané od {first} do {last}, počet dní: {count}")
+
+
+def _reference_days(
+    settings: Settings, max_hr: float | None, days: list[date], now: datetime
+) -> tuple[dict[date, RefDay], float | None]:
+    """Downloaded reference days slimmed to what the fit needs, a batch at a time.
+
+    Every batch shares the maximum heart rate the first one settled on.
+    """
+    refs: dict[date, RefDay] = {}
+    if not days:
+        return refs, max_hr
+    with Store(settings.db_path) as store, OWClient(settings.api_url, settings.api_key) as client:
+        for offset in range(0, len(days), SYNC_BATCH_DAYS):
+            batch = days[offset : offset + SYNC_BATCH_DAYS]
+            for day, item in _fetch(settings, max_hr, client, store, batch, now).items():
+                refs[day] = RefDay.of(item)
+                max_hr = item.profile.max_hr
+    return refs, max_hr
+
+
+def _fit(
+    settings: Settings, now: datetime, inputs: dict[date, DayInputs] | None = None
+) -> tuning.Tuning:
+    """Tune on the entries of the last year and save params, score weights and history.
+
+    `inputs` are already downloaded reference days; without them the days whose entry has
+    an active time or calories are downloaded here.
+    """
+    last = today(ZoneInfo(settings.timezone), now)
+    since = last - timedelta(days=FIT_WINDOW_DAYS)
+    found = entries.load(settings.entries_path, since + timedelta(days=1), last)
+    signature = entries.signature(settings.entries_path)
+    params = load_params(settings.params_path)
+    if inputs is None:
+        heart_days = [
+            e.day
+            for e in found
+            if e.active_minutes is not None or e.active_kcal is not None or e.total_kcal is not None
+        ]
+        refs, max_hr = _reference_days(settings, params.max_hr, heart_days, now)
+    else:
+        refs = {day: RefDay.of(item) for day, item in inputs.items()}
+        max_hr = next(iter(inputs.values())).profile.max_hr if inputs else params.max_hr
+    scored = [e.day for e in found if e.sleep_score is not None or e.energy_score is not None]
+    with Store(settings.db_path) as store:
+        stored = store.days(since + timedelta(days=1), last)
+        history = (
+            store.features(min(scored) - timedelta(days=tuning.HISTORY_DAYS - 1), max(scored))
+            if scored
+            else []
+        )
+    result = tuning.run(
+        found,
+        refs,
+        stride_samples(w for day in stored for w in day.workouts),
+        history,
+        Person(age=settings.age, sex=settings.sex),
+        settings.timezone,
+        replace(params, max_hr=max_hr),
+        samsung_scores.load_models(settings.score_weights_path),
+        last,
+    )
+    with Store(settings.db_path) as store:
+        if store.recompute_state() is None:
+            # The stored days were computed with the values from before the first fit.
+            store.set_recompute_state(tuning.estimate_params(params), None)
+        store.save_fit(tuning.record(result, signature, now))
+    save_params(settings.params_path, result.params)
+    samsung_scores.save_models(settings.score_weights_path, result.models)
+    return result
+
+
+def _refresh(settings: Settings, now: datetime, fitted: bool, force: bool = False) -> None:
+    """Recompute every stored day for new estimate parameters, else rescore after a fit."""
+    params = load_params(settings.params_path)
+    with Store(settings.db_path) as store:
+        state = store.recompute_state()
+        span = store.span()
+        features = store.features_span()
+    if span is not None and tuning.recompute_due(state, params, now, force):
+        print(f"nové parametre odhadov, prepočítavam dni od {span[0]}")
+        _sync_once(settings, _days_between(span[0], today(ZoneInfo(settings.timezone), now)), now)
+        with Store(settings.db_path) as store:
+            store.set_recompute_state(tuning.estimate_params(params), now)
+    elif fitted and features is not None:
+        _rescore(settings, features[0])
+
+
+def _tune(settings: Settings, now: datetime) -> None:
+    """Refit when an entry changed since the last fit or a day has passed, then refresh.
+
+    Nothing happens before the entries store exists (owi entries import or the first entry
+    from the web), so existing parameters are not reset by a fit without any entry.
+    """
+    if not settings.entries_path.is_file():
+        return
+    try:
+        signature = entries.signature(settings.entries_path)
+    except sqlite3.OperationalError as exc:
+        print(f"zápisy sa teraz nedajú prečítať: {exc}", file=sys.stderr)
+        return
+    with Store(settings.db_path) as store:
+        last = store.latest_fit()
+    fitted = tuning.fit_due(last, signature, now)
+    if fitted:
+        try:
+            result = _fit(settings, now)
+        except sqlite3.OperationalError as exc:
+            # The web held the entries longer than the retries; the next run tries again.
+            print(f"doladenie odložené: {exc}", file=sys.stderr)
+            return
+        print(_params_line(settings, result.params))
+    _refresh(settings, now, fitted)
+
+
+def _ensure_entries_dir(settings: Settings) -> None:
+    """The api container mounts this folder for writing; Docker needs it to exist."""
+    try:
+        settings.entries_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        print(f"pozor: priečinok zápisov sa nedá vytvoriť: {exc}", file=sys.stderr)
 
 
 def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
     tz = ZoneInfo(settings.timezone)
+    _ensure_entries_dir(settings)
     while True:
-        now = datetime.now(UTC)
+        now = _now()
         last = args.to or today(tz, now)
         first = args.from_ or last - timedelta(days=args.days - 1)
         try:
             _sync_once(settings, _days_between(first, last), now)
+            _tune(settings, now)
         except OWError as exc:
             print(f"chyba: {exc}", file=sys.stderr)
             if not args.loop:
@@ -217,61 +356,105 @@ def _cmd_day(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
-def _truth_inputs(
-    settings: Settings, fitted_max_hr: float | None
-) -> tuple[list[Truth], dict[date, DayInputs]] | None:
-    """Reference days and their freshly fetched inputs, or None after printing why not."""
-    if not settings.truth_path.is_file():
+def _entry_inputs(
+    settings: Settings, fitted_max_hr: float | None, now: datetime
+) -> tuple[list[Entry], dict[date, DayInputs]] | None:
+    """Entries of the last year and their freshly fetched inputs, or None after saying why."""
+    last = today(ZoneInfo(settings.timezone), now)
+    first = last - timedelta(days=FIT_WINDOW_DAYS - 1)
+    found = entries.load(settings.entries_path, first, last)
+    if not found:
         print(
-            f"chýba {settings.truth_path}; vytvor ho s hlavičkou {TRUTH_HEADER}",
+            f"v {settings.entries_path} nie sú žiadne zápisy; doplň ich na webe"
+            " alebo spusti owi entries import",
             file=sys.stderr,
         )
         return None
-    truths = load_truth(settings.truth_path)
-    if not truths:
-        print(f"{settings.truth_path} neobsahuje žiadne dni", file=sys.stderr)
-        return None
     with Store(settings.db_path) as store, OWClient(settings.api_url, settings.api_key) as client:
-        days = [t.day for t in truths]
-        inputs = _fetch(settings, fitted_max_hr, client, store, days, datetime.now(UTC))
-    return truths, inputs
+        inputs = _fetch(settings, fitted_max_hr, client, store, [e.day for e in found], now)
+    return found, inputs
 
 
 def _print_comparison(
-    settings: Settings, truths: list[Truth], inputs: dict[date, DayInputs], params: Params
+    settings: Settings, found: list[Entry], inputs: dict[date, DayInputs], params: Params
 ) -> None:
     results = {day: compute(item, params, settings.timezone) for day, item in inputs.items()}
     print(f"{'deň':<12}{'údaj':<16}{'odhad':>10}{'Samsung':>10}{'odchýlka':>10}")
-    for row in compare(truths, results):
+    for row in compare(found, results):
         estimate = "-" if row.estimate is None else f"{row.estimate:.0f}"
         error = "-" if row.error_pct is None else f"{row.error_pct:+.1f} %"
         print(f"{row.day!s:<12}{row.metric:<16}{estimate:>10}{row.truth:>10.0f}{error:>10}")
 
 
+def _params_line(settings: Settings, params: Params) -> str:
+    def show(value: float | None, digits: int) -> str:
+        return "-" if value is None else f"{value:.{digits}f}"
+
+    return (
+        f"stride_m={params.stride_m:.3f} active_hr_delta={params.active_hr_delta:.1f}"
+        f" kcal_scale={params.kcal_scale:.3f} basal_kcal={show(params.basal_kcal, 0)}"
+        f" max_hr={show(params.max_hr, 0)} -> {settings.params_path}"
+    )
+
+
 def _cmd_calibrate(args: argparse.Namespace, settings: Settings) -> int:
+    """Tune now, whatever changed, and recompute the stored days right away if needed."""
+    now = _now()
     # A fresh fit also re-derives the maximum heart rate instead of reusing the old one.
-    loaded = _truth_inputs(settings, fitted_max_hr=None)
+    loaded = _entry_inputs(settings, None, now)
     if loaded is None:
         return 1
-    truths, inputs = loaded
-    max_hr = next(iter(inputs.values())).profile.max_hr
-    params = replace(fit(truths, inputs, load_params(settings.params_path)), max_hr=max_hr)
-    save_params(settings.params_path, params)
-    print(
-        f"stride_m={params.stride_m:.3f} active_hr_delta={params.active_hr_delta:.0f}"
-        f" kcal_scale={params.kcal_scale:.3f} max_hr={max_hr:.0f} -> {settings.params_path}"
-    )
-    _print_comparison(settings, truths, inputs, params)
+    found, inputs = loaded
+    result = _fit(settings, now, inputs)
+    print(_params_line(settings, result.params))
+    _print_comparison(settings, found, inputs, result.params)
+    _refresh(settings, now, fitted=True, force=True)
     return 0
 
 
 def _cmd_check(args: argparse.Namespace, settings: Settings) -> int:
     params = load_params(settings.params_path)
-    loaded = _truth_inputs(settings, params.max_hr)
+    loaded = _entry_inputs(settings, params.max_hr, _now())
     if loaded is None:
         return 1
-    truths, inputs = loaded
-    _print_comparison(settings, truths, inputs, params)
+    found, inputs = loaded
+    _print_comparison(settings, found, inputs, params)
+    return 0
+
+
+def _cmd_entries_import(args: argparse.Namespace, settings: Settings) -> int:
+    """Copy the old truth.csv into the entries store; days already entered stay as they are."""
+    path: Path = args.path or settings.truth_path
+    if not path.is_file():
+        print(f"chýba {path}", file=sys.stderr)
+        return 1
+    known = {entry.day for entry in entries.load(settings.entries_path)}
+    now = _now()
+    imported = skipped = 0
+    for truth in load_truth(path):
+        values, problems = entries.validate(
+            {
+                "steps": truth.steps,
+                "distance_km": truth.distance_km,
+                "active_minutes": truth.active_minutes,
+                "active_kcal": truth.activity_kcal,
+                "total_kcal": truth.total_kcal,
+            }
+        )
+        if truth.day in known:
+            print(f"{truth.day}: už je zapísaný, ostáva")
+        elif problems:
+            reasons = ", ".join(f"{name} {message}" for name, message in problems.items())
+            print(f"{truth.day}: preskočený ({reasons})")
+        elif all(value is None for value in values.values()):
+            print(f"{truth.day}: prázdny, preskočený")
+        else:
+            entries.save(settings.entries_path, truth.day, values, now)
+            known.add(truth.day)
+            imported += 1
+            continue
+        skipped += 1
+    print(f"importované dni: {imported}, preskočené: {skipped} -> {settings.entries_path}")
     return 0
 
 
@@ -282,15 +465,29 @@ def _cmd_serve(args: argparse.Namespace, settings: Settings) -> int:
             file=sys.stderr,
         )
         return 1
+    write_token = settings.write_token
+    if write_token and (len(write_token) < MIN_TOKEN_LENGTH or write_token == settings.serve_token):
+        print(
+            f"chyba: OWI_WRITE_TOKEN musí mať aspoň {MIN_TOKEN_LENGTH} znakov"
+            " a líšiť sa od OWI_SERVE_TOKEN",
+            file=sys.stderr,
+        )
+        return 1
+    if write_token:
+        _ensure_entries_dir(settings)
     server = make_server(
         args.host,
         args.port,
         db_path=settings.db_path,
         token=settings.serve_token,
         timezone=settings.timezone,
+        write_token=write_token,
+        entries_path=settings.entries_path,
+        params_path=settings.params_path,
     )
     host, port = server.server_address[:2]
-    print(f"owi serve počúva na http://{host}:{port}", flush=True)
+    writes = "zápis zapnutý" if write_token else "len na čítanie"
+    print(f"owi serve počúva na http://{host}:{port}, {writes}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -304,7 +501,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="owi", description="Denné metriky z Open Wearables")
     commands = parser.add_subparsers(dest="command", required=True)
 
-    sync = commands.add_parser("sync", help="prepočíta dni a uloží ich")
+    sync = commands.add_parser("sync", help="prepočíta dni, uloží ich a doladí odhady")
     sync.add_argument("--days", type=int, default=DEFAULT_SYNC_DAYS, help="koľko posledných dní")
     sync.add_argument("--from", dest="from_", type=_date, help="prvý deň (YYYY-MM-DD)")
     sync.add_argument("--to", type=_date, help="posledný deň (YYYY-MM-DD)")
@@ -321,12 +518,22 @@ def _parser() -> argparse.ArgumentParser:
     day.add_argument("--json", action="store_true")
     day.set_defaults(run=_cmd_day)
 
-    calibrate = commands.add_parser("calibrate", help="naladí odhady podľa data/truth.csv")
+    calibrate = commands.add_parser(
+        "calibrate", help="doladí odhady podľa zápisov hneď a prepočíta dni"
+    )
     calibrate.set_defaults(run=_cmd_calibrate)
-    check = commands.add_parser("check", help="porovná odhady s data/truth.csv")
+    check = commands.add_parser("check", help="porovná odhady so zápismi")
     check.set_defaults(run=_cmd_check)
 
-    serve = commands.add_parser("serve", help="sprístupní uložené dni cez HTTP, len na čítanie")
+    entry_commands = commands.add_parser("entries", help="zápisy zo Samsung Health")
+    entry_actions = entry_commands.add_subparsers(dest="action", required=True)
+    import_ = entry_actions.add_parser("import", help="jednorazovo prenesie data/truth.csv")
+    import_.add_argument("--path", type=Path, help="CSV súbor (predvolene data/truth.csv)")
+    import_.set_defaults(run=_cmd_entries_import)
+
+    serve = commands.add_parser(
+        "serve", help="sprístupní uložené dni cez HTTP a prijíma zápisy zo Samsung Health"
+    )
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8787)
     serve.set_defaults(run=_cmd_serve)

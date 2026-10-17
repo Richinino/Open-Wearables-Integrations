@@ -7,7 +7,7 @@ import pytest
 
 from owi.models import DayResult, WorkoutResult
 from owi.score_models import Score
-from owi.store import Store, jsonable
+from owi.store import FitRecord, Store, jsonable
 from tests.factories import make_features, make_scores, utc
 
 DAY = date(2026, 10, 12)
@@ -344,3 +344,75 @@ def test_readonly_store_reads_features_and_scores_but_cannot_write_them(tmp_path
         assert reader.scores(DAY, DAY) == [make_scores(DAY)]
         with pytest.raises(sqlite3.OperationalError):
             reader.save_scores(make_scores(DAY, strain=1.0))
+
+
+def test_workout_phone_steps_read_back(store):
+    day = make_day(workouts=(replace(make_workout(), phone_steps=4200),))
+
+    store.save_day(day)
+
+    assert store.get_day(DAY).workouts[0].phone_steps == 4200
+
+
+def test_a_workouts_table_without_phone_steps_still_reads_and_gains_the_column(tmp_path):
+    path = tmp_path / "owi.db"
+    with Store(path) as old:
+        old.save_day(make_day())
+    with sqlite3.connect(path) as db:
+        db.execute('ALTER TABLE workouts DROP COLUMN "phone_steps"')
+    db.close()
+
+    with Store(path, readonly=True) as reader:
+        assert reader.get_day(DAY) == make_day()
+    with Store(path) as writer:
+        writer.save_day(make_day(workouts=(replace(make_workout(), phone_steps=10),)))
+        assert writer.get_day(DAY).workouts[0].phone_steps == 10
+
+
+def test_fits_are_kept_as_history_and_the_latest_reads_back(store):
+    first = FitRecord(utc(2026, 10, 15, 9), 3, "2026-10-15T08:00:00+00:00", {"a": 1.0}, {})
+    second = FitRecord(
+        utc(2026, 10, 16, 9), 4, None, {"a": 2.0}, {"distance_km": {"n": 4, "error": 1.5}}
+    )
+
+    assert store.latest_fit() is None
+    store.save_fit(second)
+    store.save_fit(first)
+
+    assert store.latest_fit() == second
+    assert store._db.execute("SELECT COUNT(*) FROM params_history").fetchone()[0] == 2
+
+
+def test_recompute_state_starts_empty_and_keeps_the_last_value(store):
+    assert store.recompute_state() is None
+
+    store.set_recompute_state({"stride_m": 0.74}, None)
+    store.set_recompute_state({"stride_m": 0.76}, utc(2026, 10, 16, 9))
+
+    assert store.recompute_state() == ({"stride_m": 0.76}, utc(2026, 10, 16, 9))
+
+
+def test_readonly_store_over_a_database_without_tuning_tables(tmp_path):
+    path = tmp_path / "owi.db"
+    make_old_database(path)
+    with sqlite3.connect(path) as db:
+        db.execute("DROP TABLE params_history")
+        db.execute("DROP TABLE recompute_state")
+    db.close()
+
+    with Store(path, readonly=True) as reader:
+        assert reader.latest_fit() is None
+        assert reader.recompute_state() is None
+
+
+def test_scores_stored_before_the_samsung_estimates_load_with_empty_ones(store):
+    data = jsonable(make_scores(DAY))
+    del data["samsung_sleep"], data["energy_score"]
+    store._db.execute(
+        "INSERT INTO day_scores VALUES (?, ?, ?)", (DAY.isoformat(), json.dumps(data), "x")
+    )
+
+    loaded = store.get_scores(DAY)
+
+    assert loaded.samsung_sleep == Score(None)
+    assert loaded.energy_score == Score(None)

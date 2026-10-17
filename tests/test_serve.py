@@ -7,16 +7,38 @@ from datetime import date, timedelta
 import httpx
 import pytest
 
-from owi import cli
-from owi.models import DayResult, SleepInterval
-from owi.serve import MAX_DAYS, Response, make_server, respond
-from owi.store import Store, jsonable
+from owi import cli, entries
+from owi.calibration import save_params
+from owi.models import DayResult, Params, SleepInterval
+from owi.serve import MAX_BODY_BYTES, MAX_DAYS, Response, make_server, respond
+from owi.store import FitRecord, Store, jsonable
 from tests.factories import make_features, make_scores, utc
 from tests.test_store import make_day, make_workout
 
 TOKEN = "t" * 40
+WRITE_TOKEN = "w" * 40
 TIMEZONE = "Europe/Bratislava"
 AUTH = f"Bearer {TOKEN}"
+WRITE_AUTH = f"Bearer {WRITE_TOKEN}"
+# Noon on the last stored day: entries may go from 2026-10-01 to 2026-10-03.
+NOW = utc(2026, 10, 3, 10)
+ENTRY = {
+    "steps": 23588,
+    "distance_km": 17.9,
+    "active_minutes": 210,
+    "active_kcal": 980,
+    "total_kcal": 2610,
+    "sleep_score": 82,
+    "energy_score": 76,
+}
+DEFAULT_PARAMS = {"stride_m": 0.74, "active_hr_delta": 30.0, "kcal_scale": 1.0, "basal_kcal": None}
+NO_CALIBRATION = {
+    "fitted_at": None,
+    "entries": 0,
+    "params": DEFAULT_PARAMS,
+    "defaults": DEFAULT_PARAMS,
+    "quality": {},
+}
 
 
 TIMELINE = (
@@ -54,7 +76,40 @@ def db_path(tmp_path):
 
 
 def get(db_path, target: str, authorization: str | None = AUTH, method: str = "GET") -> Response:
-    return respond(method, target, authorization, db_path=db_path, token=TOKEN, timezone=TIMEZONE)
+    return respond(
+        method,
+        target,
+        authorization,
+        db_path=db_path,
+        token=TOKEN,
+        timezone=TIMEZONE,
+        write_token=WRITE_TOKEN,
+    )
+
+
+def put(
+    db_path,
+    day: str,
+    body: object = ENTRY,
+    authorization: str | None = WRITE_AUTH,
+    write_token: str = WRITE_TOKEN,
+    raw: bytes | None = None,
+) -> Response:
+    return respond(
+        "PUT",
+        f"/v1/entries/{day}",
+        authorization,
+        db_path=db_path,
+        token=TOKEN,
+        timezone=TIMEZONE,
+        write_token=write_token,
+        body=json.dumps(body).encode() if raw is None else raw,
+        now=NOW,
+    )
+
+
+def entries_path(db_path):
+    return entries.path_in(db_path.parent)
 
 
 def test_health_needs_no_token(db_path):
@@ -88,7 +143,7 @@ def test_a_day_carries_every_stored_field_and_its_workouts(db_path):
 
     (day,) = body["days"]
     stored = {f.name for f in fields(DayResult)}
-    assert set(day) == stored | {"scores", "sleep_timeline"}
+    assert set(day) == stored | {"scores", "sleep_timeline", "samsung"}
     assert day["complete"] is True
     assert day["steps_source"] == "samsung_health_total"
     assert day["total_kcal_est"] == 2550.5
@@ -225,13 +280,22 @@ def test_empty_database_returns_no_days(tmp_path):
 
     assert get(path, "/v1/days") == Response(
         200,
-        {"timezone": TIMEZONE, "first_day": None, "last_day": None, "synced_at": None, "days": []},
+        {
+            "timezone": TIMEZONE,
+            "first_day": None,
+            "last_day": None,
+            "synced_at": None,
+            "days": [],
+            "calibration": NO_CALIBRATION,
+        },
     )
 
 
 @pytest.fixture
 def base_url(db_path):
-    server = make_server("127.0.0.1", 0, db_path=db_path, token=TOKEN, timezone=TIMEZONE)
+    server = make_server(
+        "127.0.0.1", 0, db_path=db_path, token=TOKEN, timezone=TIMEZONE, write_token=WRITE_TOKEN
+    )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     yield f"http://127.0.0.1:{server.server_address[1]}"
@@ -282,3 +346,208 @@ def test_serve_refuses_to_start_without_a_long_token(tmp_path, monkeypatch, caps
 
     assert cli.main(["serve", "--port", "0"]) == 1
     assert "OWI_SERVE_TOKEN" in capsys.readouterr().err
+
+
+def test_put_without_a_body_or_with_too_large_a_body_over_http(base_url):
+    url = f"{base_url}/v1/entries/2026-10-02"
+    headers = {"Authorization": WRITE_AUTH}
+    empty = httpx.put(url, headers=headers)
+    large = httpx.put(url, headers=headers, content=b" " * (MAX_BODY_BYTES + 1))
+
+    assert (empty.status_code, empty.json()["fields"]) == (400, {"body": "objekt JSON"})
+    assert (large.status_code, large.json()) == (413, {"error": "body too large"})
+
+
+def test_entries_are_written_over_http(base_url, db_path):
+    response = httpx.put(
+        f"{base_url}/v1/entries/2026-10-02",
+        headers={"Authorization": WRITE_AUTH, "Accept-Encoding": "gzip"},
+        json={**ENTRY, "steps": 1234},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json()["steps"] == 1234
+    assert entries.load(entries_path(db_path))[0].steps == 1234
+
+
+# PUT /v1/entries/{day}
+
+
+def test_an_entry_is_saved_and_returned(db_path):
+    response = put(db_path, "2026-10-02")
+
+    assert response == Response(
+        200,
+        {
+            "day": "2026-10-02",
+            "steps": 23588,
+            "distance_km": 17.9,
+            "active_minutes": 210.0,
+            "active_kcal": 980.0,
+            "total_kcal": 2610.0,
+            "sleep_score": 82.0,
+            "energy_score": 76.0,
+            "saved_at": NOW.isoformat(),
+        },
+    )
+    (saved,) = entries.load(entries_path(db_path))
+    assert entries.as_json(saved) == response.body
+
+
+def test_missing_fields_are_saved_as_null(db_path):
+    response = put(db_path, "2026-10-02", {"sleep_score": 70})
+
+    assert response.status == 200
+    assert response.body["sleep_score"] == 70.0
+    assert response.body["steps"] is None
+
+
+def test_all_fields_null_deletes_the_entry(db_path):
+    put(db_path, "2026-10-02")
+
+    response = put(db_path, "2026-10-02", dict.fromkeys(ENTRY))
+
+    assert response == Response(200, entries.as_json(entries.Entry(date(2026, 10, 2))))
+    assert entries.load(entries_path(db_path)) == []
+
+
+@pytest.mark.parametrize("authorization", [None, "Bearer wrong", AUTH, WRITE_TOKEN])
+def test_only_the_write_token_writes(db_path, authorization):
+    assert put(db_path, "2026-10-02", authorization=authorization) == Response(
+        401, {"error": "unauthorized"}
+    )
+    assert entries.load(entries_path(db_path)) == []
+
+
+def test_the_write_token_does_not_read(db_path):
+    assert get(db_path, "/v1/days", WRITE_AUTH) == Response(401, {"error": "unauthorized"})
+
+
+def test_writes_are_unavailable_without_a_write_token(db_path):
+    response = put(db_path, "2026-10-02", authorization="Bearer ", write_token="")
+
+    assert response == Response(503, {"error": "writes are disabled"})
+
+
+def test_invalid_values_and_days_are_named_in_slovak(db_path):
+    response = put(db_path, "2026-10-04", {**ENTRY, "sleep_score": 101, "steps": 1.5})
+
+    assert response == Response(
+        400,
+        {
+            "error": "invalid",
+            "fields": {"sleep_score": "0–100", "steps": "celé číslo", "day": "mimo rozsahu"},
+        },
+    )
+    assert entries.load(entries_path(db_path)) == []
+
+
+@pytest.mark.parametrize(
+    ("day", "message"),
+    [
+        ("2026-09-30", "mimo rozsahu"),
+        ("2026-10-04", "mimo rozsahu"),
+        ("2026-13-01", "RRRR-MM-DD"),
+        ("20261002", "RRRR-MM-DD"),
+        ("yesterday", "RRRR-MM-DD"),
+    ],
+)
+def test_entries_go_from_the_first_stored_day_to_today(db_path, day, message):
+    assert put(db_path, day).body == {"error": "invalid", "fields": {"day": message}}
+
+
+def test_today_takes_an_entry(db_path):
+    assert put(db_path, "2026-10-03").status == 200
+
+
+def test_a_body_that_is_not_json_is_invalid(db_path):
+    response = put(db_path, "2026-10-02", raw=b"{steps:")
+
+    assert response == Response(400, {"error": "invalid", "fields": {"body": "objekt JSON"}})
+
+
+def test_writing_before_any_day_is_stored_is_unavailable(tmp_path):
+    response = put(tmp_path / "missing" / "owi.db", "2026-10-02")
+
+    assert response == Response(503, {"error": "no data yet"})
+
+
+def test_other_methods_and_paths_of_entries(db_path):
+    assert get(db_path, "/v1/entries/2026-10-02").status == 405
+    assert get(db_path, "/v1/entries/2026-10-02", method="POST").status == 405
+    assert get(db_path, "/v1/days", method="PUT").status == 405
+    assert get(db_path, "/v1/entries", method="PUT").status == 405
+    assert get(db_path, "/v1/entries/2026-10-02/x", method="PUT").status == 405
+
+
+# GET /v1/days additions
+
+
+def test_days_carry_their_samsung_entry_or_null(db_path):
+    saved = put(db_path, "2026-10-02").body
+
+    days = get(db_path, "/v1/days").body["days"]
+
+    assert [d["samsung"] for d in days] == [None, saved, None]
+
+
+def test_days_without_an_entries_store_and_a_fit_have_the_empty_calibration(db_path):
+    body = get(db_path, "/v1/days").body
+
+    assert body["calibration"] == NO_CALIBRATION
+    assert not entries_path(db_path).exists()
+
+
+def test_days_carry_the_latest_fit_and_the_current_params(db_path):
+    quality = {"distance_km": {"n": 5, "error": 4.1, "previous_error": 6.0, "unit": "%"}}
+    with Store(db_path) as store:
+        store.save_fit(FitRecord(utc(2026, 10, 3, 9, 30), 5, None, {}, quality))
+    save_params(db_path.parent / "params.json", Params(stride_m=0.76, max_hr=190.0))
+
+    calibration = get(db_path, "/v1/days").body["calibration"]
+
+    assert calibration == {
+        **NO_CALIBRATION,
+        "fitted_at": "2026-10-03T09:30:00+00:00",
+        "entries": 5,
+        "params": {**DEFAULT_PARAMS, "stride_m": 0.76},
+        "quality": quality,
+    }
+
+
+def test_scores_carry_the_samsung_estimates(db_path):
+    body = get(db_path, "/v1/days?from=2026-10-02&to=2026-10-02").body
+
+    scores = body["days"][0]["scores"]
+    assert scores["samsung_sleep"] == {"value": None, "components": {}, "note": None}
+    assert "energy_score" in scores
+
+
+# Startup
+
+
+@pytest.mark.parametrize("write_token", ["short", TOKEN])
+def test_the_server_refuses_a_short_write_token_or_the_read_token(db_path, write_token):
+    with pytest.raises(ValueError):
+        make_server(
+            "127.0.0.1", 0, db_path=db_path, token=TOKEN, timezone=TIMEZONE, write_token=write_token
+        )
+
+
+def test_serve_refuses_a_short_write_token(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OWI_SERVE_TOKEN", TOKEN)
+    monkeypatch.setenv("OWI_WRITE_TOKEN", "short")
+
+    assert cli.main(["serve", "--port", "0"]) == 1
+    assert "OWI_WRITE_TOKEN" in capsys.readouterr().err
+
+
+def test_an_unreadable_params_file_does_not_break_the_days(db_path):
+    (db_path.parent / "params.json").write_text('{"stride_m": 0.7', encoding="utf-8")
+
+    response = get(db_path, "/v1/days")
+
+    assert response.status == 200
+    assert response.body["calibration"]["params"] == DEFAULT_PARAMS

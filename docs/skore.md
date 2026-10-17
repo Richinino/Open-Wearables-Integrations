@@ -1,6 +1,6 @@
 # Skóre – vzorce a zdroje
 
-Dátum: 2026-10-14. Podklad pre výpočet skóre v `owi` a pre web. Zhrnutie rešerše vedeckých zdrojov a postupov veľkých výrobcov (WHOOP, Oura, Apple, Garmin/Firstbeat, Polar, Fitbit/Google, Coros, Samsung).
+Dátum: 2026-10-14, dolaďovanie a odhady Samsungu (§7) 2026-10-16. Podklad pre výpočet skóre v `owi` a pre web. Zhrnutie rešerše vedeckých zdrojov a postupov veľkých výrobcov (WHOOP, Oura, Apple, Garmin/Firstbeat, Polar, Fitbit/Google, Coros, Samsung).
 
 ## Ako čítať značky
 
@@ -140,7 +140,7 @@ Použitie: číslo „potrebuješ dnes X h Y min“ na webe.
 | Polar Sleep Score | priemer 6 zložiek; maximum pri ≥ 8 h, 0 min dlhých prerušení, súvislosti 5/5, ~100 % spánku, REM 25 %, hlboký ~17 % **[WP]** | stredná |
 | Oura Sleep | 7 zložiek; 7–9 h, efektivita 85 %, REM ≥ 90 min, hlboký 15–20 %, zaspávanie 15–20 min, stred spánku 00:00–03:00 **[V]**; krivky a váhy **[A]** | stredná až nízka |
 | Fitbit/Google | 6 metrík, prebudenia > 5 min (0 ideál, < 2 dobré) **[V]**; váhy neznáme | nízka |
-| Samsung | fázy, pohyb, prebudenia; váhy neznáme | dá sa nafitovať z exportu Samsung Health |
+| Samsung | fázy, pohyb, prebudenia; váhy neznáme | owi ho odhaduje a váhy sa učí zo zápisov (§7) |
 
 ### Vedecké referenčné hodnoty
 
@@ -179,7 +179,7 @@ Nočný tep `A` = priemer tepu 00:00–07:00 z minút bez krokov **[PUB]**; owi 
 
 - **Garmin Body Battery** (0–100, nabíja spánok a pokoj, vybíja námaha a stres): rýchlosti nabíjania nikde nezverejnené; naša verzia je celá **[A]**, cieľ +45 až +65 za noc. Dôvera: nízka.
 - **Polar Nightly Recharge**: `ANS = clamp(2·z, −10, 10)` z priemerného tepu prvých 4 h spánku oproti 28 dňom **[V štruktúra, A konštanty]**; tep má v ňom najväčšiu váhu **[V]**.
-- **Samsung Energy Score**: vstupy spánok (7-dňový priemer, pravidelnosť, načasovanie), včerajšia aktivita (koncept ACWR), nočný tep a HRV **[V]**; váhy personalizované AI. Dá sa nafitovať, ak si zapíšeš skóre z aplikácie aspoň 30 dní.
+- **Samsung Energy Score**: vstupy spánok (7-dňový priemer, pravidelnosť, načasovanie), včerajšia aktivita (koncept ACWR), nočný tep a HRV **[V]**; váhy personalizované AI. owi ho odhaduje a váhy sa učí zo zápisov (§7).
 
 ## 5. Dlhodobé ukazovatele
 
@@ -200,6 +200,55 @@ Nočný tep `A` = priemer tepu 00:00–07:00 z minút bez krokov **[PUB]**; owi 
 | **Varovanie** | NightSignal | publikované |
 
 Skóre regenerácie sa ukazuje až po 14 nociach, porovnania s priemerom po 7 dňoch **[A, výrobcovia 7–14]**, a len pre deň, ktorý má zaznamenaný hlavný spánok; Oura ho tiež počíta až po noci **[V]**. Dni s menej ako 1 000 minútami nameraného tepu sa do základov nerátajú **[PUB, Radin 2020]**.
+
+## 7. Dolaďovanie podľa zápisov zo Samsungu
+
+Návrh: [`superpowers/specs/2026-10-16-zapisy-a-doladovanie-design.md`](superpowers/specs/2026-10-16-zapisy-a-doladovanie-design.md). Vzorce sa nemenia, dolaďujú sa len čísla v nich. Pravdou sú čísla zo Samsung Health, ktoré používateľ zapíše na webe (`data/zapisy/zapisy.db`). Skóre podľa WHOOP, Oura, Apple a Polar ostávajú bez zmeny.
+
+| Výpočet | Parameter | Predvolené | Hranice | Pravda zo zápisov |
+|---|---|---|---|---|
+| Vzdialenosť | `stride_m` | 0,74 | 0,50–1,10 m | `distance_km` / `steps` |
+| Aktívny čas | `active_hr_delta` | 30 | 5–60 bpm | `active_minutes` |
+| Kalórie z aktivity | `kcal_scale` | 1,0 | 0,5–1,5 | `active_kcal` |
+| Kalórie spolu | `basal_kcal` | žiadna | 1 200–2 500 kcal | `total_kcal − active_kcal`; len pre dni bez záznamu bazálu zo Samsungu a bez `OWI_BASAL_KCAL` |
+
+Postup pre každý parameter **[A]**:
+
+1. **Váha dňa** `w = 0,5^(vek dňa v dňoch / 60)`; berú sa zápisy za posledný rok (starší deň váži pod 2 %).
+2. **Fit:** dĺžka kroku `Σw·km / Σw·kroky`; prah tepu = najmenší z 5–60 bpm s najmenšou váženou chybou aktívnych minút; koeficient `Σw·kcal Samsungu / Σw·kcal owi`; bazál = vážený medián `spolu − aktívne`. Výsledok sa oreže na hranice.
+3. **Stiahnutie k predvolenej hodnote:** `θ = θ₀ + n/(n + 7)·(θ_fit − θ₀)`, `n` = súčet váh dní; pri 7 dňoch polovica cesty. Bazál predvolenú hodnotu nemá, preto sa sťahuje k bazálu, ktorý owi v tie dni použilo (záznam Samsungu alebo nastavenie); bez neho sa nesťahuje.
+4. **Kontrola na nevidených dňoch:** od 6 dní sa parameter doladí bez najnovšej štvrtiny dní (aspoň 2). Ak na nej mýli viac ako doterajšia hodnota, ostáva doterajšia; inak sa doladí na všetkých dňoch.
+
+- Dĺžka kroku sa učí aj bez zápisov z chôdze a behu, ktoré majú vzdialenosť a zároveň kroky krokomera telefónu v čase tréningu. Tréning s krokom mimo 0,50–1,10 m sa vynechá, telefón vtedy nebol pri celom tréningu.
+- **Kvalita** (karta na webe): priemerná odchýlka na najnovšej štvrtine, pri menej ako 6 dňoch na všetkých; pri odhadoch v %, pri skóre v bodoch. `previous_error` je odchýlka doterajších hodnôt na tých istých dňoch. Pri kalóriách spolu sa meria bazálna časť, s aktívnymi kalóriami zo Samsungu.
+- **Kedy:** `owi sync` doladí po každom uložení či zmazaní zápisu, inak raz denne. Nové parametre odhadov znamenajú prepočet všetkých uložených dní, najviac raz za 24 h (dovtedy ich používajú len nasledujúce behy); nové váhy skóre len prepočet skóre. `owi calibrate` doladí a prepočíta hneď.
+
+### Samsung Sleep Score a Energy Score – odhady
+
+Samsung uvádza, z čoho skóre skladá, nie ako **[V]**. owi počíta každú časť 0–100 a skóre je `clamp(Σ wᵢ·cᵢ)` cez známe časti, váhy prenormované na ne **[A]**. Váhy sa učia váženou ridge regresiou stiahnutou k rovnakým váham silou 7 dní rozptylu častí; záporné sa orežú na 0 a súčet je 1; chýbajúca časť dňa sa nahradí priemerom jeho známych častí **[A]**. Odhad sa ukáže od 10 zápisov daného skóre, dovtedy `value: null`, `note: "learning"` a v `components` počet zápisov a potrebných 10.
+
+Sleep Score patrí k noci, ktorá skončila v daný deň:
+
+| Časť | Výpočet **[A]** |
+|---|---|
+| `duration` | `100·min(1, TST/potreba)`, potreba 8 h pre tínedžera, inak 7,5 h |
+| `deep` | `100·min(1, (hlboký/TST)/0,20)`, Oura uvádza 15–20 % |
+| `rem` | `100·min(1, (REM/TST)/0,25)`, Polar 25 % |
+| `efficiency` | `100·min(1, TST/čas v posteli)` |
+| `interruptions` | bdenie po zaspaní ≤ 20 min = 100, lineárne do 0 pri 60 min (NSF: ≤ 20 dobré, ≥ 41 zlé) |
+| `latency` | zaspávanie ≤ 15 min = 100, lineárne do 0 pri 45 min (NSF: ≤ 15 dobré, ≥ 46 zlé) |
+
+Energy Score patrí k rannu daného dňa:
+
+| Časť | Výpočet **[A]** |
+|---|---|
+| `sleep` | 7-dňový priemer spánku so zdriemnutiami oproti potrebe, aspoň 3 noci |
+| `regularity` | SRI cez krivku Readiness: 100 pri SRI ≥ 85, inak `100 − 2·(85 − SRI)` |
+| `timing` | stred noci oproti kruhovému mediánu 14 predošlých (aspoň 3): `100 − 100·Δ/180`, Δ = odchýlka v minútach bez znamienka |
+| `load` | včerajší TRIMP / priemer 28 dní do včera (aspoň 14 odmeraných), ako ACWR: `100 − 50·max(0, pomer − 1)` |
+| `night_hr` | nočný tep oproti mediánu predošlých nocí (NightSignal): `100 − 12,5·max(0, Δ bpm)`; +4 bpm = 50 |
+
+HRV, ktorú Samsung tiež používa, nemáme. Dôvera: zoznam častí podľa výrobcu, krivky a váhy A; ako presne odhad sedí, ukazuje kvalita na webe.
 
 ## Zdroje
 

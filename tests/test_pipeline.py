@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
@@ -227,3 +228,18 @@ def test_day_features_without_stored_days_use_the_days_own_resting_hr(tmp_path):
         features = day_features(store, inputs, result, Person())
 
     assert features == extract(inputs, result, Person(), None, [])
+
+
+def test_a_fitted_basal_fills_in_only_on_days_without_a_samsung_basal_record():
+    inputs = make_inputs()
+    without_record = replace(inputs, profile=replace(inputs.profile, basal_kcal_per_day=None))
+    params = Params(basal_kcal=1800.0)
+
+    recorded = compute(inputs, params, TIMEZONE)
+    filled = compute(without_record, params, TIMEZONE)
+    unknown = compute(without_record, Params(), TIMEZONE)
+
+    assert recorded.basal_kcal == 1650.0
+    assert filled.basal_kcal == 1800.0
+    assert filled.total_kcal_est == pytest.approx(1800.0 + filled.activity_kcal_est)
+    assert (unknown.basal_kcal, unknown.total_kcal_est) == (None, None)

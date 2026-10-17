@@ -13,8 +13,9 @@ from dataclasses import replace
 from datetime import date, timedelta
 from statistics import fmean
 
-from owi import activity_score, load, longterm, readiness, sleep_scores
+from owi import activity_score, load, longterm, readiness, samsung_scores, sleep_scores
 from owi.models import DEFAULT_MAX_HR
+from owi.samsung_scores import SamsungModels
 from owi.score_models import DayFeatures, DayScores, NightSignal, Person, Score
 from owi.store import Store
 
@@ -38,12 +39,15 @@ def score_day(
     previous: Sequence[DayScores],
     person: Person,
     timezone: str,
+    models: SamsungModels | None = None,
 ) -> DayScores:
     """Scores of the last day of `history` (oldest first).
 
     `previous` are the stored scores of earlier days, oldest first; the day before gives the
-    sleep need the night is measured against.
+    sleep need the night is measured against. `models` are the learnt weights of the Samsung
+    estimates; without them those estimates are still learning.
     """
+    models = models or SamsungModels()
     today = history[-1]
     by_day = {scores.day: scores for scores in previous}
     yesterday = by_day.get(today.day - timedelta(days=1))
@@ -67,6 +71,7 @@ def score_day(
         else Score(None, note=TOO_LITTLE_WEAR)
     )
     night = readiness.night_signal(history)
+    energy = samsung_scores.energy_parts(history, person, timezone, regularity, night)
     return DayScores(
         day=today.day,
         strain=today.strain if measured else None,
@@ -82,6 +87,10 @@ def score_day(
         vo2max=today.vo2max,
         vo2max_uth=longterm.vo2max_uth(person.max_hr, today.awake_rest_hr),
         whoop_age=longterm.whoop_age(history, person),
+        samsung_sleep=samsung_scores.estimate(
+            samsung_scores.sleep_parts(today, person), models.sleep
+        ),
+        energy_score=samsung_scores.estimate(energy, models.energy),
     )
 
 
@@ -121,7 +130,14 @@ def person_for(base: Person, history: Sequence[DayFeatures], max_hr: float) -> P
     )
 
 
-def rescore(store: Store, first: date, last: date, base: Person, timezone: str) -> int:
+def rescore(
+    store: Store,
+    first: date,
+    last: date,
+    base: Person,
+    timezone: str,
+    models: SamsungModels | None = None,
+) -> int:
     """Score every day with stored features from `first` to `last`, in date order.
 
     `base.max_hr` is the configured or calibrated maximum heart rate; without it each day
@@ -146,7 +162,7 @@ def rescore(store: Store, first: date, last: date, base: Person, timezone: str) 
                 previous.popleft()
             max_hr = base.max_hr or store.max_hr_recent(features.day) or DEFAULT_MAX_HR
             person = person_for(base, window, max_hr)
-            scores = score_day(list(window), list(previous), person, timezone)
+            scores = score_day(list(window), list(previous), person, timezone, models)
             store.save_scores(scores)
             previous.append(scores)
             count += 1

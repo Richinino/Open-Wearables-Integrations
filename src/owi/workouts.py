@@ -6,7 +6,16 @@ from collections.abc import Iterable, Sequence
 from datetime import date
 
 from owi import estimates, heart
-from owi.models import DISTANCE, HEART_RATE, Params, Profile, Sample, Workout, WorkoutResult
+from owi.models import (
+    DISTANCE,
+    HEART_RATE,
+    STEPS,
+    Params,
+    Profile,
+    Sample,
+    Workout,
+    WorkoutResult,
+)
 
 SAME_WORKOUT_SECONDS = 120
 DISTANCE_MATCH_SECONDS = 60
@@ -37,6 +46,22 @@ def _matched_distance(workout: Workout, samples: Sequence[Sample]) -> float | No
         ):
             return item.value
     return None
+
+
+def _phone_steps(workout: Workout, samples: Sequence[Sample]) -> int | None:
+    """The phone counter's records that start inside the workout; None without any.
+
+    Samsung's own counts are left out: they are what the stride is compared against.
+    """
+    counts = [
+        item.value
+        for item in samples
+        if item.type == STEPS
+        and item.source.is_health_connect
+        and not item.source.is_samsung_health_app
+        and workout.start <= item.timestamp < workout.end
+    ]
+    return round(sum(counts)) if counts else None
 
 
 def enrich(
@@ -80,4 +105,5 @@ def enrich(
         zone_vigorous_min=zones.vigorous,
         distance_m=distance,
         kcal_est=kcal,
+        phone_steps=_phone_steps(workout, samples),
     )

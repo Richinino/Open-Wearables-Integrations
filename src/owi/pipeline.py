@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from statistics import fmean
 from typing import Protocol
@@ -115,7 +116,11 @@ def compute(inputs: DayInputs, params: Params, timezone: str) -> DayResult:
     activity = estimates.activity_kcal(
         minute_hr, active, resting, inputs.profile, params.kcal_scale
     )
-    basal, total = estimates.total_kcal(activity, inputs.profile, inputs.elapsed_fraction)
+    profile = inputs.profile
+    if profile.basal_kcal_per_day is None:
+        # Samsung's record and the configured value win; the fitted one only fills the gap.
+        profile = replace(profile, basal_kcal_per_day=params.basal_kcal)
+    basal, total = estimates.total_kcal(activity, profile, inputs.elapsed_fraction)
 
     summary = sleep.summarize(inputs.sleeps)
     main = summary.main if summary else None

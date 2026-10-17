@@ -89,13 +89,15 @@ class Params:
     """Tunable estimate parameters; calibration replaces the defaults.
 
     `max_hr` is the maximum heart rate the other values were fitted with. Estimates
-    depend on it, so later runs reuse it instead of deriving their own.
+    depend on it, so later runs reuse it instead of deriving their own. `basal_kcal` stands
+    in for the basal expenditure only on days without Samsung's record or a configured one.
     """
 
     stride_m: float = 0.74
     active_hr_delta: float = 30.0
     kcal_scale: float = 1.0
     max_hr: float | None = None
+    basal_kcal: float | None = None
 
 
 @dataclass(frozen=True)
@@ -147,6 +149,7 @@ class WorkoutResult:
     zone_vigorous_min: int
     distance_m: float | None
     kcal_est: float | None
+    phone_steps: int | None = None  # the phone pedometer's steps inside the workout
 
 
 @dataclass(frozen=True)

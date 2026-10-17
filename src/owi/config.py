@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from owi import entries
+
 DEFAULT_API_URL = "http://localhost:8000"
 DEFAULT_TIMEZONE = "Europe/Bratislava"
 DEFAULT_DATA_DIR = "data"
@@ -24,6 +26,7 @@ class Settings:
     vo2max: float | None = None
     basal_kcal: float | None = None
     serve_token: str = ""
+    write_token: str = ""
     age: int | None = None
     sex: str | None = None
 
@@ -38,6 +41,14 @@ class Settings:
     @property
     def params_path(self) -> Path:
         return self.data_dir / "params.json"
+
+    @property
+    def score_weights_path(self) -> Path:
+        return self.data_dir / "score_weights.json"
+
+    @property
+    def entries_path(self) -> Path:
+        return entries.path_in(self.data_dir)
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -76,6 +87,7 @@ def load_settings(
         vo2max=_float(values, "OWI_VO2MAX"),
         basal_kcal=_float(values, "OWI_BASAL_KCAL"),
         serve_token=values.get("OWI_SERVE_TOKEN") or "",
+        write_token=values.get("OWI_WRITE_TOKEN") or "",
         age=int(values["OWI_AGE"]) if values.get("OWI_AGE") else None,
         sex=(values.get("OWI_SEX") or "").strip().lower() or None,
     )

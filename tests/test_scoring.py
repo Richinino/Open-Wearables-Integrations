@@ -4,8 +4,9 @@ from statistics import fmean
 
 import pytest
 
-from owi import activity_score, load, longterm, readiness, scoring, sleep_scores
+from owi import activity_score, load, longterm, readiness, samsung_scores, scoring, sleep_scores
 from owi.models import DEFAULT_MAX_HR
+from owi.samsung_scores import SamsungModels, ScoreModel
 from owi.score_models import MALE, CardioLoad, DayFeatures, DayScores, Person, Score
 from owi.scoring import person_for, rescore, score_day
 from owi.store import Store
@@ -286,9 +287,9 @@ def test_rescore_passes_at_most_180_days_and_the_scores_of_the_last_14(store, mo
     seen: list[tuple[list[DayFeatures], list[DayScores]]] = []
     real = scoring.score_day
 
-    def spy(history, previous, person, timezone):
+    def spy(history, previous, person, timezone, *args, **kwargs):
         seen.append((list(history), list(previous)))
-        return real(history, previous, person, timezone)
+        return real(history, previous, person, timezone, *args, **kwargs)
 
     save_history(store, history(200))
     for day in days_before(D - timedelta(days=1), 20):
@@ -306,9 +307,9 @@ def test_rescore_uses_the_highest_stored_heart_rate_without_a_set_max(store, mon
     people: list[Person] = []
     real = scoring.score_day
 
-    def spy(history, previous, person, timezone):
+    def spy(history, previous, person, timezone, *args, **kwargs):
         people.append(person)
-        return real(history, previous, person, timezone)
+        return real(history, previous, person, timezone, *args, **kwargs)
 
     save_history(store, history(3))
     store.save_day(make_day(D - timedelta(days=1), hr_max=188.0))
@@ -318,3 +319,38 @@ def test_rescore_uses_the_highest_stored_heart_rate_without_a_set_max(store, mon
     rescore(store, D, D, Person(age=17, max_hr=201.0), TIMEZONE)
 
     assert [p.max_hr for p in people] == [DEFAULT_MAX_HR, 188.0, 188.0, 201.0]
+
+
+# Samsung estimates
+
+
+def test_samsung_estimates_are_learning_until_their_weights_have_ten_entries():
+    scores = score_day(history(), [], TEEN, TIMEZONE)
+
+    assert scores.samsung_sleep == Score(None, {"entries": 0, "needed": 10}, "learning")
+    assert scores.energy_score == Score(None, {"entries": 0, "needed": 10}, "learning")
+
+
+def test_samsung_estimates_use_the_learnt_weights():
+    days = with_day(history(), D, sleep_minutes=400.0)
+    models = SamsungModels(sleep=ScoreModel(10, {"duration": 1.0}), energy=ScoreModel(12, None))
+
+    scores = score_day(days, [], TEEN, TIMEZONE, models)
+
+    recent = days[-scoring.SLEEP_WINDOW_DAYS :]
+    regularity = sleep_scores.sleep_regularity_index(recent, TIMEZONE)
+    energy = samsung_scores.energy_parts(
+        days, TEEN, TIMEZONE, regularity, readiness.night_signal(days)
+    )
+    assert scores.samsung_sleep.value == pytest.approx(round(400 / 480 * 100, 1))
+    assert scores.samsung_sleep.note == "estimate"
+    assert scores.energy_score == samsung_scores.estimate(energy, models.energy)
+
+
+def test_rescore_passes_the_models_on(store):
+    save_history(store, history(3))
+    models = SamsungModels(sleep=ScoreModel(10), energy=ScoreModel(10))
+
+    rescore(store, D, D, Person(age=17), TIMEZONE, models)
+
+    assert store.get_scores(D).samsung_sleep.note == "estimate"

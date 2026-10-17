@@ -72,3 +72,13 @@ def test_age_and_sex_for_the_score_formulas():
 
     assert (settings.age, settings.sex) == (30, "female")
     assert load_settings(env={}, env_file=None).age is None
+
+
+def test_write_token_and_the_entries_store_live_beside_the_results():
+    env = {"OWI_WRITE_TOKEN": "w" * 40, "OWI_DATA_DIR": "/data"}
+    settings = load_settings(env=env, env_file=None)
+
+    assert settings.write_token == "w" * 40
+    assert settings.entries_path == Path("/data") / "zapisy" / "zapisy.db"
+    assert settings.score_weights_path == Path("/data") / "score_weights.json"
+    assert load_settings(env={}, env_file=None).write_token == ""

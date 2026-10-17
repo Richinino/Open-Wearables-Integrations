@@ -1,6 +1,6 @@
 # Ako to funguje
 
-Stav k 2026-10-15. Čo zbierame, z akých zdrojov, čo z toho presne počítame a čo len odhadujeme. Vzorce skóre sú zvlášť v [`skore.md`](skore.md).
+Stav k 2026-10-16. Čo zbierame, z akých zdrojov, čo z toho presne počítame a čo len odhadujeme. Vzorce skóre sú zvlášť v [`skore.md`](skore.md).
 
 Konkrétne počty záznamov a dátumy pre tvoj účet sú len lokálne v `data/prehlad-dat.md` (mimo gitu).
 
@@ -13,15 +13,18 @@ hodinky a telefón Samsung
 appka Open Wearables v telefóne ──► Tailscale Funnel (HTTPS) ──► Open Wearables v Dockeri (notebook, neskôr PC)
                                                                       │  surové dáta v Postgrese
                                                                       ▼
-                                                     owi (každých 10 min prepočíta posledných 14 dní)
+                                       owi (každých 10 min prepočíta posledných 14 dní a doladí odhady)
                                                                       │  denné výsledky v data/owi.db
                                                                       ▼
-                                       owi serve (len čítanie, token) ──► Funnel /owi ──► web (Vercel) ──► prehliadač
+            owi serve (čítanie jedným tokenom, zápisy druhým) ◄──► Funnel /owi ◄──► web (Vercel) ◄──► prehliadač
+                  │  zápisy zo Samsung Health v data/zapisy/zapisy.db
+                  ▼
+            owi ich pri ďalšom behu použije na doladenie
 ```
 
 - **Open Wearables** prijíma dáta z telefónu, ukladá ich a ponúka ich cez API aj MCP (pre Claude).
-- **owi** z nich ráta denné hodnoty podľa slovenského času.
-- **Web** zobrazuje výsledky `owi`; heslo a token má len server, prehliadač nie.
+- **owi** z nich ráta denné hodnoty podľa slovenského času a dolaďuje odhady podľa zápisov zo Samsung Health.
+- **Web** zobrazuje výsledky `owi` a prijíma zápisy; heslo a oba tokeny má len server, prehliadač nie.
 
 ## Zdroje
 
@@ -74,10 +77,10 @@ Samsung Health tieto hodnoty počíta sám a nikam ich neposiela, takže ich len
 | **Vzdialenosť** | kroky × dĺžka kroku |
 | **Aktívny čas** | minúty v tréningu + minúty s tepom aspoň o *prah* nad pokojovým |
 | **Kalórie z aktivity** | za každú aktívnu minútu: podiel rezervy tepu × (VO2max − 3,5) × váha × 5 kcal na liter O₂, vynásobené *koeficientom* |
-| **Kalórie spolu** | bazálny výdaj + kalórie z aktivity (bazál zo Samsung Health, alebo z nastavenia) |
+| **Kalórie spolu** | bazálny výdaj + kalórie z aktivity (bazál zo Samsung Health, inak z nastavenia, inak doladený) |
 | **Kalórie tréningu** | to isté len za minúty tréningu |
 
-**Kalibrácia:** dĺžka kroku, prah tepu a koeficient kalórií sa ladia príkazom `owi calibrate` podľa hodnôt, ktoré pre konkrétne dni ukazuje Samsung Health (súbor `data/truth.csv`). Čím viac dní, tým presnejšie; zatiaľ sú naladené dva dni.
+**Dolaďovanie:** dĺžka kroku, prah tepu, koeficient kalórií a náhradný bazál sa dolaďujú podľa čísel, ktoré používateľ občas zapíše zo Samsung Health na webe (stránka Zápis). Zápisy sú v `data/zapisy/zapisy.db`; priečinok vytvorí `owi sync` aj `owi serve`, ak chýba. `owi sync` každých 10 minút skontroluje, či pribudol alebo sa zmenil zápis, a vtedy (inak raz denne) parametre doladí: novšie dni vážia viac, pri málo dňoch ostávajú hodnoty blízko predvolených a nová hodnota sa prijme, len ak na najnovších dňoch netrafí horšie. Pri zmene parametrov prepočíta všetky uložené dni, najviac raz za 24 h. Dĺžku kroku sa učí aj sama z chôdze a behu, ktoré majú vzdialenosť aj kroky telefónu. Parametre sú v `data/params.json`, váhy odhadov Samsung skóre v `data/score_weights.json`, história v tabuľke `params_history` v `owi.db`. Postup a čísla v [`skore.md`](skore.md) §7.
 
 ## Skóre
 
@@ -87,6 +90,7 @@ Vzorce v [`skore.md`](skore.md), návrh v [`superpowers/specs/2026-10-14-skore-d
 |---|---|---|
 | ráno | **Readiness** (regenerácia) | Oura Readiness bez HRV a teploty, ako odhad; po 14 nociach a len po zaznamenanej noci |
 | ráno | **Sleep Performance** (hlavné číslo), **Sleep Score** (prepínač) | WHOOP, Apple |
+| ráno | **Samsung Sleep Score** a **Energy Score** (odhady) | časti podľa popisu Samsungu, váhy naučené zo zápisov; od 10 zápisov daného skóre |
 | ráno | **Pravidelnosť spánku** | Sleep Regularity Index za 14 dní |
 | ráno | **Activity** (včerajšok a týždeň) | Oura Activity |
 | večer | **Strain dňa** aj tréningov (0–21) | WHOOP |
@@ -96,7 +100,7 @@ Vzorce v [`skore.md`](skore.md), návrh v [`superpowers/specs/2026-10-14-skore-d
 | denne | **Skóre dňa** | priemer Readiness, Sleep Performance a Activity (aspoň dvoch z nich); pri červenom varovaní najviac 50 |
 | dlhodobo | **VO2max** (hodinky a Uth–Sørensen), **WHOOP Age** | Samsung, WHOOP white paper |
 
-Web ich dostane cez `owi serve` ako `scores` pri každom dni, k tomu `sleep_timeline` (fázy spánku) a `strain` pri tréningoch.
+Web ich dostane cez `owi serve` ako `scores` pri každom dni, k tomu `sleep_timeline` (fázy spánku), `samsung` (zápis dňa alebo `null`), `strain` pri tréningoch a na najvyššej úrovni `calibration` (parametre, počet zápisov, odchýlka od Samsungu).
 
 **Vek 17 rokov:** odporúčania pre spánok sú pre tínedžerov iné ako pre dospelých, 8–10 h (National Sleep Foundation pre 14–17 rokov, AASM pre 13–18 rokov). Výrobcovia pracujú s dospelými hodnotami okolo 7–9 h, preto je spodná hranica potreby spánku 8 h.
 
@@ -107,7 +111,7 @@ Web ich dostane cez `owi serve` ako `scores` pri každom dni, k tomu `sleep_time
 | Čo | Kde |
 |---|---|
 | Open Wearables (API, databáza, admin portál) | Docker na notebooku, `localhost:8000` a `:3000` |
-| owi (prepočet) a owi serve (API pre web) | Docker, kontajnery `owi-owi-1` a `owi-api-1`, API na `127.0.0.1:8787` |
+| owi (prepočet a dolaďovanie) a owi serve (API pre web) | Docker, kontajnery `owi-owi-1` a `owi-api-1`, API na `127.0.0.1:8787`; `api` má `data/` len na čítanie a navyše `data/zapisy/` na zápis |
 | Verejná adresa | Tailscale Funnel: `/` pre telefón, `/owi` pre web |
 | Web | priečinok `web/`, nasadený na Vercel (projekt `zdravie`, root `web`, nasadí sa po každom pushi do vetvy); lokálne `npm run dev -- -p 3100` |
 

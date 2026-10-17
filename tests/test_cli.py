@@ -1,17 +1,20 @@
 import json
-from datetime import date
+import sqlite3
+from datetime import date, timedelta
 
 import pytest
 
-from owi import cli
+from owi import cli, entries, tuning
+from owi.calibration import day_weight, load_params, save_params
 from owi.client import OWError
-from owi.models import STEPS
+from owi.models import STEPS, Params
 from owi.store import Store
 from tests.factories import HC_SHEALTH, hr_minutes, make_features, sample, sleep_session, utc
 from tests.fakes import FakeClient
 
 DAY = date(2026, 10, 12)
 START = utc(2026, 10, 11, 22)
+NOW = utc(2026, 10, 16, 9)
 TRUTH_HEADER = "date,steps,active_minutes,activity_kcal,total_kcal,distance_km\n"
 
 
@@ -29,6 +32,8 @@ def env(tmp_path, monkeypatch):
         "OWI_BASAL_KCAL",
         "OWI_AGE",
         "OWI_SEX",
+        "OWI_SERVE_TOKEN",
+        "OWI_WRITE_TOKEN",
     ):
         monkeypatch.delenv(name, raising=False)
     return tmp_path
@@ -38,10 +43,27 @@ def use_client(monkeypatch, client) -> None:
     monkeypatch.setattr(cli, "OWClient", lambda *args, **kwargs: client)
 
 
-def write_truth(env, row: str) -> None:
+def at(monkeypatch, moment) -> None:
+    monkeypatch.setattr(cli, "_now", lambda: moment)
+
+
+def write_truth(env, *rows: str) -> None:
     data = env / "data"
-    data.mkdir()
-    (data / "truth.csv").write_text(TRUTH_HEADER + row + "\n", encoding="utf-8")
+    data.mkdir(exist_ok=True)
+    (data / "truth.csv").write_text(TRUTH_HEADER + "".join(r + "\n" for r in rows), "utf-8")
+
+
+def entries_path(env):
+    return entries.path_in(env / "data")
+
+
+def save_entry(env, day: date, saved_at=NOW, **values) -> None:
+    entries.save(entries_path(env), day, values, saved_at)
+
+
+def stride_after_one_entry(stride: float, day: date = DAY, now=NOW) -> float:
+    weight = day_weight(day, now.date())
+    return 0.74 + weight / (weight + 7) * (stride - 0.74)
 
 
 def test_sync_stores_the_requested_days(env, monkeypatch, capsys):
@@ -180,15 +202,22 @@ def test_day_without_stored_data_exits_non_zero(env, capsys):
     assert "2026-10-12" in capsys.readouterr().err
 
 
-def test_calibrate_writes_params_fitted_to_the_truth_file(env, monkeypatch, capsys):
+def test_calibrate_writes_params_fitted_to_the_entries(env, monkeypatch, capsys):
+    at(monkeypatch, NOW)
     use_client(monkeypatch, FakeClient([sample(START, STEPS, 20000, HC_SHEALTH)]))
-    write_truth(env, "2026-10-12,20000,,,,15.0")
+    save_entry(env, DAY, steps=20000, distance_km=15.0, sleep_score=80.0)
 
     assert cli.main(["calibrate"]) == 0
 
     saved = json.loads((env / "data" / "params.json").read_text(encoding="utf-8"))
-    assert saved["stride_m"] == pytest.approx(0.75)
+    assert saved["stride_m"] == pytest.approx(stride_after_one_entry(0.75))
     assert "stride_m" in capsys.readouterr().out
+    with Store(env / "data" / "owi.db") as store:
+        fit = store.latest_fit()
+    assert (fit.fitted_at, fit.entries) == (NOW, 1)
+    assert "distance_km" in fit.quality
+    weights = json.loads((env / "data" / "score_weights.json").read_text(encoding="utf-8"))
+    assert weights["samsung_sleep"]["entries"] == 1
 
 
 def test_calibrate_records_the_max_hr_it_used_and_later_syncs_reuse_it(env, monkeypatch):
@@ -198,7 +227,8 @@ def test_calibrate_records_the_max_hr_it_used_and_later_syncs_reuse_it(env, monk
     ]
     earlier_day = hr_minutes(utc(2026, 10, 10, 22), [130.0] * 90)
     use_client(monkeypatch, FakeClient([*reference_day, *earlier_day]))
-    write_truth(env, "2026-10-12,20000,,,,15.0")
+    at(monkeypatch, NOW)
+    save_entry(env, DAY, steps=20000, distance_km=15.0)
 
     assert cli.main(["calibrate"]) == 0
     saved = json.loads((env / "data" / "params.json").read_text(encoding="utf-8"))
@@ -234,14 +264,17 @@ def test_long_ranges_are_synced_in_batches_so_finished_batches_survive_a_failure
         assert store.get_features(date(2026, 10, 20)) is None
 
 
-def test_calibrate_without_a_truth_file_explains_what_is_missing(env, capsys):
+def test_calibrate_without_entries_explains_what_is_missing(env, capsys):
     assert cli.main(["calibrate"]) == 1
-    assert "truth.csv" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "zapisy.db" in err
+    assert "owi entries import" in err
 
 
 def test_check_prints_estimates_next_to_reference_values(env, monkeypatch, capsys):
+    at(monkeypatch, NOW)
     use_client(monkeypatch, FakeClient([sample(START, STEPS, 21000, HC_SHEALTH)]))
-    write_truth(env, "2026-10-12,20000,,,,")
+    save_entry(env, DAY, steps=20000)
 
     assert cli.main(["check"]) == 0
 
@@ -249,3 +282,207 @@ def test_check_prints_estimates_next_to_reference_values(env, monkeypatch, capsy
     assert "steps" in out
     assert "21000" in out
     assert "+5.0" in out
+
+
+# owi entries import
+
+
+def test_entries_import_copies_truth_csv_into_the_entries_store(env, monkeypatch, capsys):
+    at(monkeypatch, NOW)
+    write_truth(env, "2026-10-12,20000,200,950,2400,15.5", "2026-10-11,13000,,,,")
+
+    assert cli.main(["entries", "import"]) == 0
+
+    assert entries.load(entries_path(env)) == [
+        entries.Entry(date(2026, 10, 11), steps=13000, saved_at=NOW),
+        entries.Entry(
+            DAY,
+            steps=20000,
+            distance_km=15.5,
+            active_minutes=200.0,
+            active_kcal=950.0,
+            total_kcal=2400.0,
+            saved_at=NOW,
+        ),
+    ]
+    assert "2" in capsys.readouterr().out
+
+
+def test_entries_import_keeps_existing_entries_and_skips_invalid_rows(env, monkeypatch, capsys):
+    save_entry(env, DAY, sleep_score=80.0)
+    other = env / "other.csv"
+    other.write_text(
+        TRUTH_HEADER + "2026-10-12,20000,,,,\n2026-10-10,500000,,,,\n2026-10-09,,,,,\n",
+        encoding="utf-8",
+    )
+
+    assert cli.main(["entries", "import", "--path", str(other)]) == 0
+
+    (entry,) = entries.load(entries_path(env))
+    assert (entry.steps, entry.sleep_score) == (None, 80.0)
+    out = capsys.readouterr().out
+    assert "2026-10-12" in out
+    assert "2026-10-10" in out
+
+
+def test_entries_import_without_the_file_fails(env, capsys):
+    assert cli.main(["entries", "import"]) == 1
+    assert "truth.csv" in capsys.readouterr().err
+
+
+# Tuning inside owi sync
+
+
+def stepped_client() -> FakeClient:
+    """10 000 steps on 10 and 12 October."""
+    return FakeClient(
+        [
+            sample(utc(2026, 10, 9, 22), STEPS, 10000, HC_SHEALTH),
+            sample(START, STEPS, 10000, HC_SHEALTH),
+        ]
+    )
+
+
+def sync(*days: str) -> int:
+    return cli.main(["sync", "--from", days[0], "--to", days[-1]])
+
+
+def stored_distance(env, day: date) -> float:
+    with Store(env / "data" / "owi.db") as store:
+        return store.get_day(day).distance_m_est
+
+
+def test_sync_creates_the_entries_folder_and_tunes_nothing_without_entries(env, monkeypatch):
+    at(monkeypatch, NOW)
+    use_client(monkeypatch, stepped_client())
+
+    assert sync("2026-10-12") == 0
+
+    assert entries_path(env).parent.is_dir()
+    assert not (env / "data" / "params.json").exists()
+    with Store(env / "data" / "owi.db") as store:
+        assert store.latest_fit() is None
+
+
+def test_sync_tunes_on_a_new_entry_and_recomputes_every_stored_day(env, monkeypatch):
+    at(monkeypatch, NOW)
+    use_client(monkeypatch, stepped_client())
+    assert sync("2026-10-10", "2026-10-12") == 0
+    assert stored_distance(env, date(2026, 10, 10)) == pytest.approx(7400.0)
+
+    save_entry(env, DAY, steps=10000, distance_km=9.0)
+    assert sync("2026-10-12") == 0
+
+    stride = stride_after_one_entry(0.90)
+    assert load_params(env / "data" / "params.json").stride_m == pytest.approx(stride)
+    assert stored_distance(env, date(2026, 10, 10)) == pytest.approx(10000 * stride)
+    with Store(env / "data" / "owi.db") as store:
+        assert store.latest_fit().fitted_at == NOW
+        computed_with, recomputed_at = store.recompute_state()
+    assert computed_with["stride_m"] == pytest.approx(stride)
+    assert recomputed_at == NOW
+
+
+def test_sync_refits_only_after_a_change_or_a_day(env, monkeypatch):
+    use_client(monkeypatch, stepped_client())
+    save_entry(env, DAY, steps=10000, distance_km=9.0)
+    for moment in (NOW, NOW + timedelta(hours=1)):
+        at(monkeypatch, moment)
+        assert sync("2026-10-12") == 0
+    with Store(env / "data" / "owi.db") as store:
+        assert store.latest_fit().fitted_at == NOW
+
+    later = NOW + timedelta(hours=2)
+    save_entry(env, date(2026, 10, 11), saved_at=later, steps=1000, distance_km=0.8)
+    at(monkeypatch, later)
+    assert sync("2026-10-12") == 0
+    with Store(env / "data" / "owi.db") as store:
+        assert store.latest_fit().fitted_at == later
+
+    at(monkeypatch, later + timedelta(hours=24))
+    assert sync("2026-10-12") == 0
+    with Store(env / "data" / "owi.db") as store:
+        assert store.latest_fit().fitted_at == later + timedelta(hours=24)
+
+
+def test_a_full_recompute_happens_at_most_once_in_24_hours(env, monkeypatch):
+    at(monkeypatch, NOW)
+    use_client(monkeypatch, stepped_client())
+    assert sync("2026-10-10", "2026-10-12") == 0
+    with Store(env / "data" / "owi.db") as store:
+        stale = tuning.estimate_params(Params())
+        store.set_recompute_state(stale, NOW - timedelta(hours=1))
+
+    save_entry(env, DAY, steps=10000, distance_km=9.0)
+    assert sync("2026-10-12") == 0
+    stride = stride_after_one_entry(0.90)
+    assert load_params(env / "data" / "params.json").stride_m == pytest.approx(stride)
+
+    # Until 24 hours have passed only the following syncs use the new stride.
+    at(monkeypatch, NOW + timedelta(hours=22))
+    assert sync("2026-10-12") == 0
+    assert stored_distance(env, DAY) == pytest.approx(10000 * stride)
+    assert stored_distance(env, date(2026, 10, 10)) == pytest.approx(7400.0)
+
+    at(monkeypatch, NOW + timedelta(hours=23))
+    assert sync("2026-10-12") == 0
+    assert stored_distance(env, date(2026, 10, 10)) == pytest.approx(10000 * stride)
+
+
+def test_new_score_weights_only_rescore_the_stored_days(env, monkeypatch, capsys):
+    at(monkeypatch, NOW)
+    use_client(monkeypatch, stepped_client())
+    with Store(env / "data" / "owi.db") as store:
+        store.save_features(make_features(date(2026, 10, 5)))
+    assert sync("2026-10-12") == 0
+    capsys.readouterr()
+    syncs = []
+    real = cli._sync_once
+
+    def counting(*args, **kwargs):
+        syncs.append(args[1])
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(cli, "_sync_once", counting)
+    save_entry(env, DAY, sleep_score=80.0)
+
+    assert sync("2026-10-12") == 0
+
+    assert syncs == [[DAY]]
+    assert "skóre prepočítané od 2026-10-05" in capsys.readouterr().out
+    assert (
+        json.loads((env / "data" / "score_weights.json").read_text("utf-8"))["samsung_sleep"][
+            "entries"
+        ]
+        == 1
+    )
+
+
+def test_calibrate_recomputes_the_stored_days_right_away(env, monkeypatch):
+    at(monkeypatch, NOW)
+    use_client(monkeypatch, stepped_client())
+    assert sync("2026-10-10", "2026-10-12") == 0
+    save_params(env / "data" / "params.json", Params())
+    save_entry(env, DAY, steps=10000, distance_km=9.0)
+
+    assert cli.main(["calibrate"]) == 0
+
+    stride = stride_after_one_entry(0.90)
+    assert stored_distance(env, date(2026, 10, 10)) == pytest.approx(10000 * stride)
+
+
+def test_a_locked_entries_store_postpones_the_fit(env, monkeypatch, capsys):
+    at(monkeypatch, NOW)
+    use_client(monkeypatch, stepped_client())
+    save_entry(env, DAY, steps=10000, distance_km=9.0)
+
+    def locked(*args, **kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(cli.entries, "load", locked)
+
+    assert sync("2026-10-12") == 0
+
+    assert "doladenie odložené" in capsys.readouterr().err
+    with Store(env / "data" / "owi.db") as store:
+        assert store.latest_fit() is None

@@ -142,3 +142,7 @@ class DayScores:
     vo2max: float | None  # watch estimate
     vo2max_uth: float | None  # 15.3 * max HR / resting HR
     whoop_age: Score  # value = estimated "body age" in years; components per metric
+
+    # Estimates of Samsung's scores, learnt from the user's entries (samsung_scores.py)
+    samsung_sleep: Score = field(default_factory=lambda: Score(None))  # last night
+    energy_score: Score = field(default_factory=lambda: Score(None))  # this morning

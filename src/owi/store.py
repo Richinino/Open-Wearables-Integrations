@@ -1,11 +1,11 @@
-"""SQLite storage for computed days, workouts, score features and scores."""
+"""SQLite storage for computed days, workouts, score features, scores and the tuning history."""
 
 from __future__ import annotations
 
 import json
 import sqlite3
 import types
-from dataclasses import fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from datetime import UTC, date, datetime, timedelta
 from functools import cache
 from pathlib import Path
@@ -60,7 +60,8 @@ CREATE TABLE IF NOT EXISTS workouts (
     "zone_moderate_min" INTEGER NOT NULL,
     "zone_vigorous_min" INTEGER NOT NULL,
     "distance_m" REAL,
-    "kcal_est" REAL
+    "kcal_est" REAL,
+    "phone_steps" INTEGER
 );
 CREATE INDEX IF NOT EXISTS workouts_day ON workouts ("day");
 CREATE TABLE IF NOT EXISTS day_features (
@@ -73,14 +74,41 @@ CREATE TABLE IF NOT EXISTS day_scores (
     "data" TEXT NOT NULL,
     "computed_at" TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS params_history (
+    "fitted_at" TEXT PRIMARY KEY,
+    "entries" INTEGER NOT NULL,
+    "entries_saved_at" TEXT,
+    "params" TEXT NOT NULL,
+    "quality" TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS recompute_state (
+    "id" INTEGER PRIMARY KEY CHECK ("id" = 1),
+    "params" TEXT NOT NULL,
+    "recomputed_at" TEXT
+);
 """
 FEATURES_TABLE = "day_features"
 SCORES_TABLE = "day_scores"
+HISTORY_TABLE = "params_history"
+RECOMPUTE_TABLE = "recompute_state"
+# Columns added to existing tables after their first release: (table, column, type).
+_ADDED_COLUMNS = (("workouts", "phone_steps", "INTEGER"),)
 
 T = TypeVar("T")
 
 _DAY_FIELDS = tuple(f.name for f in fields(DayResult) if f.name != "workouts")
 _WORKOUT_FIELDS = tuple(f.name for f in fields(WorkoutResult))
+
+
+@dataclass(frozen=True)
+class FitRecord:
+    """One tuning run: when, the entries it saw, the values it chose and how well they did."""
+
+    fitted_at: datetime
+    entries: int
+    entries_saved_at: str | None  # newest saved_at among the entries, to notice changes
+    params: dict[str, Any]
+    quality: dict[str, Any]
 
 
 def _encode(value: Any) -> Any:
@@ -155,7 +183,15 @@ class Store:
             path.parent.mkdir(parents=True, exist_ok=True)
             self._db = sqlite3.connect(path)
             self._db.executescript(_SCHEMA)
+            self._add_missing_columns()
         self._db.row_factory = sqlite3.Row
+
+    def _add_missing_columns(self) -> None:
+        for table, column, kind in _ADDED_COLUMNS:
+            present = {row[1] for row in self._db.execute(f"PRAGMA table_info({table})")}
+            if column not in present:
+                with self._db:
+                    self._db.execute(f'ALTER TABLE {table} ADD COLUMN "{column}" {kind}')
 
     def __enter__(self) -> Store:
         return self
@@ -213,7 +249,9 @@ class Store:
 
     @staticmethod
     def _workout(row: sqlite3.Row) -> WorkoutResult:
-        data = {name: row[name] for name in _WORKOUT_FIELDS}
+        # A read-only store over an older database lacks the columns added since.
+        present = set(row.keys())
+        data = {name: row[name] if name in present else None for name in _WORKOUT_FIELDS}
         data["day"] = date.fromisoformat(data["day"])
         data["start"] = datetime.fromisoformat(data["start"])
         data["end"] = datetime.fromisoformat(data["end"])
@@ -272,6 +310,51 @@ class Store:
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)
         ).fetchone()
         return found is not None
+
+    def save_fit(self, record: FitRecord) -> None:
+        row = {
+            "fitted_at": record.fitted_at.isoformat(),
+            "entries": record.entries,
+            "entries_saved_at": record.entries_saved_at,
+            "params": json.dumps(record.params),
+            "quality": json.dumps(record.quality),
+        }
+        with self._db:
+            self._db.execute(_insert(HISTORY_TABLE, tuple(row)), row)
+
+    def latest_fit(self) -> FitRecord | None:
+        if not self._has_table(HISTORY_TABLE):
+            return None
+        row = self._db.execute(
+            f'SELECT * FROM {HISTORY_TABLE} ORDER BY "fitted_at" DESC LIMIT 1'
+        ).fetchone()
+        if row is None:
+            return None
+        return FitRecord(
+            fitted_at=datetime.fromisoformat(row["fitted_at"]),
+            entries=row["entries"],
+            entries_saved_at=row["entries_saved_at"],
+            params=json.loads(row["params"]),
+            quality=json.loads(row["quality"]),
+        )
+
+    def set_recompute_state(self, params: dict[str, Any], recomputed_at: datetime | None) -> None:
+        """The parameters every stored day was last computed with, and when that happened."""
+        row = {
+            "id": 1,
+            "params": json.dumps(params),
+            "recomputed_at": None if recomputed_at is None else recomputed_at.isoformat(),
+        }
+        with self._db:
+            self._db.execute(_insert(RECOMPUTE_TABLE, tuple(row)), row)
+
+    def recompute_state(self) -> tuple[dict[str, Any], datetime | None] | None:
+        if not self._has_table(RECOMPUTE_TABLE):
+            return None
+        row = self._db.execute(f'SELECT * FROM {RECOMPUTE_TABLE} WHERE "id" = 1').fetchone()
+        if row is None:
+            return None
+        return json.loads(row["params"]), _time(row["recomputed_at"])
 
     def max_hr_recent(self, day: date, days: int = 180) -> float | None:
         """Highest stored daily maximum in the `days` up to `day`, capped against spikes."""
