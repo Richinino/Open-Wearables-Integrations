@@ -11,9 +11,7 @@ logs a password. Times are timezone-aware datetimes stored as ISO text.
 
 from __future__ import annotations
 
-import base64
 import hashlib
-import hmac
 import json
 import re
 import secrets
@@ -27,17 +25,14 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any
 
+from owi.passwords import dummy_hash, hash_password, verify_password
+
 ACCOUNTS_DIR = "accounts"
 ACCOUNTS_FILE = "accounts.db"
 CONNECT_TIMEOUT_S = 2.0
 RETRIES = 5
 RETRY_PAUSE_S = 0.2
 
-SCRYPT_N = 2**14
-SCRYPT_R = 8
-SCRYPT_P = 1
-SCRYPT_DKLEN = 32
-SALT_BYTES = 16
 PASSWORD_MIN = 10
 PASSWORD_MAX = 256
 
@@ -174,52 +169,6 @@ def accounts_path(data_dir: Path) -> Path:
     return data_dir / ACCOUNTS_DIR / ACCOUNTS_FILE
 
 
-# passwords
-
-
-def hash_password(password: str, salt: bytes | None = None) -> str:
-    salt = secrets.token_bytes(SALT_BYTES) if salt is None else salt
-    digest = hashlib.scrypt(
-        password.encode(), salt=salt, n=SCRYPT_N, r=SCRYPT_R, p=SCRYPT_P, dklen=SCRYPT_DKLEN
-    )
-    return "$".join(
-        [
-            "scrypt",
-            str(SCRYPT_N),
-            str(SCRYPT_R),
-            str(SCRYPT_P),
-            base64.b64encode(salt).decode(),
-            base64.b64encode(digest).decode(),
-        ]
-    )
-
-
-def verify_password(password: str, stored: str) -> bool:
-    try:
-        scheme, n, r, p, salt_b64, hash_b64 = stored.split("$")
-        if scheme != "scrypt":
-            return False
-        salt = base64.b64decode(salt_b64, validate=True)
-        expected = base64.b64decode(hash_b64, validate=True)
-        digest = hashlib.scrypt(
-            password.encode(), salt=salt, n=int(n), r=int(r), p=int(p), dklen=len(expected)
-        )
-    except (ValueError, TypeError):
-        return False
-    return hmac.compare_digest(digest, expected)
-
-
-_DUMMY_HASH: str | None = None
-
-
-def _dummy_hash() -> str:
-    """A hash to verify against for unknown emails, so they take as long as known ones."""
-    global _DUMMY_HASH
-    if _DUMMY_HASH is None:
-        _DUMMY_HASH = hash_password(secrets.token_urlsafe(16))
-    return _DUMMY_HASH
-
-
 # validation
 
 
@@ -308,9 +257,34 @@ def _locked(error: sqlite3.OperationalError) -> bool:
     return "locked" in message or "busy" in message
 
 
+def _read[T](path: Path, work: Callable[[sqlite3.Connection], T]) -> T:
+    """A read-only call: a deferred transaction that never asks for the write lock.
+
+    A writer in another container does not block it (rollback journal readers only wait while
+    a commit is in progress), so checking an account on every request stays cheap.
+    """
+    for attempt in range(RETRIES):
+        try:
+            db = _connect(path)
+            try:
+                db.execute("BEGIN")
+                try:
+                    return work(db)
+                finally:
+                    db.execute("ROLLBACK")
+            finally:
+                db.close()
+        except sqlite3.OperationalError as error:
+            if not _locked(error) or attempt == RETRIES - 1:
+                raise
+            time.sleep(RETRY_PAUSE_S)
+    raise AssertionError("unreachable")
+
+
 def _run[T](path: Path, work: Callable[[sqlite3.Connection], T | AccountError]) -> T:
     """One short write transaction, retried a few times while the database is locked.
 
+    Slow work (password hashing) belongs before the call, not inside `work`.
     `work` may return an AccountError instead of raising it: the transaction is then committed
     first (a failed login must still be counted) and the error raised afterwards.
     """
@@ -403,7 +377,7 @@ def _insert(
     email: str,
     first_name: str,
     last_name: str | None,
-    password: str,
+    password_hash: str,
     role: str,
     status: str,
     now: datetime,
@@ -423,7 +397,7 @@ def _insert(
         created_at=now,
         last_login_at=None,
         session_version=0,
-        password_hash=hash_password(password),
+        password_hash=password_hash,
     )
     try:
         db.execute(
@@ -468,6 +442,40 @@ def _validated_new(
     return email_value, first, last
 
 
+def _lockout(db: sqlite3.Connection, email: str, now: datetime) -> AccountError | None:
+    """too_many_attempts while the email has 5 failed password checks in the last 15 minutes."""
+    db.execute("DELETE FROM login_attempts WHERE at <= ?", (_text(now - ATTEMPT_KEEP),))
+    failures = db.execute(
+        "SELECT at FROM login_attempts WHERE email = ? AND at > ? ORDER BY at",
+        (email, _text(now - LOGIN_WINDOW)),
+    ).fetchall()
+    if len(failures) < LOGIN_FAILURES:
+        return None
+    oldest = datetime.fromisoformat(failures[0]["at"])
+    wait = int((oldest + LOGIN_WINDOW - now).total_seconds()) + 1
+    return AccountError("too_many_attempts", retry_after_s=max(wait, 1))
+
+
+def _fail_attempt(db: sqlite3.Connection, email: str, now: datetime) -> AccountError:
+    db.execute("INSERT INTO login_attempts (email, at) VALUES (?, ?)", (email, _text(now)))
+    return AccountError("invalid_credentials")
+
+
+def _registration_refusal(db: sqlite3.Connection, ip: str, now: datetime) -> AccountError | None:
+    row = db.execute("SELECT value FROM system WHERE key = 'registration_open'").fetchone()
+    if row is not None and row["value"] in ("0", "false"):
+        return AccountError("registration_closed")
+    recent = db.execute(
+        "SELECT at FROM registration_attempts WHERE ip = ? AND at > ? ORDER BY at",
+        (ip, _text(now - REGISTRATION_WINDOW)),
+    ).fetchall()
+    if len(recent) >= REGISTRATIONS_PER_IP:
+        oldest = datetime.fromisoformat(recent[0]["at"])
+        wait = int((oldest + REGISTRATION_WINDOW - now).total_seconds()) + 1
+        return AccountError("too_many_attempts", retry_after_s=max(wait, 1))
+    return None
+
+
 class Accounts:
     """The accounts store. Use as a context manager; every call is its own transaction."""
 
@@ -475,7 +483,7 @@ class Accounts:
         self.path = path
 
     def __enter__(self) -> Accounts:
-        _run(self.path, lambda db: None)
+        _read(self.path, lambda db: None)
         return self
 
     def __exit__(
@@ -499,26 +507,23 @@ class Accounts:
     ) -> Account:
         """A new pending user; 5 per hour per IP at most, refused while signup is closed."""
         mail, first, last = _validated_new(email, first_name, last_name, password)
+        # Cheap refusals first so a blocked client cannot make us hash; the transaction below
+        # checks again, because another request may have used the last slot meanwhile.
+        refusal = _read(self.path, lambda db: _registration_refusal(db, ip, now))
+        if refusal is not None:
+            raise refusal
+        password_hash = hash_password(password)
 
         def work(db: sqlite3.Connection) -> Account | AccountError:
-            row = db.execute("SELECT value FROM system WHERE key = 'registration_open'").fetchone()
-            if row is not None and row["value"] in ("0", "false"):
-                return AccountError("registration_closed")
-            since = _text(now - REGISTRATION_WINDOW)
-            recent = db.execute(
-                "SELECT at FROM registration_attempts WHERE ip = ? AND at > ? ORDER BY at",
-                (ip, since),
-            ).fetchall()
-            if len(recent) >= REGISTRATIONS_PER_IP:
-                oldest = datetime.fromisoformat(recent[0]["at"])
-                wait = int((oldest + REGISTRATION_WINDOW - now).total_seconds()) + 1
-                return AccountError("too_many_attempts", retry_after_s=max(wait, 1))
+            refused = _registration_refusal(db, ip, now)
+            if refused is not None:
+                return refused
             db.execute(
                 "DELETE FROM registration_attempts WHERE at <= ?", (_text(now - ATTEMPT_KEEP),)
             )
             db.execute("INSERT INTO registration_attempts (ip, at) VALUES (?, ?)", (ip, _text(now)))
             try:
-                return _insert(db, mail, first, last, password, "user", "pending", now)
+                return _insert(db, mail, first, last, password_hash, "user", "pending", now)
             except AccountError as error:
                 return error
 
@@ -543,8 +548,9 @@ class Accounts:
             problems["status"] = "pending, active alebo suspended"
         if problems:
             raise AccountError("invalid", fields=problems)
+        password_hash = hash_password(password)
         return _run(
-            self.path, lambda db: _insert(db, mail, first, last, password, role, status, now)
+            self.path, lambda db: _insert(db, mail, first, last, password_hash, role, status, now)
         )
 
     # signing in
@@ -553,26 +559,16 @@ class Accounts:
         mail = _normalize_email(email)
         # The slow hash runs outside the transaction so the database is not locked meanwhile.
         row = self._find_by_email(mail)
-        stored = row.password_hash if row is not None else _dummy_hash()
+        stored = row.password_hash if row is not None else dummy_hash()
         right = verify_password(password if isinstance(password, str) else "", stored)
 
         def work(db: sqlite3.Connection) -> Account | AccountError:
-            since = _text(now - LOGIN_WINDOW)
-            db.execute("DELETE FROM login_attempts WHERE at <= ?", (_text(now - ATTEMPT_KEEP),))
-            failures = db.execute(
-                "SELECT at FROM login_attempts WHERE email = ? AND at > ? ORDER BY at",
-                (mail, since),
-            ).fetchall()
-            if len(failures) >= LOGIN_FAILURES:
-                oldest = datetime.fromisoformat(failures[0]["at"])
-                wait = int((oldest + LOGIN_WINDOW - now).total_seconds()) + 1
-                return AccountError("too_many_attempts", retry_after_s=max(wait, 1))
+            locked = _lockout(db, mail, now)
+            if locked is not None:
+                return locked
             current = _load_by_email(db, mail)
             if not right or current is None or current.password_hash != stored:
-                db.execute(
-                    "INSERT INTO login_attempts (email, at) VALUES (?, ?)", (mail, _text(now))
-                )
-                return AccountError("invalid_credentials")
+                return _fail_attempt(db, mail, now)
             if current.status == "suspended":
                 return AccountError("suspended")
             db.execute("DELETE FROM login_attempts WHERE email = ?", (mail,))
@@ -583,8 +579,43 @@ class Accounts:
 
         return _run(self.path, work)
 
+    def check_password(self, account_id: str, password: str, now: datetime) -> None:
+        """Raise invalid_credentials unless `password` is the account's current one.
+
+        A wrong password counts toward the same lockout as login (5 per 15 minutes per email).
+        """
+        account = self._require(account_id)
+        right = verify_password(
+            password if isinstance(password, str) else "", account.password_hash
+        )
+        failure = _run(
+            self.path, lambda db: self._settle_check(db, account.id, right, account, now)
+        )
+        if failure is not None:
+            raise failure
+
+    @staticmethod
+    def _settle_check(
+        db: sqlite3.Connection, account_id: str, right: bool, verified: Account, now: datetime
+    ) -> AccountError | None:
+        """Inside the transaction: lockout, then count a failure or clear the counter."""
+        current = _load(db, account_id)
+        locked = _lockout(db, current.email, now)
+        if locked is not None:
+            return locked
+        if not right or current.password_hash != verified.password_hash:
+            return _fail_attempt(db, current.email, now)
+        db.execute("DELETE FROM login_attempts WHERE email = ?", (current.email,))
+        return None
+
+    def _require(self, account_id: str) -> Account:
+        account = self.get(account_id)
+        if account is None:
+            raise AccountError("not_found")
+        return account
+
     def _find_by_email(self, email: str) -> Account | None:
-        return _run(self.path, lambda db: _load_by_email(db, email))
+        return _read(self.path, lambda db: _load_by_email(db, email))
 
     # reading
 
@@ -593,7 +624,7 @@ class Accounts:
             row = db.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
             return None if row is None else _account(row)
 
-        return _run(self.path, work)
+        return _read(self.path, work)
 
     def all(self) -> list[Account]:
         """Every account, waiting ones first, then oldest first."""
@@ -604,7 +635,7 @@ class Accounts:
             )
             return [_account(row) for row in rows]
 
-        return _run(self.path, work)
+        return _read(self.path, work)
 
     def paired(self) -> list[Account]:
         """Active accounts with an Open Wearables user: the ones the sync works for."""
@@ -616,7 +647,7 @@ class Accounts:
             )
             return [_account(row) for row in rows]
 
-        return _run(self.path, work)
+        return _read(self.path, work)
 
     # changing an account
 
@@ -665,19 +696,23 @@ class Accounts:
         return _run(self.path, work)
 
     def change_password(self, account_id: str, current: str, new: str) -> Account:
+        """Set a new password; a wrong current one counts as a failed login."""
+        now = datetime.now(UTC)
+        account = self._require(account_id)
+        right = verify_password(current if isinstance(current, str) else "", account.password_hash)
+        problem = _check_password(new)
+        new_hash = hash_password(new) if right and problem is None else ""
+
         def work(db: sqlite3.Connection) -> Account | AccountError:
-            account = _load(db, account_id)
-            if not verify_password(
-                current if isinstance(current, str) else "", account.password_hash
-            ):
-                return AccountError("invalid_credentials")
-            problem = _check_password(new)
+            failure = self._settle_check(db, account_id, right, account, now)
+            if failure is not None:
+                return failure
             if problem:
                 return AccountError("invalid", fields={"password": problem})
             db.execute(
                 "UPDATE accounts SET password_hash = ?, session_version = session_version + 1"
                 " WHERE id = ?",
-                (hash_password(new), account_id),
+                (new_hash, account_id),
             )
             return _load(db, account_id)
 
@@ -773,32 +808,27 @@ class Accounts:
         return token, expires
 
     def confirm_reset(self, token: str, new_password: str, now: datetime) -> Account:
+        token_hash = _token_hash(token if isinstance(token, str) else "")
+        # Look at the token first so an invalid one never costs a hash; checked again below.
+        if not _read(self.path, lambda db: _usable_token(db, token_hash, now)):
+            raise AccountError("invalid_token")
+        problem = _check_password(new_password)
+        if problem:
+            raise AccountError("invalid", fields={"password": problem})
+        new_hash = hash_password(new_password)
+
         def work(db: sqlite3.Connection) -> Account | AccountError:
-            row = db.execute(
-                "SELECT * FROM reset_tokens WHERE token_hash = ?",
-                (_token_hash(token if isinstance(token, str) else ""),),
-            ).fetchone()
-            if (
-                row is None
-                or row["used_at"] is not None
-                or datetime.fromisoformat(row["expires_at"]) < now
-                or db.execute(
-                    "SELECT 1 FROM accounts WHERE id = ?", (row["account_id"],)
-                ).fetchone()
-                is None
-            ):
+            row = _usable_token(db, token_hash, now)
+            if row is None:
                 return AccountError("invalid_token")
-            problem = _check_password(new_password)
-            if problem:
-                return AccountError("invalid", fields={"password": problem})
             db.execute(
                 "UPDATE accounts SET password_hash = ?, session_version = session_version + 1"
                 " WHERE id = ?",
-                (hash_password(new_password), row["account_id"]),
+                (new_hash, row["account_id"]),
             )
             db.execute(
                 "UPDATE reset_tokens SET used_at = ? WHERE token_hash = ?",
-                (_text(now), row["token_hash"]),
+                (_text(now), token_hash),
             )
             db.execute(
                 "DELETE FROM login_attempts WHERE email = (SELECT email FROM accounts"
@@ -844,7 +874,7 @@ class Accounts:
             )
             return [_item(row) for row in rows]
 
-        return _run(self.path, work)
+        return _read(self.path, work)
 
     def inbox_resolve(self, item_id: int, now: datetime) -> InboxItem:
         def work(db: sqlite3.Connection) -> InboxItem:
@@ -864,7 +894,7 @@ class Accounts:
             row = db.execute("SELECT value FROM system WHERE key = ?", (key,)).fetchone()
             return None if row is None else row["value"]
 
-        return _run(self.path, work)
+        return _read(self.path, work)
 
     def system_set(self, key: str, value: str) -> None:
         _run(
@@ -895,7 +925,7 @@ class Accounts:
             rows = db.execute("SELECT id, label FROM ow_users ORDER BY label, id")
             return [OwUser(row["id"], row["label"]) for row in rows]
 
-        return _run(self.path, work)
+        return _read(self.path, work)
 
     def sources_replace(self, ow_user_id: str, sources_json: str, now: datetime) -> None:
         _run(
@@ -913,7 +943,7 @@ class Accounts:
             ).fetchone()
             return None if row is None else json.loads(row["json"])
 
-        return _run(self.path, work)
+        return _read(self.path, work)
 
     def last_data_set(self, ow_user_id: str, at: datetime) -> None:
         _run(
@@ -931,7 +961,7 @@ class Accounts:
             ).fetchone()
             return None if row is None else datetime.fromisoformat(row["at"])
 
-        return _run(self.path, work)
+        return _read(self.path, work)
 
     # folders of removed users waiting for owi to delete them (api cannot write data/)
 
@@ -949,7 +979,7 @@ class Accounts:
             rows = db.execute("SELECT ow_user_id FROM deletions ORDER BY requested_at, ow_user_id")
             return [row["ow_user_id"] for row in rows]
 
-        return _run(self.path, work)
+        return _read(self.path, work)
 
     def deletions_done(self, ow_user_id: str) -> None:
         _run(
@@ -975,3 +1005,13 @@ def _inbox_add(
         " VALUES (?, ?, ?, ?, ?)",
         (kind, account_id, message, key, _text(now)),
     )
+
+
+def _usable_token(db: sqlite3.Connection, token_hash: str, now: datetime) -> sqlite3.Row | None:
+    """The reset token's row when it is unused, unexpired and its account still exists."""
+    row = db.execute(
+        "SELECT t.* FROM reset_tokens t JOIN accounts a ON a.id = t.account_id"
+        " WHERE t.token_hash = ? AND t.used_at IS NULL AND t.expires_at >= ?",
+        (token_hash, _text(now)),
+    ).fetchone()
+    return row

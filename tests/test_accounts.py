@@ -1,4 +1,5 @@
-from datetime import timedelta
+import sqlite3
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -7,8 +8,6 @@ from owi.accounts import (
     Accounts,
     OwUser,
     accounts_path,
-    hash_password,
-    verify_password,
 )
 from tests.factories import utc
 
@@ -131,16 +130,6 @@ def test_registration_can_be_closed(store):
         register(store)
     assert closed.value.code == "registration_closed"
     assert store.create("a@email.sk", "A", None, PASSWORD, "admin", "active", NOW)
-
-
-def test_password_hash_format_and_verification():
-    stored = hash_password("correct horse battery")
-
-    assert stored.startswith("scrypt$16384$8$1$")
-    assert verify_password("correct horse battery", stored)
-    assert not verify_password("another password", stored)
-    assert not verify_password("correct horse battery", "garbage")
-    assert hash_password("correct horse battery") != stored
 
 
 def test_change_password_bumps_session_version(store):
@@ -396,3 +385,66 @@ def test_data_survives_reopening(tmp_path):
         account = register(first)
     with Accounts(path) as second:
         assert second.get(account.id) == account
+
+
+def test_reads_do_not_wait_for_another_connections_write_lock(store, tmp_path):
+    account = register(store)
+    store.pair(account.id, "ow-1")
+    store.system_set("registration_open", "1")
+    writer = sqlite3.connect(accounts_path(tmp_path), isolation_level=None)
+    try:
+        writer.execute("BEGIN IMMEDIATE")
+        writer.execute("UPDATE accounts SET first_name = 'Changed' WHERE id = ?", (account.id,))
+
+        assert store.get(account.id).first_name == "Mama"
+        assert [a.id for a in store.all()] == [account.id]
+        assert [a.id for a in store.paired()] == [account.id]
+        assert store.system_get("registration_open") == "1"
+        assert store.inbox_list(False) == []
+        assert store.ow_users() == []
+        assert store.sources("ow-1") is None
+        assert store.last_data("ow-1") is None
+        assert store.deletions_pending() == []
+    except sqlite3.OperationalError:
+        pytest.fail("a read waited for the write lock")
+    finally:
+        writer.execute("ROLLBACK")
+        writer.close()
+
+
+def test_check_password_counts_failures_toward_the_login_lockout(store):
+    account = register(store)
+
+    assert store.check_password(account.id, PASSWORD, NOW) is None
+    for _ in range(5):
+        with pytest.raises(AccountError) as wrong:
+            store.check_password(account.id, "wrong password!", NOW)
+        assert wrong.value.code == "invalid_credentials"
+
+    with pytest.raises(AccountError) as locked:
+        store.check_password(account.id, PASSWORD, NOW)
+    assert locked.value.code == "too_many_attempts"
+    with pytest.raises(AccountError) as login_locked:
+        store.login("mama@email.sk", PASSWORD, NOW)
+    assert login_locked.value.code == "too_many_attempts"
+    later = NOW + timedelta(minutes=16)
+    assert store.check_password(account.id, PASSWORD, later) is None
+
+    with pytest.raises(AccountError) as missing:
+        store.check_password("nope", PASSWORD, NOW)
+    assert missing.value.code == "not_found"
+
+
+def test_wrong_current_password_in_change_password_counts_toward_the_lockout(store):
+    account = register(store)
+    for _ in range(5):
+        with pytest.raises(AccountError) as wrong:
+            store.change_password(account.id, "wrong password!", "a brand new password")
+        assert wrong.value.code == "invalid_credentials"
+
+    with pytest.raises(AccountError) as locked:
+        store.change_password(account.id, PASSWORD, "a brand new password")
+    assert locked.value.code == "too_many_attempts"
+    with pytest.raises(AccountError) as login_locked:
+        store.login("mama@email.sk", PASSWORD, datetime.now(UTC))
+    assert login_locked.value.code == "too_many_attempts"
