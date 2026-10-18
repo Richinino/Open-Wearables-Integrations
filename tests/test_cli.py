@@ -47,7 +47,41 @@ def env(tmp_path, monkeypatch):
         "OWI_WRITE_TOKEN",
     ):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(cli, "_inbox_http", lambda: OfflineHttp())
     return tmp_path
+
+
+class OfflineHttp:
+    """No network in tests: every request fails, which the sync must shrug off."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return None
+
+    def get(self, url, *, timeout):
+        raise OSError("offline")
+
+
+class VersionHttp(OfflineHttp):
+    def __init__(self, running, latest):
+        self.answers = {
+            "/openapi.json": {"info": {"version": running}},
+            "/releases/latest": {"tag_name": latest},
+        }
+
+    def get(self, url, *, timeout):
+        body = next(v for k, v in self.answers.items() if url.endswith(k))
+
+        class Response:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return body
+
+        return Response()
 
 
 def use_client(monkeypatch, client) -> None:
@@ -1022,3 +1056,40 @@ def test_a_broken_accounts_store_fails_a_single_run(env, monkeypatch, capsys):
 
     assert sync("2026-10-12") == 1
     assert "OperationalError" in capsys.readouterr().err
+
+
+def test_sync_fills_the_admin_inbox_and_system_versions(env, monkeypatch):
+    at(monkeypatch, NOW)
+    add_account(env, "ow-a", "a@example.test")
+    with open_accounts(env) as store:
+        store.create(
+            "p@example.test", "Peter", None, "correct horse battery", "user", "pending", NOW
+        )
+    use_client(monkeypatch, ByUser({"ow-a": steps_client(111)}))
+    monkeypatch.setattr(cli, "_inbox_http", lambda: VersionHttp("0.10.0", "v0.10.1"))
+
+    assert sync("2026-10-12") == 0
+
+    with open_accounts(env) as store:
+        kinds = sorted(item.kind for item in store.inbox_list(False))
+        assert kinds == ["ow_update", "pairing", "stale_data"]  # the fake data is days old
+        assert store.system_get("ow_version") == "0.10.0"
+        assert store.system_get("ow_latest") == "0.10.1"
+
+
+def test_a_failing_inbox_step_does_not_stop_the_sync(env, monkeypatch, capsys):
+    at(monkeypatch, NOW)
+    add_account(env, "ow-a", "a@example.test")
+    use_client(monkeypatch, ByUser({"ow-a": steps_client(111)}))
+
+    def broken(*args):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(cli.inbox, "refresh_inbox", broken)
+
+    assert sync("2026-10-12") == 1
+
+    assert "chyba: schránka správcu: ValueError" in capsys.readouterr().err
+    assert day_of(env, "ow-a").steps == 111
+    with open_accounts(env) as store:
+        assert store.system_get("last_sync_ok") == "0"

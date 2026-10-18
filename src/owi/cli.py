@@ -14,7 +14,9 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from owi import entries, samsung_scores, scoring, tuning, users
+import httpx
+
+from owi import entries, inbox, samsung_scores, scoring, tuning, users
 from owi.accounts import Account, Accounts, OwUser
 from owi.calibration import (
     FIT_WINDOW_DAYS,
@@ -492,6 +494,22 @@ def _delete_queued_folders(settings: Settings, accounts: Accounts) -> None:
         accounts.deletions_done(ow_user_id)
 
 
+def _inbox_http() -> httpx.Client:
+    return httpx.Client(timeout=inbox.HTTP_TIMEOUT_S)
+
+
+def _refresh_inbox(settings: Settings, accounts: Accounts, now: datetime) -> None:
+    """Record the running and the latest Open Wearables version, then update the admin inbox."""
+    with _inbox_http() as http:
+        running = inbox.running_ow_version(http, settings.api_url)
+        latest = inbox.latest_ow_release(http, accounts, now)
+    if running is not None:
+        accounts.system_set("ow_version", running)
+    else:
+        running = accounts.system_get("ow_version")
+    inbox.refresh_inbox(accounts, settings.data_dir, running, latest, now)
+
+
 def _problem(what: str, exc: Exception) -> None:
     """One short line on stderr; for other than API errors only the kind of failure."""
     reason = str(exc) if isinstance(exc, OWError) else type(exc).__name__
@@ -526,6 +544,11 @@ def _sync_accounts(settings: Settings, days: list[date], now: datetime) -> bool:
             _delete_queued_folders(settings, accounts)
         except Exception as exc:
             _problem("mazanie priečinkov", exc)
+            ok = False
+        try:
+            _refresh_inbox(settings, accounts, now)
+        except Exception as exc:
+            _problem("schránka správcu", exc)
             ok = False
         try:
             # The admin's system status (owi serve, GET /v1/admin/system) reads these.
