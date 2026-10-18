@@ -1,13 +1,13 @@
-// What the pages say about the Samsung Health entries: which days still miss one, owi's
-// figure next to each field, how far owi is from Samsung (calibration quality), the
-// "doladené podľa…" note and the "učí sa" state of the two Samsung-style scores.
-// Pure functions; texts are Slovak.
+// What the pages say about the Samsung Health entries: which days still miss one, the
+// numbers Samsung sends by itself, owi's figure next to each field, how far owi is from
+// Samsung (calibration quality), the "doladené podľa…" note and the "učí sa" state of the
+// two Samsung-style scores. Pure functions; texts are Slovak.
 
 import { addDays } from "./dates";
 import { hasEntry } from "./entries";
 import { approx, DASH, formatDecimal, formatInt, plural } from "./format";
 import { scoreValue } from "./scores";
-import type { Calibration, Dataset, Day, Entry, EntryField, Quality, QualityTarget, Score } from "./types";
+import type { Calibration, Dataset, Day, Entry, EntryField, EntryValues, Quality, QualityTarget, Score } from "./types";
 
 /** Completed days the list on /zapis and the overview link look back on. */
 export const ENTRY_WINDOW_DAYS = 30;
@@ -53,6 +53,52 @@ export function withEntry(dataset: Dataset, entry: Entry): Dataset {
   const days = [...dataset.days];
   days[index] = { ...days[index], samsung: hasEntry(entry) ? entry : null };
   return { ...dataset, days };
+}
+
+// ---------------------------------------------------------------------------------------
+// Numbers Samsung sends by itself (auto entries)
+
+/** Entry fields Samsung Health sends by itself; on /zapis they are filled in and read-only. */
+export const AUTO_FIELDS = ["steps", "active_kcal", "sleep_score"] as const satisfies readonly EntryField[];
+
+export type AutoField = (typeof AUTO_FIELDS)[number];
+
+export function isAutoField(field: EntryField): field is AutoField {
+  return (AUTO_FIELDS as readonly EntryField[]).includes(field);
+}
+
+/** Samsung's own number for a field of the day; null when it sent none or never sends it. */
+export function autoValue(day: Day | null | undefined, field: EntryField): number | null {
+  if (!isAutoField(field)) return null;
+  const value = day?.samsung_auto?.[field];
+  return isNumber(value) ? value : null;
+}
+
+/** The fields of the day Samsung sent a number for. */
+export function autoFields(day: Day | null | undefined): AutoField[] {
+  return AUTO_FIELDS.filter((field) => autoValue(day, field) !== null);
+}
+
+export function hasAuto(day: Day | null | undefined): boolean {
+  return autoFields(day).length > 0;
+}
+
+/**
+ * The number owi tunes on for a field of the day: the user's entry wins; else Samsung's own
+ * number, its sums of steps and active calories only once the day is over.
+ */
+export function tunedValue(day: Day | null | undefined, field: EntryField): number | null {
+  const entered = day?.samsung?.[field];
+  if (isNumber(entered)) return entered;
+  if (field !== "sleep_score" && day?.complete === false) return null;
+  return autoValue(day, field);
+}
+
+/** What a save sends: the fields Samsung fills in itself for the day stay empty. */
+export function withoutAutoFields(values: EntryValues, day: Day | null | undefined): EntryValues {
+  const result = { ...values };
+  for (const field of autoFields(day)) result[field] = null;
+  return result;
 }
 
 // ---------------------------------------------------------------------------------------

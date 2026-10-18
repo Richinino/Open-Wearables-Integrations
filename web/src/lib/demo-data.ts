@@ -15,7 +15,8 @@ import {
   nightElevation,
   workoutStrain,
 } from "./demo-scores";
-import { owiFigure } from "./samsung";
+import { hasEntry } from "./entries";
+import { AUTO_FIELDS, owiFigure, tunedValue } from "./samsung";
 import type {
   Calibration,
   CalibrationParams,
@@ -24,6 +25,7 @@ import type {
   DayScores,
   Entry,
   QualityTarget,
+  SamsungAuto,
   StepsSource,
   Workout,
 } from "./types";
@@ -386,6 +388,8 @@ function buildDay(day: string, cutoffMs: number | null): Day {
 
 /** The demo user starts copying numbers from Samsung Health on this day. */
 const ENTRIES_FROM = "2026-08-20";
+/** From this day on Samsung Health sends steps, active calories and Sleep Score by itself. */
+const AUTO_FROM = "2026-10-04";
 /** Shares of days with an entry, and of entries with each score filled in. */
 const ENTRY_SHARE = 0.7;
 const SLEEP_SCORE_SHARE = 0.9;
@@ -450,9 +454,37 @@ function demoEntry(base: Day, scores: DayScores, random: Random): Entry | null {
   return filled.some((value) => value !== null) ? entry : null;
 }
 
+/**
+ * What Samsung Health sends by itself once the demo user connected it directly: its own sums
+ * of the day so far and the Sleep Score of the night. Close to owi's figures, not the same.
+ */
+function demoAuto(base: Day, scores: DayScores, random: Random): SamsungAuto | null {
+  if (base.day < AUTO_FROM) return null;
+  const vary = (low: number, high: number) => between(random, [low, high]);
+  const steps = base.steps === null ? null : Math.round(base.steps * vary(0.98, 1.02));
+  const activeKcal = base.activity_kcal_est === null ? null : Math.round(base.activity_kcal_est * vary(0.85, 0.97));
+  const apple = scores.apple_sleep.value;
+  const performance = scores.sleep_performance.value;
+  const sleep =
+    base.sleep_minutes !== null && apple !== null
+      ? Math.round(clamp(0.55 * apple + 0.45 * (performance ?? apple) + vary(-6, 6), 0, 100))
+      : null;
+  if (steps === null && activeKcal === null && sleep === null) return null;
+  return { steps, active_kcal: activeKcal, sleep_score: sleep };
+}
+
+/** The entry as the form saves it once Samsung sends numbers by itself: those fields stay empty. */
+function leaveOutAuto(entry: Entry | null, auto: SamsungAuto | null): Entry | null {
+  if (!entry || !auto) return entry;
+  const kept: Entry = { ...entry };
+  for (const field of AUTO_FIELDS) if (auto[field] !== null) kept[field] = null;
+  return hasEntry(kept) ? kept : null;
+}
+
 /** owi's calibration as `GET /v1/days` reports it, measured on the entries of the window. */
 function demoCalibration(days: Day[], fittedAt: string): Calibration {
-  const withEntry = days.filter((day) => day.samsung);
+  // Days the tuning reads: an entry, or a number Samsung sent by itself.
+  const withEntry = days.filter((day) => hasEntry(day.samsung) || AUTO_FIELDS.some((field) => tunedValue(day, field) !== null));
   if (withEntry.length === 0) {
     return { fitted_at: null, entries: 0, params: DEFAULT_PARAMS, defaults: DEFAULT_PARAMS, quality: {} };
   }
@@ -461,7 +493,7 @@ function demoCalibration(days: Day[], fittedAt: string): Calibration {
   for (const key of targets) {
     const pairs = withEntry.flatMap((day) => {
       const owi = owiFigure(day, key);
-      const samsung = day.samsung?.[key] ?? null;
+      const samsung = tunedValue(day, key);
       return owi === null || samsung === null || samsung <= 0 ? [] : [[owi, samsung] as const];
     });
     if (pairs.length === 0) continue;
@@ -511,11 +543,14 @@ export function demoDataset(today: string, days: number = 120, syncedAt?: string
     const samsungRandom = seeded(hashText(`owi-demo-samsung:${day}`));
     scores.samsung_sleep = demoSamsungSleep(base, entriesBefore(day, "sleep"), samsungRandom);
     scores.energy_score = demoEnergyScore(base, history, scores, entriesBefore(day, "energy"), samsungRandom);
+    // Samsung's own numbers draw from a generator of their own as well.
+    const auto = demoAuto(base, scores, seeded(hashText(`owi-demo-auto:${day}`)));
     result.push({
       ...base,
       sleep_timeline: demoTimeline(base, seeded(hashText(`owi-demo-timeline:${day}`))),
       scores,
-      samsung: demoEntry(base, scores, seeded(hashText(`owi-demo-entry:${day}`))),
+      samsung: leaveOutAuto(demoEntry(base, scores, seeded(hashText(`owi-demo-entry:${day}`))), auto),
+      samsung_auto: auto,
     });
   }
 

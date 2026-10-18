@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { addDays, dateRange, diffDays, localDay, localMinutesOfDay, weekdayIndex } from "./dates";
 import { demoDataset } from "./demo-data";
 import { checkBody, ENTRY_FIELDS, hasEntry } from "./entries";
+import { AUTO_FIELDS, tunedValue } from "./samsung";
 import type { Dataset, Day, Entry } from "./types";
 
 const ZONE = "Europe/Bratislava";
@@ -639,9 +640,28 @@ describe("demo entries from Samsung Health and calibration", () => {
     expect(later.value).not.toBeNull();
   });
 
+  it("has Samsung send its own numbers on recent days, which the entries then leave out", () => {
+    const sending = days.filter((day) => day.samsung_auto);
+    expect(sending.length).toBeGreaterThan(8);
+    expect(sending[0].day >= "2026-10-04").toBe(true);
+    expect(days.filter((day) => day.day < "2026-10-04").every((day) => day.samsung_auto === null)).toBe(true);
+    // The running day already has Samsung's steps so far.
+    expect(today.samsung_auto?.steps).not.toBeNull();
+    for (const day of sending) {
+      const auto = day.samsung_auto!;
+      expect(checkBody({ steps: auto.steps, active_kcal: auto.active_kcal, sleep_score: auto.sleep_score }).ok, day.day).toBe(true);
+      for (const field of AUTO_FIELDS) {
+        if (auto[field] !== null) expect(day.samsung?.[field] ?? null, `${day.day} ${field}`).toBeNull();
+      }
+    }
+  });
+
   it("reports calibration measured on the entries of the window", () => {
     const calibration = live.calibration!;
-    expect(calibration.entries).toBe(days.filter((day) => day.samsung).length);
+    expect(calibration.entries).toBe(
+      days.filter((day) => hasEntry(day.samsung) || AUTO_FIELDS.some((field) => tunedValue(day, field) !== null)).length,
+    );
+    expect(calibration.entries).toBeGreaterThan(days.filter((day) => day.samsung).length);
     expect(calibration.fitted_at).toBe(live.synced_at);
     expect(calibration.params.stride_m).not.toBe(calibration.defaults.stride_m);
     const quality = calibration.quality;

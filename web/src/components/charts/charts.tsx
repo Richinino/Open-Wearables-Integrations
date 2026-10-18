@@ -12,6 +12,8 @@ export interface ChartPoint {
   value: number | null;
   /** The period is still running, so the value will grow. */
   partial?: boolean;
+  /** owi's estimate rather than a measured or vendor number: drawn hollow. */
+  estimate?: boolean;
 }
 
 interface BaseProps {
@@ -25,6 +27,19 @@ interface BaseProps {
 const MAX_BAR = 24;
 const GAP = 2;
 const PARTIAL_NOTE = "deň ešte beží";
+const ESTIMATE_NOTE = "odhad owi";
+/** Fill of an estimated bar; its outline keeps the full colour. Legends use the same mix. */
+export const ESTIMATE_FILL_OPACITY = 0.3;
+
+/** The legend colour of an estimated bar of `color`. */
+export function estimateSwatch(color: string): string {
+  return `color-mix(in oklab, ${color} ${ESTIMATE_FILL_OPACITY * 100}%, transparent)`;
+}
+
+function pointNote(point: ChartPoint): string | undefined {
+  const notes = [point.estimate ? ESTIMATE_NOTE : null, point.partial ? PARTIAL_NOTE : null].filter(Boolean);
+  return notes.length > 0 ? notes.join(" · ") : undefined;
+}
 
 /** Ticks for a duration axis in minutes, on whole quarter-hours or hours. */
 export function durationTicks(maxMinutes: number): number[] {
@@ -80,7 +95,7 @@ export function ColumnChart({
           <Tip
             title={point.title}
             rows={[{ value: point.value === null ? "bez dát" : base.formatValue(point.value) }]}
-            note={point.partial ? PARTIAL_NOTE : undefined}
+            note={pointNote(point)}
           />
         );
       }}
@@ -93,6 +108,9 @@ export function ColumnChart({
               key={point.key}
               d={barPath(x(index) - width / 2, y(point.value), width, y(0))}
               fill={color}
+              fillOpacity={point.estimate ? ESTIMATE_FILL_OPACITY : undefined}
+              stroke={point.estimate ? color : undefined}
+              strokeWidth={point.estimate ? 1.25 : undefined}
               opacity={point.partial ? 0.45 : 1}
             />
           ),

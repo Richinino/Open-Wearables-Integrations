@@ -147,7 +147,7 @@ function Entries({ dataset, now, requested }: { dataset: Dataset; now: Date; req
         </SectionBar>
         <p className="px-1 text-[13px] text-ink2">
           Ukončené dni za posledných {formatInt(ENTRY_WINDOW_DAYS)}, od najnovšieho. Sleep Score patrí k noci, ktorá sa skončila
-          ráno v ten deň.
+          ráno v ten deň. Kroky, aktívne kalórie a Sleep Score, ktoré Samsung pošle sám, sa doplnia automaticky.
         </p>
         {missing.length === 0 ? (
           <p className="glass px-6 py-8 text-center text-[14px] text-ink2" style={{ borderRadius: 22, borderStyle: "dashed", borderColor: "var(--line-strong)" }}>

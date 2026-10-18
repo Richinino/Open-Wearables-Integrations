@@ -6,9 +6,9 @@
 
 import { mix, STAGE_COLORS, STAGE_LABELS, StageStrip, TileShell } from "@/components/ui/tile";
 import {
+  nightScore,
   regularityBand,
   SLEEP_KINDS,
-  sleepScoreOf,
   splitTimeline,
   SRI_MEDIAN,
   SRI_QUINTILES,
@@ -61,11 +61,12 @@ export function SleepScoreTile({
   timeZone: string;
 }) {
   const info = SLEEP_KINDS[kind];
-  const score = sleepScoreOf(night, kind);
-  const value = scoreValue(score);
+  const { value, estimate, fromSamsung, score } = nightScore(night, kind);
   const band = info.band(value);
-  const learning = learningText(score);
+  const learning = fromSamsung ? null : learningText(score);
   const note = learning || info.estimate ? null : noteText(score?.note);
+  // Next to Samsung's own number, what owi would have estimated for the night.
+  const ownEstimate = fromSamsung ? scoreValue(score) : null;
   const minutes = night?.sleep_minutes ?? null;
   const awake = night?.sleep_awake_min ?? null;
   const need = previous?.scores?.sleep_need_minutes ?? null;
@@ -86,7 +87,7 @@ export function SleepScoreTile({
             interruptions: awakeFact,
           }
         : { duration: asleep, deep: deepFact, rem: remFact, interruptions: awakeFact };
-  const shown = value === null ? DASH : info.estimate ? approx(formatInt(value)) : formatScore(score);
+  const shown = value === null ? DASH : estimate ? approx(formatInt(value)) : fromSamsung ? formatInt(value) : formatScore(score);
   const rows = info.onlyPresent ? presentPartRows(scoreParts(score), info.parts) : partRows(score, info.parts);
 
   return (
@@ -95,8 +96,7 @@ export function SleepScoreTile({
         <h2 className="eyebrow">Skóre spánku</h2>
         <Switch options={KIND_OPTIONS} value={kind} onChange={onKind} label="Ktoré skóre spánku ukázať" />
         <VendorLine>
-          Metóda podľa {info.vendor}
-          {info.estimate ? " · odhad" : ""}
+          {fromSamsung ? "Samsung Health · automaticky" : `Metóda podľa ${info.vendor}${info.estimate ? " · odhad" : ""}`}
         </VendorLine>
       </div>
       <ScoreDial
@@ -104,15 +104,23 @@ export function SleepScoreTile({
         color="var(--sleep)"
         value={shown}
         band={learning ? "učí sa" : (band?.label ?? note ?? "zatiaľ bez skóre")}
-        sub={info.estimate ? "odhad · zo 100" : "zo 100"}
+        sub={estimate ? "odhad · zo 100" : fromSamsung ? "zo Samsungu · zo 100" : "zo 100"}
         label={
           value === null
             ? `${info.label} zatiaľ nie je${learning ? `, ${learning}` : ""}`
-            : `${info.label} ${info.estimate ? "približne " : ""}${formatInt(value)} zo 100, ${band?.label ?? ""}`
+            : `${info.label} ${estimate ? "približne " : ""}${formatInt(value)} zo 100${fromSamsung ? " zo Samsungu" : ""}, ${band?.label ?? ""}`
         }
       />
       <p className="text-[13px] text-ink2">{info.about}</p>
-      {learning ? (
+      {fromSamsung ? (
+        <>
+          <NoteLine>
+            Číslo poslal Samsung Health automaticky.
+            {ownEstimate !== null && ` Odhad owi pre túto noc ${approx(formatInt(ownEstimate))}, z týchto častí:`}
+          </NoteLine>
+          {ownEstimate !== null && rows.length > 0 && <PartsList rows={rows} color="var(--sleep)" facts={facts} />}
+        </>
+      ) : learning ? (
         <LearningBox score={score} what="Sleep Score" />
       ) : (
         <>

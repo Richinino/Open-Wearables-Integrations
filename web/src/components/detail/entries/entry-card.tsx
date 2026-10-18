@@ -1,15 +1,19 @@
 "use client";
 
 // One day on /zapis: a header that opens and closes it, the seven fields with owi's own
-// figure beside each, and "Uložiť deň". The fields keep what was typed while the card is
-// closed, so switching between days loses nothing.
+// figure beside each, and "Uložiť deň". Fields Samsung already sent by itself for the day
+// (steps, active calories, Sleep Score) show its number, read-only, and are not saved. The
+// fields keep what was typed while the card is closed, so switching between days loses
+// nothing.
 
 import { useId, useRef, useState, type FormEvent } from "react";
 import { putEntry } from "@/lib/entry-client";
 import { ENTRY_FIELDS, hasEntry, inputText, isEmpty, emptyValues, parseInput, type FieldErrors } from "@/lib/entries";
 import { formatDayLong, formatInt } from "@/lib/format";
-import { formatFieldValue, owiFigureText } from "@/lib/samsung";
+import { autoValue, formatFieldValue, owiFigureText, withoutAutoFields } from "@/lib/samsung";
 import type { Day, Entry, EntryField } from "@/lib/types";
+
+const AUTO_NOTE = "automaticky zo Samsungu";
 
 type Texts = Record<EntryField, string>;
 
@@ -40,6 +44,12 @@ function summary(entry: Entry | null, data: Day | null): string {
     return parts.length > 0 ? parts.join(" · ") : "zápis";
   }
   if (!data) return "owi za tento deň nemá dáta";
+  const steps = autoValue(data, "steps");
+  const sleep = autoValue(data, "sleep_score");
+  if (steps !== null || sleep !== null) {
+    const sent = [steps === null ? null : `${formatInt(steps)} krokov`, sleep === null ? null : `Sleep ${formatInt(sleep)}`].filter(Boolean);
+    return `automaticky: ${sent.join(" · ")}`;
+  }
   const parts = [
     data.steps === null ? null : `${owiFigureText(data, "steps")} krokov`,
     data.distance_m_est === null ? null : owiFigureText(data, "distance_km"),
@@ -91,6 +101,7 @@ export function EntryCard({
   const [saving, setSaving] = useState(false);
   const had = hasEntry(entry);
   const panelId = `${id}-panel`;
+  const autoCount = ENTRY_FIELDS.filter((spec) => autoValue(data, spec.key) !== null).length;
 
   function focusField(key: string) {
     form.current?.querySelector<HTMLInputElement>(`[name="${key}"]`)?.focus();
@@ -99,13 +110,16 @@ export function EntryCard({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving) return;
-    const values = emptyValues();
+    const typed = emptyValues();
     const problems: FieldErrors = {};
     for (const spec of ENTRY_FIELDS) {
+      // Samsung's own number stands in for the field; whatever an older entry held is not sent.
+      if (autoValue(data, spec.key) !== null) continue;
       const parsed = parseInput(texts[spec.key], spec);
-      if (parsed.ok) values[spec.key] = parsed.value;
+      if (parsed.ok) typed[spec.key] = parsed.value;
       else problems[spec.key] = parsed.message;
     }
+    const values = withoutAutoFields(typed, data);
     const firstProblem = ENTRY_FIELDS.find((spec) => problems[spec.key]);
     if (firstProblem) {
       setErrors(problems);
@@ -115,7 +129,7 @@ export function EntryCard({
     }
     if (isEmpty(values) && !had) {
       setErrors({});
-      setMessage("Vyplň aspoň jedno číslo.");
+      setMessage(autoCount > 0 ? "Vyplň aspoň jedno z ostatných čísel." : "Vyplň aspoň jedno číslo.");
       return;
     }
 
@@ -163,6 +177,30 @@ export function EntryCard({
             {ENTRY_FIELDS.map((spec) => {
               const inputId = `${id}-${spec.key}`;
               const error = errors[spec.key];
+              const sent = autoValue(data, spec.key);
+              if (sent !== null) {
+                return (
+                  <div key={spec.key} className="flex min-w-0 flex-col gap-1.5">
+                    <label htmlFor={inputId} className="text-[13px] text-ink2">
+                      {spec.label}
+                      {spec.unit && <span className="text-muted"> · {spec.unit}</span>}
+                    </label>
+                    <input
+                      id={inputId}
+                      name={spec.key}
+                      type="text"
+                      readOnly
+                      value={inputText(sent, spec)}
+                      aria-describedby={`${inputId}-auto`}
+                      className="tabular h-11 w-full min-w-0 cursor-default rounded-[14px] border border-dashed border-line-strong bg-sunk px-3 text-[17px] text-ink2 outline-none"
+                    />
+                    <span id={`${inputId}-auto`} className="text-[12px] text-muted">
+                      <span className="block font-semibold text-ink2">{AUTO_NOTE}</span>
+                      {data && <span className="block">owi {owiFigureText(data, spec.key)}</span>}
+                    </span>
+                  </div>
+                );
+              }
               return (
                 <div key={spec.key} className="flex min-w-0 flex-col gap-1.5">
                   <label htmlFor={inputId} className="text-[13px] text-ink2">
@@ -209,6 +247,7 @@ export function EntryCard({
             </button>
             <p className="text-[12px] text-muted">
               {had ? "Keď vymažeš všetky polia, uložením zápis zmažeš." : "Vyplň, čo máš; prázdne pole sa nezapíše."}
+              {autoCount > 0 && " Čísla zo Samsungu sa doplnili samy."}
             </p>
           </div>
           {message && (

@@ -69,6 +69,19 @@ export interface Day {
   scores?: DayScores | null;
   /** Numbers the user copied from Samsung Health for this day; absent in older responses. */
   samsung?: Entry | null;
+  /**
+   * Numbers Samsung Health sent by itself for this day (auto entries); null when it sent none,
+   * absent in older responses. owi tunes on them where the user's entry has no number.
+   */
+  samsung_auto?: SamsungAuto | null;
+}
+
+/** What Samsung Health sends by itself: its own sums of the day and the night's Sleep Score. */
+export interface SamsungAuto {
+  steps: number | null;
+  active_kcal: number | null;
+  /** The night that ended on this day. */
+  sleep_score: number | null;
 }
 
 /** The seven numbers of a Samsung Health entry, as `PUT /v1/entries/{day}` takes them. */
@@ -182,6 +195,7 @@ export interface Quality {
 export interface Calibration {
   /** ISO 8601; null before the first fit. */
   fitted_at: string | null;
+  /** Days the last fit read: with the user's entry or a number Samsung sent by itself. */
   entries: number;
   params: CalibrationParams;
   defaults: CalibrationParams;

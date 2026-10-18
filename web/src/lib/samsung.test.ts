@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import { addDays, dateRange } from "./dates";
 import {
+  AUTO_FIELDS,
+  autoFields,
+  autoValue,
   calibrationNote,
   difference,
   formatError,
   formatFieldValue,
+  hasAuto,
+  isAutoField,
   isLearning,
   learningGap,
   learningText,
@@ -16,7 +21,9 @@ import {
   qualityRows,
   savedEntryDays,
   scoreParts,
+  tunedValue,
   withEntry,
+  withoutAutoFields,
 } from "./samsung";
 import { makeCalibration, makeDay, makeEntry, makeScore, makeScores } from "./test-fixtures";
 import type { Dataset } from "./types";
@@ -235,5 +242,48 @@ describe("learning scores", () => {
     const scored = makeScore(80, { deep: 70 });
     expect(scoreParts(scored)).toBe(scored);
     expect(scoreParts(null)).toBeNull();
+  });
+});
+
+describe("numbers Samsung sends by itself", () => {
+  const auto = { steps: 18230, active_kcal: 960, sleep_score: 84 };
+
+  it("knows which fields Samsung sends", () => {
+    expect([...AUTO_FIELDS]).toEqual(["steps", "active_kcal", "sleep_score"]);
+    expect(isAutoField("steps")).toBe(true);
+    expect(isAutoField("distance_km")).toBe(false);
+  });
+
+  it("reads Samsung's own number of a field, or null", () => {
+    const day = makeDay("2026-10-15", { samsung_auto: { ...auto, active_kcal: null } });
+    expect(autoValue(day, "steps")).toBe(18230);
+    expect(autoValue(day, "active_kcal")).toBeNull();
+    expect(autoValue(day, "distance_km")).toBeNull();
+    expect(autoValue(makeDay("2026-10-15"), "steps")).toBeNull();
+    expect(autoValue(makeDay("2026-10-15", { samsung_auto: null }), "steps")).toBeNull();
+    expect(autoValue(null, "steps")).toBeNull();
+    expect(autoFields(day)).toEqual(["steps", "sleep_score"]);
+    expect(hasAuto(day)).toBe(true);
+    expect(hasAuto(makeDay("2026-10-15", { samsung_auto: { steps: null, active_kcal: null, sleep_score: null } }))).toBe(false);
+  });
+
+  it("gives the number the tuning reads: the entry first, Samsung's sums only for finished days", () => {
+    const day = makeDay("2026-10-15", { samsung_auto: auto, samsung: makeEntry("2026-10-15", { steps: 20000, total_kcal: 2600 }) });
+    expect(tunedValue(day, "steps")).toBe(20000);
+    expect(tunedValue(day, "active_kcal")).toBe(960);
+    expect(tunedValue(day, "sleep_score")).toBe(84);
+    expect(tunedValue(day, "total_kcal")).toBe(2600);
+    expect(tunedValue(day, "distance_km")).toBeNull();
+    const running = makeDay("2026-10-16", { complete: false, samsung_auto: auto });
+    expect(tunedValue(running, "steps")).toBeNull();
+    expect(tunedValue(running, "active_kcal")).toBeNull();
+    expect(tunedValue(running, "sleep_score")).toBe(84);
+  });
+
+  it("leaves Samsung's own fields out of a save", () => {
+    const values = { steps: 1, distance_km: 2, active_minutes: 3, active_kcal: 4, total_kcal: 600, sleep_score: 5, energy_score: 6 };
+    const day = makeDay("2026-10-15", { samsung_auto: { ...auto, active_kcal: null } });
+    expect(withoutAutoFields(values, day)).toEqual({ ...values, steps: null, sleep_score: null });
+    expect(withoutAutoFields(values, makeDay("2026-10-15"))).toEqual(values);
   });
 });

@@ -53,7 +53,7 @@ export interface SleepKindInfo {
   band: (value: number | null | undefined) => Band | null;
   /** Nights from this score on count as strong in the history. */
   top: number;
-  /** Every value is an estimate (≈), whatever its note says. */
+  /** owi's value is always an estimate (≈), whatever its note says; see nightScore. */
   estimate?: boolean;
   /**
    * Known parts in display order. With `onlyPresent` only the ones the score has are shown,
@@ -93,10 +93,10 @@ export const SLEEP_KINDS: Record<SleepKind, SleepKindInfo> = {
   samsung: {
     kind: "samsung",
     label: "Samsung Sleep Score",
-    option: "Samsung (odhad)",
+    option: "Samsung",
     vendor: "Samsung",
     about:
-      "Odhad skóre zo Samsung Health. Časti sú podľa toho, ako Samsung skóre popisuje, ich váhy owi dolaďuje podľa tvojich zápisov.",
+      "Skóre zo Samsung Health. Keď ho Samsung pošle, je tu jeho číslo; inak odhad owi z častí, ako ich Samsung popisuje, s váhami naučenými zo skutočných skóre.",
     band: samsungSleepBand,
     top: 90,
     estimate: true,
@@ -122,6 +122,29 @@ export function sleepScoreOf(day: Day | null | undefined, kind: SleepKind): Scor
   if (!scores) return null;
   const score = kind === "performance" ? scores.sleep_performance : kind === "apple" ? scores.apple_sleep : scores.samsung_sleep;
   return score ?? null;
+}
+
+export interface NightScore {
+  /** The number shown for the night, null without one. */
+  value: number | null;
+  /** The value is owi's estimate (≈). */
+  estimate: boolean;
+  /** The value is Samsung's own Sleep Score, sent by itself. */
+  fromSamsung: boolean;
+  /** owi's score of the kind, with its parts and note; for Samsung its estimate. */
+  score: Score | null;
+}
+
+/**
+ * The night's number for the chosen kind. For Samsung: its own Sleep Score when it sent one,
+ * else owi's estimate (≈), else nothing (owi's score then says why, e.g. "learning").
+ */
+export function nightScore(day: Day | null | undefined, kind: SleepKind): NightScore {
+  const score = sleepScoreOf(day, kind);
+  const sent = kind === "samsung" ? day?.samsung_auto?.sleep_score : null;
+  if (isNumber(sent)) return { value: sent, estimate: false, fromSamsung: true, score };
+  const value = scoreValue(score);
+  return { value, estimate: value !== null && Boolean(SLEEP_KINDS[kind].estimate), fromSamsung: false, score };
 }
 
 // ---------------------------------------------------------------------------------------
@@ -304,6 +327,8 @@ export interface NightPoint {
   /** The need set the evening before, which this night is measured against. */
   need: number | null;
   score: number | null;
+  /** The score is owi's estimate (≈), not the vendor's own number. */
+  estimate: boolean;
   scoreNote: string | null;
   regularity: number | null;
 }
@@ -314,15 +339,16 @@ export function sleepHistory(days: Day[], end: string, nights: number, kind: Sle
   return dateRange(addDays(end, -(Math.max(1, Math.floor(nights)) - 1)), end).map((date) => {
     const data = byDay.get(date) ?? null;
     const need = byDay.get(addDays(date, -1))?.scores?.sleep_need_minutes;
-    const score = sleepScoreOf(data, kind);
+    const night = nightScore(data, kind);
     const regularity = data?.scores?.sleep_regularity;
     return {
       day: date,
       data,
       minutes: isNumber(data?.sleep_minutes) ? (data?.sleep_minutes as number) : null,
       need: isNumber(need) ? need : null,
-      score: scoreValue(score),
-      scoreNote: score?.note ?? null,
+      score: night.value,
+      estimate: night.estimate,
+      scoreNote: night.score?.note ?? null,
       regularity: isNumber(regularity) ? regularity : null,
     };
   });

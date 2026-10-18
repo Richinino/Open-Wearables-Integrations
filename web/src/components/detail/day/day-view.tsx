@@ -11,6 +11,7 @@ import { addDays, isValidDay, todayIn } from "@/lib/dates";
 import { hasEntry } from "@/lib/entries";
 import { formatDay, formatDayLong } from "@/lib/format";
 import { indexByDay } from "@/lib/metrics";
+import { hasAuto } from "@/lib/samsung";
 import type { Dataset } from "@/lib/types";
 import { ActivityTile, DayScoreTile, DayWorkoutsTile, HeartTile, SamsungTile, SleepTile, StrainTile } from "./day-tiles";
 
@@ -109,7 +110,7 @@ function DayDetail({ dataset, now, date }: { dataset: Dataset; now: Date; date: 
           <HeartTile day={day} />
         </div>
       </div>
-      {hasEntry(day.samsung) && (
+      {(hasEntry(day.samsung) || hasAuto(day)) && (
         <div className="rise flex min-w-0 flex-col" style={riseStyle(6)}>
           <SamsungTile day={day} />
         </div>

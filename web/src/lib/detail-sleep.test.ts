@@ -8,6 +8,7 @@ import {
   lastNight,
   needCoverage,
   needTonight,
+  nightScore,
   regularityBand,
   sleepHistory,
   sleepScoreOf,
@@ -47,8 +48,8 @@ describe("sleep kinds", () => {
     expect(isSleepKind(null)).toBe(false);
   });
 
-  it("marks the Samsung score as an estimate whose parts owi names", () => {
-    expect(SLEEP_KINDS.samsung).toMatchObject({ option: "Samsung (odhad)", vendor: "Samsung", estimate: true, onlyPresent: true, top: 90 });
+  it("marks owi's Samsung score as an estimate whose parts owi names", () => {
+    expect(SLEEP_KINDS.samsung).toMatchObject({ option: "Samsung", vendor: "Samsung", estimate: true, onlyPresent: true, top: 90 });
     expect(SLEEP_KINDS.samsung.band(90)?.label).toBe("výborné");
     expect(SLEEP_KINDS.samsung.band(49)?.label).toBe("slabé");
   });
@@ -64,6 +65,22 @@ describe("sleep kinds", () => {
     expect(sleepScoreOf(null, "apple")).toBeNull();
     // Older responses have no Samsung score at all.
     expect(sleepScoreOf(makeDay(END, { scores: makeScores(END) }), "samsung")).toBeNull();
+  });
+
+  it("shows Samsung's own Sleep Score when it sent one, else owi's estimate", () => {
+    const scores = makeScores(END, { sleep_performance: makeScore(91), samsung_sleep: makeScore(83, { deep: 70 }, "estimate") });
+    const sent = makeDay(END, { scores, samsung_auto: { steps: null, active_kcal: null, sleep_score: 88 } });
+    const estimated = makeDay(END, { scores });
+    const learning = makeDay(END, { scores: makeScores(END, { samsung_sleep: makeScore(null, { entries: 4, needed: 10 }, "learning") }) });
+
+    expect(nightScore(sent, "samsung")).toMatchObject({ value: 88, estimate: false, fromSamsung: true });
+    expect(nightScore(sent, "samsung").score?.value).toBe(83);
+    expect(nightScore(estimated, "samsung")).toMatchObject({ value: 83, estimate: true, fromSamsung: false });
+    expect(nightScore(learning, "samsung")).toMatchObject({ value: null, estimate: false, fromSamsung: false });
+    expect(nightScore(learning, "samsung").score?.note).toBe("learning");
+    // Samsung's number belongs only to its own kind.
+    expect(nightScore(sent, "performance")).toMatchObject({ value: 91, estimate: false, fromSamsung: false });
+    expect(nightScore(null, "samsung")).toEqual({ value: null, estimate: false, fromSamsung: false, score: null });
   });
 });
 
@@ -199,7 +216,23 @@ describe("sleepHistory and needCoverage", () => {
     expect(points[1]).toMatchObject({ minutes: 420, need: null, score: 80 });
     expect(points[2]).toMatchObject({ minutes: 430, need: 480, score: 81 });
     expect(points[3]).toMatchObject({ minutes: null, score: null, scoreNote: "no sleep recorded" });
+    expect(points.every((point) => !point.estimate)).toBe(true);
     expect(sleepHistory(days, END, 7, "apple")[2].score).toBe(70);
+  });
+
+  it("marks the nights where Samsung's score is owi's estimate", () => {
+    const samsungDays = dateRange("2026-10-13", END).map((day, index) =>
+      makeDay(day, {
+        scores: makeScores(day, { samsung_sleep: makeScore(80 + index, {}, "estimate") }),
+        samsung_auto: index === 1 ? { steps: 9000, active_kcal: 400, sleep_score: 77 } : null,
+      }),
+    );
+    const points = sleepHistory(samsungDays, END, 3, "samsung");
+    expect(points.map((point) => [point.score, point.estimate])).toEqual([
+      [80, true],
+      [77, false],
+      [82, true],
+    ]);
   });
 
   it("counts covered nights and the mean shortfall of the rest", () => {

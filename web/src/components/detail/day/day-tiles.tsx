@@ -38,7 +38,7 @@ import {
   subScores,
   type SubScore,
 } from "@/lib/scores";
-import { difference, owiFigure, owiFigureText } from "@/lib/samsung";
+import { autoValue, difference, hasAuto, owiFigure, owiFigureText } from "@/lib/samsung";
 import type { Calibration, Day, EntryField, Score } from "@/lib/types";
 import { Hypnogram } from "./hypnogram";
 
@@ -317,29 +317,38 @@ function entryNumber(field: EntryField, value: number | null): { value: string; 
   return { value: formatInt(value) };
 }
 
-/** The day's numbers from Samsung Health next to owi's own; only for days with an entry. */
+/**
+ * The day's numbers from Samsung Health next to owi's own: the user's entry, and where it has
+ * no number, what Samsung sent by itself (marked "automaticky"). Only for days with either.
+ */
 export function SamsungTile({ day }: { day: Day }) {
-  const entry = day.samsung;
-  if (!hasEntry(entry)) return null;
+  const entry = hasEntry(day.samsung) ? day.samsung : null;
+  if (!entry && !hasAuto(day)) return null;
   const cells = ENTRY_FIELDS.flatMap((spec) => {
-    const samsung = entry[spec.key];
+    const entered = entry?.[spec.key] ?? null;
+    const sent = entered === null ? autoValue(day, spec.key) : null;
+    const samsung = entered ?? sent;
     const owi = owiFigure(day, spec.key);
     if (samsung === null && owi === null) return [];
-    return [{ key: spec.key, samsung, owi }];
+    return [{ key: spec.key, samsung, owi, auto: sent !== null }];
   });
   return (
     <TileShell className={TILE}>
       <Heading
         aside={
-          <Link href={ROUTES.entryFor(day.day)} className="title-link inline-flex items-center gap-1.5 text-[13px] font-semibold text-ink2">
-            Upraviť zápis <Arrow />
-          </Link>
+          // /zapis takes finished days; a running day only has what Samsung sent so far.
+          entry || day.complete ? (
+            <Link href={ROUTES.entryFor(day.day)} className="title-link inline-flex items-center gap-1.5 text-[13px] font-semibold text-ink2">
+              {entry ? "Upraviť zápis" : "Doplniť zápis"} <Arrow />
+            </Link>
+          ) : undefined
         }
       >
         Samsung a owi
       </Heading>
       <p className="text-[12px] text-muted">
-        Hore číslo zo Samsung Health, pod ním owi a jeho rozdiel. Sleep Score je za noc, ktorá skončila v tento deň.
+        Hore číslo zo Samsung Health, zo zápisu alebo automaticky, pod ním owi a jeho rozdiel. Sleep Score je za noc, ktorá
+        skončila v tento deň.
       </p>
       <dl className="grid grid-cols-2 gap-x-5 gap-y-4 sm:grid-cols-4 xl:grid-cols-7">
         {cells.map((cell) => {
@@ -353,6 +362,7 @@ export function SamsungTile({ day }: { day: Day }) {
                 {shown.unit && cell.samsung !== null && <span className="text-[13px] text-ink2">{shown.unit}</span>}
               </dd>
               <dd className="text-[12px] text-muted">
+                {cell.auto && <span className="mono block text-[10px] tracking-[0.04em] text-ink2">automaticky</span>}
                 owi {owiFigureText(day, cell.key)}
                 {diff && <span className="whitespace-nowrap"> · {diff}</span>}
               </dd>

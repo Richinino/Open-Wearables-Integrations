@@ -4,11 +4,20 @@
 // need, bed and wake times, regularity, and every night as a table row.
 
 import { useRouter } from "next/navigation";
-import { ColumnChart, RangeChart } from "@/components/charts/charts";
+import { ColumnChart, estimateSwatch, RangeChart } from "@/components/charts/charts";
 import { tickPlain } from "@/components/charts/points";
 import { DataTable } from "@/components/ui/parts";
 import { TileShell } from "@/components/ui/tile";
-import { clockSummary, needCoverage, SLEEP_KINDS, sleepScoreOf, SRI_MEDIAN, type NightPoint, type SleepKind } from "@/lib/detail-sleep";
+import {
+  clockSummary,
+  needCoverage,
+  nightScore,
+  SLEEP_KINDS,
+  sleepScoreOf,
+  SRI_MEDIAN,
+  type NightPoint,
+  type SleepKind,
+} from "@/lib/detail-sleep";
 import {
   approx,
   DASH,
@@ -24,7 +33,7 @@ import {
 import { average, sleepNights } from "@/lib/metrics";
 import { learningText } from "@/lib/samsung";
 import { formatScore, scoreValue } from "@/lib/scores";
-import type { Dataset } from "@/lib/types";
+import type { Dataset, Day } from "@/lib/types";
 import { Keys } from "../common/bits";
 import { ChartTile } from "../common/controls";
 import { TrendChart } from "../common/trend-chart";
@@ -55,8 +64,21 @@ export function SleepHistory({
   const mean = average(scored.map((point) => point.score));
   const topFrom = info.top;
   const strong = scored.filter((point) => (point.score as number) >= topFrom).length;
-  const shownScore = (value: number) => (info.estimate ? approx(formatInt(value)) : formatInt(value));
+  const estimated = scored.filter((point) => point.estimate).length;
+  const sent = scored.length - estimated;
+  const shownScore = (value: number, estimate: boolean) => (estimate ? approx(formatInt(value)) : formatInt(value));
+  // A mean with any estimate in it is an estimate too.
+  const shownMean = (value: number) => shownScore(value, estimated > 0);
   const learning = learningText(sleepScoreOf(points[points.length - 1].data, kind));
+  // For Samsung: how many nights are its own number and how many owi's estimate.
+  const sources =
+    kind === "samsung" && scored.length > 0
+      ? estimated === 0
+        ? "všetko zo Samsungu"
+        : sent === 0
+          ? "odhad owi"
+          : `zo Samsungu ${formatInt(sent)}, odhad owi (≈) ${formatInt(estimated)}`
+      : null;
   const coverage = needCoverage(points);
   const clock = clockSummary(dataset.days, tz, end, period);
   const nights = sleepNights(
@@ -79,11 +101,25 @@ export function SleepHistory({
               ? learning
                 ? `${info.label} ${learning}.`
                 : "Za toto obdobie zatiaľ bez skóre."
-              : `Priemer ${shownScore(mean as number)} · ${topFrom} a viac v ${formatInt(strong)} z ${formatInt(scored.length)} ${nightsWord(scored.length)} · metóda podľa ${info.vendor}${info.estimate ? ", odhad" : ""}`
+              : `Priemer ${shownMean(mean as number)} · ${topFrom} a viac v ${formatInt(strong)} z ${formatInt(scored.length)} ${nightsWord(scored.length)} · ${
+                  sources ?? `metóda podľa ${info.vendor}${info.estimate ? ", odhad" : ""}`
+                }`
+          }
+          legend={
+            sent > 0 && estimated > 0 ? (
+              <Keys
+                items={[
+                  { label: "zo Samsungu", color: "var(--sleep)" },
+                  { label: "odhad owi", color: estimateSwatch("var(--sleep)") },
+                ]}
+              />
+            ) : undefined
           }
           table={{
             columns: ["Deň", info.label, "Pásmo"],
-            rows: scored.map((point) => [formatDay(point.day), shownScore(point.score as number), info.band(point.score)?.label ?? DASH]).reverse(),
+            rows: scored
+              .map((point) => [formatDay(point.day), shownScore(point.score as number, point.estimate), info.band(point.score)?.label ?? DASH])
+              .reverse(),
           }}
         >
           <ColumnChart
@@ -92,12 +128,15 @@ export function SleepHistory({
               label: formatDayMonth(point.day),
               title: formatDay(point.day),
               value: point.score,
+              estimate: point.estimate,
             }))}
             color="var(--sleep)"
             ticks={[0, 25, 50, 75, 100]}
-            reference={mean === null ? null : { value: mean, label: `priemer ${shownScore(mean)}` }}
-            ariaLabel={`${info.label} za posledných ${period} nocí, priemer ${formatInt(mean)}`}
-            formatValue={shownScore}
+            reference={mean === null ? null : { value: mean, label: `priemer ${shownMean(mean)}` }}
+            ariaLabel={`${info.label} za posledných ${period} nocí, priemer ${formatInt(mean)}${
+              estimated > 0 ? `, ${formatInt(estimated)} ${nightsWord(estimated)} odhad owi` : ""
+            }`}
+            formatValue={(value) => formatInt(value)}
             formatTick={tickPlain}
             onSelect={open}
           />
@@ -200,6 +239,13 @@ export function SleepHistory({
   );
 }
 
+/** Samsung's own Sleep Score as is, owi's estimate with ≈, or a dash. */
+function samsungCell(day: Day): string {
+  const night = nightScore(day, "samsung");
+  if (night.value === null) return DASH;
+  return night.estimate ? approx(formatInt(night.value)) : formatInt(night.value);
+}
+
 function NightsTable({ dataset, points }: { dataset: Dataset; points: NightPoint[] }) {
   const tz = dataset.timezone;
   const rows = points
@@ -214,7 +260,7 @@ function NightsTable({ dataset, points }: { dataset: Dataset; points: NightPoint
         formatDuration(point.need),
         scoreValue(day.scores?.sleep_performance) === null ? DASH : formatScore(day.scores?.sleep_performance),
         scoreValue(day.scores?.apple_sleep) === null ? DASH : formatScore(day.scores?.apple_sleep),
-        approx(formatInt(scoreValue(day.scores?.samsung_sleep))),
+        samsungCell(day),
         formatDuration(day.sleep_deep_min),
         formatDuration(day.sleep_rem_min),
         formatDuration(day.sleep_light_min),
