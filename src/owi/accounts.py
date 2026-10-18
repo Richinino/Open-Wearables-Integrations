@@ -157,6 +157,8 @@ class InboxItem:
     key: str | None
     created_at: datetime
     resolved_at: datetime | None
+    # "admin" (by hand; also unknown), "auto" (the condition ended) or None while open.
+    resolved_by: str | None = None
 
 
 @dataclass(frozen=True)
@@ -249,7 +251,20 @@ def _connect(path: Path) -> sqlite3.Connection:
     db.execute("PRAGMA journal_mode=DELETE")
     db.executescript(_SCHEMA)
     db.row_factory = sqlite3.Row
+    _migrate(db)
     return db
+
+
+def _migrate(db: sqlite3.Connection) -> None:
+    """Add what databases made by older versions lack."""
+    columns = {row["name"] for row in db.execute("PRAGMA table_info(inbox)")}
+    if "resolved_by" not in columns:
+        try:
+            db.execute("ALTER TABLE inbox ADD COLUMN resolved_by TEXT")
+        except sqlite3.OperationalError as error:
+            # Another process added it between the check and the statement.
+            if "duplicate column" not in str(error).lower():
+                raise
 
 
 def _locked(error: sqlite3.OperationalError) -> bool:
@@ -341,6 +356,7 @@ def _item(row: sqlite3.Row) -> InboxItem:
         key=row["key"],
         created_at=datetime.fromisoformat(row["created_at"]),
         resolved_at=_moment(row["resolved_at"]),
+        resolved_by=row["resolved_by"] if row["resolved_at"] is not None else None,
     )
 
 
@@ -888,16 +904,32 @@ class Accounts:
 
         return _read(self.path, work)
 
-    def inbox_resolve(self, item_id: int, now: datetime) -> InboxItem:
+    def inbox_resolve(self, item_id: int, now: datetime, automatic: bool = False) -> InboxItem:
+        """Mark a note done: by an admin, or automatically when its condition ended."""
+
         def work(db: sqlite3.Connection) -> InboxItem:
             row = db.execute("SELECT * FROM inbox WHERE id = ?", (item_id,)).fetchone()
             if row is None:
                 raise AccountError("not_found")
             if row["resolved_at"] is None:
-                db.execute("UPDATE inbox SET resolved_at = ? WHERE id = ?", (_text(now), item_id))
+                db.execute(
+                    "UPDATE inbox SET resolved_at = ?, resolved_by = ? WHERE id = ?",
+                    (_text(now), "auto" if automatic else "admin", item_id),
+                )
             return _item(db.execute("SELECT * FROM inbox WHERE id = ?", (item_id,)).fetchone())
 
         return _run(self.path, work)
+
+    def inbox_condition_ended(self, item_id: int) -> None:
+        """A note an admin resolved by hand: its condition is over, so it may fire again."""
+
+        def work(db: sqlite3.Connection) -> None:
+            db.execute(
+                "UPDATE inbox SET resolved_by = 'auto' WHERE id = ? AND resolved_at IS NOT NULL",
+                (item_id,),
+            )
+
+        _run(self.path, work)
 
     # system values
 

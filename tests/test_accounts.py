@@ -469,3 +469,25 @@ def test_wrong_current_password_in_change_password_counts_toward_the_lockout(sto
     with pytest.raises(AccountError) as login_locked:
         store.login("mama@email.sk", PASSWORD, datetime.now(UTC))
     assert login_locked.value.code == "too_many_attempts"
+
+
+def test_inbox_remembers_who_resolved_an_item_and_old_databases_are_migrated(tmp_path):
+    import sqlite3
+
+    path = accounts_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    old = sqlite3.connect(path)
+    old.execute(
+        "CREATE TABLE inbox (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, account_id TEXT,"
+        " message TEXT NOT NULL, key TEXT, created_at TEXT NOT NULL, resolved_at TEXT)"
+    )
+    old.commit()
+    old.close()
+    with Accounts(path) as store:
+        store.inbox_add("funnel", None, "a", "k1", NOW)
+        store.inbox_add("funnel", None, "b", "k2", NOW)
+        first, second = store.inbox_list(False)
+        by_hand = store.inbox_resolve(first.id, NOW)
+        automatic = store.inbox_resolve(second.id, NOW, automatic=True)
+    assert by_hand.resolved_by == "admin"
+    assert automatic.resolved_by == "auto"

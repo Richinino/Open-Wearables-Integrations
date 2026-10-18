@@ -204,3 +204,89 @@ def test_running_version_comes_from_openapi(accounts):
     http = FakeHttp({"http://ow.test/openapi.json": {"info": {"version": "0.10.0"}}})
 
     assert running_ow_version(http, "http://ow.test/") == "0.10.0"
+
+
+def resolve_by_hand(accounts, kind):
+    (item,) = [i for i in accounts.inbox_list(False) if i.kind == kind]
+    accounts.inbox_resolve(item.id, NOW)
+
+
+def test_stale_item_resolved_by_hand_stays_quiet_until_the_condition_ends(accounts, tmp_path):
+    person(accounts, "a@example.test", "Andrea", ow_user_id="ow-1")
+    accounts.last_data_set("ow-1", NOW - timedelta(hours=25))
+    refresh(accounts, tmp_path)
+    resolve_by_hand(accounts, "stale_data")
+
+    refresh(accounts, tmp_path)
+    refresh(accounts, tmp_path, now=NOW + timedelta(hours=2))
+    assert open_items(accounts) == []
+
+    accounts.last_data_set("ow-1", NOW + timedelta(hours=3))
+    refresh(accounts, tmp_path, now=NOW + timedelta(hours=3))
+    assert open_items(accounts) == []
+
+    refresh(accounts, tmp_path, now=NOW + timedelta(hours=30))
+    assert [i.kind for i in open_items(accounts)] == ["stale_data"]
+
+
+def test_pairing_item_resolved_by_hand_stays_quiet_until_paired_and_unpaired(accounts, tmp_path):
+    account = person(accounts, "p@example.test")
+    refresh(accounts, tmp_path)
+    resolve_by_hand(accounts, "pairing")
+
+    refresh(accounts, tmp_path)
+    assert open_items(accounts) == []
+
+    accounts.pair(account.id, "ow-1")
+    refresh(accounts, tmp_path)
+    accounts.unpair(account.id)
+    refresh(accounts, tmp_path)
+    assert [i.kind for i in open_items(accounts)] == ["pairing"]
+
+
+def test_disconnected_item_resolved_by_hand_stays_quiet_until_reconnected(accounts, tmp_path):
+    person(accounts, "o@example.test", "Otec", ow_user_id="ow-1")
+
+    def sources(status):
+        data = {"connections": [{"provider": "suunto", "status": status}]}
+        accounts.sources_replace("ow-1", json.dumps(data), NOW)
+
+    sources("revoked")
+    refresh(accounts, tmp_path)
+    resolve_by_hand(accounts, "disconnected")
+    refresh(accounts, tmp_path)
+    assert open_items(accounts) == []
+
+    sources("active")
+    refresh(accounts, tmp_path)
+    sources("revoked")
+    refresh(accounts, tmp_path)
+    assert [i.kind for i in open_items(accounts)] == ["disconnected"]
+
+
+def test_reconnect_line_followed_by_other_lines_is_still_found(accounts, tmp_path):
+    (tmp_path / "funnel-watchdog.log").write_text(
+        "2026-10-18 10:30:44 Funnel does not answer; Tailscale reconnected\n"
+        "2026-10-18 10:45:00 check skipped: tailscale busy\n"
+        "2026-10-18 11:00:00 Funnel does not answer; reconnected recently, waiting\n",
+        encoding="utf-8",
+    )
+
+    refresh(accounts, tmp_path)
+    refresh(accounts, tmp_path)
+
+    assert [i.message for i in open_items(accounts)] == [
+        "Funnel neodpovedal, Tailscale sa znova pripojil (10:30)"
+    ]
+
+
+def test_reconnect_lines_older_than_24_hours_are_ignored(accounts, tmp_path):
+    (tmp_path / "funnel-watchdog.log").write_text(
+        "2026-10-16 10:30:44 Funnel does not answer; Tailscale reconnected\n"
+        "2026-10-18 11:00:00 Funnel ok\n",
+        encoding="utf-8",
+    )
+
+    refresh(accounts, tmp_path)
+
+    assert open_items(accounts) == []

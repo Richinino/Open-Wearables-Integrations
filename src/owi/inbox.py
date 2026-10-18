@@ -17,6 +17,7 @@ from owi.accounts import Account, Accounts
 
 STALE_AFTER = timedelta(hours=24)
 RELEASE_EVERY = timedelta(hours=24)
+FUNNEL_WINDOW = timedelta(hours=24)
 RELEASE_URL = "https://api.github.com/repos/the-momentum/open-wearables/releases/latest"
 HTTP_TIMEOUT_S = 5.0
 FUNNEL_LOG = "funnel-watchdog.log"
@@ -24,7 +25,7 @@ RECONNECT_MARK = "Tailscale reconnected"
 
 # Families whose notes end together with their condition.
 _MANAGED = ("pairing:", "stale:", "disconnected:", "ow_update:")
-_WATCHDOG_LINE = re.compile(r"(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}):\d{2}\s+(.*)")
+_WATCHDOG_LINE = re.compile(r"(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}):(\d{2})\s+(.*)")
 
 
 class Http(Protocol):
@@ -105,20 +106,32 @@ def latest_ow_release(
     return found
 
 
-def _funnel_item(data_dir: Path) -> tuple[str, str] | None:
-    """(key, message) when the last line of the watchdog log says Tailscale was reconnected."""
+def _funnel_items(data_dir: Path, now: datetime) -> dict[str, str]:
+    """key -> message for every reconnect line of the watchdog log from the last 24 hours.
+
+    The watchdog writes a line only when it acts or skips, so a reconnect can be followed by
+    other lines before the sync looks. The times are those of the computer the watchdog runs
+    on, compared here without a zone.
+    """
     try:
         text = (data_dir / FUNNEL_LOG).read_text(encoding="utf-8-sig", errors="replace")
     except OSError:
-        return None
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if not lines:
-        return None
-    match = _WATCHDOG_LINE.fullmatch(lines[-1])
-    if match is None or RECONNECT_MARK not in match[3]:
-        return None
-    key = f"funnel:{match[1]} {lines[-1][11:19]}"
-    return key, f"Funnel neodpovedal, Tailscale sa znova pripojil ({match[2]})"
+        return {}
+    since = now.replace(tzinfo=None) - FUNNEL_WINDOW
+    found: dict[str, str] = {}
+    for line in text.splitlines():
+        match = _WATCHDOG_LINE.fullmatch(line.strip())
+        if match is None or RECONNECT_MARK not in match[4]:
+            continue
+        try:
+            at = datetime.fromisoformat(f"{match[1]}T{match[2]}:{match[3]}")
+        except ValueError:
+            continue
+        if at >= since:
+            found[f"funnel:{match[1]} {match[2]}:{match[3]}"] = (
+                f"Funnel neodpovedal, Tailscale sa znova pripojil ({match[2]})"
+            )
+    return found
 
 
 def _wanted(
@@ -141,9 +154,8 @@ def _wanted(
         if account.status != "active" or account.ow_user_id is None:
             continue
         _account_conditions(accounts, account, now, wanted)
-    funnel = _funnel_item(data_dir)
-    if funnel is not None:
-        wanted[funnel[0]] = ("funnel", None, funnel[1])
+    for key, message in _funnel_items(data_dir, now).items():
+        wanted[key] = ("funnel", None, message)
     if ow_version and ow_latest and is_newer(ow_latest, ow_version):
         wanted[f"ow_update:{ow_latest}"] = (
             "ow_update",
@@ -194,10 +206,23 @@ def refresh_inbox(
             continue
         open_keys.add(item.key)
         if item.key.startswith(_MANAGED) and item.key not in wanted:
-            accounts.inbox_resolve(item.id, now)
-    seen = open_keys | {i.key for i in accounts.inbox_list(True) if i.key is not None}
+            accounts.inbox_resolve(item.id, now, automatic=True)
+    # What an admin has seen to stays quiet while its condition lasts; once the condition has
+    # been seen to end, the note is forgotten and may fire again.
+    by_hand: set[str] = set()
+    seen: set[str] = set()
+    for item in accounts.inbox_list(True):
+        if item.key is None:
+            continue
+        seen.add(item.key)
+        if item.resolved_by == "auto" or not item.key.startswith(_MANAGED):
+            continue
+        if item.key in wanted:
+            by_hand.add(item.key)
+        else:
+            accounts.inbox_condition_ended(item.id)
     for key, (kind, account_id, message) in wanted.items():
         # Events are added once for good; states may come back after they ended.
-        if key in (seen if kind in ("funnel", "ow_update") else open_keys):
+        if key in open_keys or (key in seen if kind in ("funnel", "ow_update") else key in by_hand):
             continue
         accounts.inbox_add(kind, account_id, message, key, now)
