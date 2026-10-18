@@ -143,7 +143,8 @@ def rescore(
 
     `base.max_hr` is the configured or calibrated maximum heart rate; without it each day
     uses the highest stored one. `age_on` gives the age at each day (else `base.age`).
-    Features are read in chunks and only the last 180 days are kept, so memory stays bounded. Returns how many days were scored.
+    Features are read in chunks and only the last 180 days are kept,
+    so memory stays bounded. Returns how many days were scored.
     """
     window = deque(
         store.features(first - timedelta(days=HISTORY_DAYS - 1), first - timedelta(days=1))
