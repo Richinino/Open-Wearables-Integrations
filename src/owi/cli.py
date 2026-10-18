@@ -479,7 +479,11 @@ def _cmd_users_migrate(args: argparse.Namespace, settings: Settings) -> int:
     if not settings.data_dir.is_dir():
         print(f"chýba {settings.data_dir}", file=sys.stderr)
         return 1
-    backup = users.backup_data(settings.data_dir, _now())
+    try:
+        backup = users.backup_data(settings.data_dir, _now(), args.backup_dir)
+    except OSError as exc:
+        print(f"chyba: záloha zlyhala: {exc}", file=sys.stderr)
+        return 1
     print(f"záloha: {backup}")
     try:
         moved = users.migrate_legacy(settings.data_dir, args.ow_user)
@@ -572,6 +576,9 @@ def _parser() -> argparse.ArgumentParser:
         "migrate", help="jednorazovo presunie doterajšie dáta do priečinkov používateľa"
     )
     migrate.add_argument("--ow-user", required=True, help="ID používateľa v Open Wearables")
+    migrate.add_argument(
+        "--backup-dir", type=Path, help="kam uložiť zálohu data/ (predvolene vedľa repa)"
+    )
     migrate.set_defaults(run=_cmd_users_migrate)
 
     serve = commands.add_parser(

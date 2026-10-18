@@ -92,3 +92,40 @@ def test_migrate_cli_reports_existing_target_without_overwriting(tmp_path, monke
     monkeypatch.setenv("OWI_DATA_DIR", str(data))
     assert cli.main(["users", "migrate", "--ow-user", OW_USER]) == 1
     assert target.read_bytes() == b"other"
+
+
+def test_migrate_cli_refuses_an_unsafe_default_backup_place(tmp_path, monkeypatch, capsys):
+    data = tmp_path / "data"
+    make_legacy(data)
+    monkeypatch.setenv("OWI_DATA_DIR", str(data))
+    monkeypatch.setattr(users.os, "access", lambda *args: False)
+    assert cli.main(["users", "migrate", "--ow-user", OW_USER]) == 1
+    assert "--backup-dir" in capsys.readouterr().err
+    assert (data / "owi.db").exists()
+    assert not users.user_paths(data, OW_USER).db_path.exists()
+
+
+def test_migrate_cli_uses_backup_dir(tmp_path, monkeypatch):
+    data = tmp_path / "data"
+    make_legacy(data)
+    elsewhere = tmp_path / "elsewhere"
+    monkeypatch.setenv("OWI_DATA_DIR", str(data))
+    code = cli.main(["users", "migrate", "--ow-user", OW_USER, "--backup-dir", str(elsewhere)])
+    assert code == 0
+    [backup] = elsewhere.glob("data-backup-*")
+    assert (backup / "owi.db").read_bytes() == FILES["owi.db"]
+
+
+def test_migrate_cli_failed_backup_moves_nothing(tmp_path, monkeypatch, capsys):
+    from datetime import UTC, datetime
+
+    data = tmp_path / "repo" / "data"
+    make_legacy(data)
+    moment = datetime(2026, 10, 18, 12, 0, 0, tzinfo=UTC)
+    monkeypatch.setattr(cli, "_now", lambda: moment)
+    monkeypatch.setenv("OWI_DATA_DIR", str(data))
+    (tmp_path / "data-backup-20261018-120000").mkdir()
+    assert cli.main(["users", "migrate", "--ow-user", OW_USER]) == 1
+    assert "záloha zlyhala" in capsys.readouterr().err
+    assert (data / "owi.db").exists()
+    assert not users.user_paths(data, OW_USER).db_path.exists()

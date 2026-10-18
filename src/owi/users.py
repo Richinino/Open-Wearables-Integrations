@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from dataclasses import dataclass
 from datetime import datetime
@@ -67,9 +68,18 @@ def migrate_legacy(data_dir: Path, ow_user_id: str) -> list[str]:
     return moved
 
 
-def backup_data(data_dir: Path, now: datetime) -> Path:
-    """Copy the whole data folder next to the repository, outside git."""
-    root = data_dir.resolve().parent
-    target = root.parent / f"data-backup-{now:%Y%m%d-%H%M%S}"
-    shutil.copytree(data_dir, target)
+def backup_data(data_dir: Path, now: datetime, backup_dir: Path | None = None) -> Path:
+    """Copy the whole data folder into `backup_dir`, by default next to the repository.
+
+    The default is only used where it is safe; otherwise OSError says to pass backup_dir.
+    """
+    data = data_dir.resolve()
+    parent = (backup_dir if backup_dir is not None else data.parent.parent).resolve()
+    if backup_dir is None and (parent == parent.parent or not os.access(parent, os.W_OK)):
+        raise OSError(f"{parent} nie je vhodné miesto na zálohu, zadaj --backup-dir")
+    if parent == data or data in parent.parents:
+        raise OSError(f"{parent} je vnútri {data}, zadaj iný --backup-dir")
+    parent.mkdir(parents=True, exist_ok=True)
+    target = parent / f"data-backup-{now:%Y%m%d-%H%M%S}"
+    shutil.copytree(data, target)
     return target
