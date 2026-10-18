@@ -112,6 +112,8 @@ def test_workouts_are_parsed():
 def test_sleep_sessions_are_parsed():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/v1/users/u1/events/sleep"
+        # Open Wearables 0.10+ sends the stage intervals only when asked for them.
+        assert request.url.params.get_list("include") == ["stages"]
         item = {
             "id": "s1",
             "start_time": "2026-10-11T22:00:00Z",

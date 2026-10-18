@@ -156,7 +156,12 @@ class OWClient:
         ]
 
     def sleeps(self, user_id: str, start: datetime, end: datetime) -> list[SleepSession]:
-        params = [("start_date", _format_time(start)), ("end_date", _format_time(end))]
+        # Since Open Wearables 0.10 the stage intervals come only with include=stages.
+        params = [
+            ("start_date", _format_time(start)),
+            ("end_date", _format_time(end)),
+            ("include", "stages"),
+        ]
         sessions = []
         for item in self._pages(f"/users/{user_id}/events/sleep", params):
             stages = item.get("stages") or {}
