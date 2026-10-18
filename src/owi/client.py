@@ -59,6 +59,13 @@ def _intervals(raw: list[dict[str, Any]] | None) -> tuple[SleepInterval, ...]:
     return tuple(sorted(intervals, key=lambda interval: interval.start))
 
 
+def _json(response: httpx.Response, path: str) -> Any:
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise OWError(f"Open Wearables API answered {path} with a malformed body") from exc
+
+
 def summary_pairs(summary: dict[str, Any]) -> list[tuple[str, str]]:
     """(provider, type) pairs with data in a `summaries/data` answer, sorted."""
     pairs = {
@@ -101,7 +108,7 @@ class OWClient:
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise OWError(f"Open Wearables API request failed for {path}: {exc}") from exc
-        return response.json()
+        return _json(response, path)
 
     def _pages(self, path: str, params: list[tuple[str, str]]) -> Iterator[dict[str, Any]]:
         cursor: str | None = None
@@ -159,7 +166,10 @@ class OWClient:
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise OWError(f"Open Wearables API request failed for {path}: {exc}") from exc
-        return response.json()
+        body = _json(response, path)
+        if not isinstance(body, list):
+            raise OWError(f"Open Wearables API answered {path} with an unexpected body")
+        return body
 
     @staticmethod
     def _sample(item: dict[str, Any]) -> Sample:
@@ -186,9 +196,16 @@ class OWClient:
         params = self._timeseries_params(types, start, end)
         return [self._sample(item) for item in self._pages(f"/users/{user_id}/timeseries", params)]
 
-    def sample_head(self, user_id: str, type_: str, start: datetime, end: datetime) -> list[Sample]:
-        """The first page of one type: enough to tell that it arrives, one request."""
-        params = [*self._timeseries_params([type_], start, end), ("limit", str(PAGE_LIMIT))]
+    def sample_head(
+        self, user_id: str, type_: str, provider: str, start: datetime, end: datetime
+    ) -> list[Sample]:
+        """At most one sample of one type from one provider in the range: enough to tell that
+        the type arrives from that provider, one request."""
+        params = [
+            *self._timeseries_params([type_], start, end),
+            ("provider", provider),
+            ("limit", "1"),
+        ]
         body = self._get(f"/users/{user_id}/timeseries", params)
         return [self._sample(item) for item in body.get("data") or []]
 

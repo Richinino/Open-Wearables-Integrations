@@ -778,7 +778,7 @@ def test_sync_stores_ow_users_sources_and_last_data_in_accounts(env, monkeypatch
     ]
     assert sources["samsung_health"] is False
     # Steps arrived in the synced window; only the other two types needed a request.
-    assert sorted(client.head_calls) == ["heart_rate", "spo2"]
+    assert sorted(client.head_calls) == [("heart_rate", "garmin"), ("spo2", "garmin")]
 
 
 @pytest.mark.parametrize("source", [SAMSUNG_WATCH, HC_SHEALTH])
@@ -802,7 +802,7 @@ def test_a_week_long_window_needs_no_request_for_the_types_it_downloads(env, mon
 
     assert cli.main(["sync", "--days", "8"]) == 0
 
-    assert client.head_calls == ["spo2"]
+    assert client.head_calls == [("spo2", "garmin")]
     with open_accounts(env) as store:
         types = {t["type"]: t["arriving"] for t in store.sources("ow-a")["types"]}
     assert types == {"steps": True, "spo2": False}
@@ -849,3 +849,107 @@ def test_one_failing_user_does_not_stop_the_others(env, monkeypatch, capsys):
 
     assert day_of(env, "ow-b").steps == 222
     assert "unreachable" in capsys.readouterr().err
+
+
+def test_samsung_health_flag_stays_true_after_a_quiet_run(env, monkeypatch):
+    add_account(env, "ow-a", "a@example.test")
+    at(monkeypatch, NOW)
+    use_client(monkeypatch, FakeClient([sample(START, STEPS, 100, SAMSUNG_WATCH)]))
+    assert sync("2026-10-12") == 0
+
+    at(monkeypatch, NOW + timedelta(hours=25))
+    use_client(monkeypatch, FakeClient([sample(START, STEPS, 100, GARMIN)]))
+    assert sync("2026-10-12") == 0
+
+    with open_accounts(env) as store:
+        assert store.sources("ow-a")["samsung_health"] is True
+
+
+def test_samsung_connection_or_summary_provider_sets_the_flag(env, monkeypatch):
+    at(monkeypatch, NOW)
+    add_account(env, "ow-a", "a@example.test")
+    summary = {"by_provider": [{"provider": "samsung", "series_counts": {"steps": 5}}]}
+    use_client(monkeypatch, FakeClient(summary=summary))
+
+    assert sync("2026-10-12") == 0
+
+    with open_accounts(env) as store:
+        assert store.sources("ow-a")["samsung_health"] is True
+
+
+def test_arrival_is_checked_per_provider(env, monkeypatch):
+    at(monkeypatch, NOW)
+    add_account(env, "ow-a", "a@example.test")
+    summary = {
+        "by_provider": [
+            {"provider": "garmin", "series_counts": {"spo2": 9}},
+            {"provider": "oura", "series_counts": {"spo2": 4}},
+        ]
+    }
+    # Only the second provider has a recent sample of the type.
+    samples = [sample(utc(2026, 10, 14, 8), "spo2", 97, SourceRef("oura"))]
+    client = FakeClient(samples, summary=summary)
+    use_client(monkeypatch, client)
+
+    assert sync("2026-10-12") == 0
+
+    with open_accounts(env) as store:
+        types = {(t["provider"], t["type"]): t["arriving"] for t in store.sources("ow-a")["types"]}
+    assert types == {("garmin", "spo2"): False, ("oura", "spo2"): True}
+    assert sorted(client.head_calls) == [("spo2", "garmin"), ("spo2", "oura")]
+
+
+def test_sources_are_refreshed_at_most_once_in_24_hours(env, monkeypatch):
+    add_account(env, "ow-a", "a@example.test")
+    summary = {"by_provider": [{"provider": "garmin", "series_counts": {"spo2": 1}}]}
+    client = FakeClient(summary=summary)
+    use_client(monkeypatch, client)
+    at(monkeypatch, NOW)
+    assert sync("2026-10-12") == 0
+    at(monkeypatch, NOW + timedelta(hours=23))
+    assert sync("2026-10-12") == 0
+    assert len(client.head_calls) == 1
+
+    at(monkeypatch, NOW + timedelta(hours=25))
+    assert sync("2026-10-12") == 0
+    assert len(client.head_calls) == 2
+
+
+def test_a_non_api_failure_of_one_account_does_not_stop_the_others(env, monkeypatch, capsys):
+    at(monkeypatch, NOW)
+    add_account(env, "ow-a", "a@example.test")
+    add_account(env, "ow-b", "b@example.test")
+
+    class Broken(ByUser):
+        def timeseries(self, user_id, *args, **kwargs):
+            if user_id == "ow-a":
+                raise sqlite3.DatabaseError("secret detail")
+            return super().timeseries(user_id, *args, **kwargs)
+
+    use_client(monkeypatch, Broken({"ow-a": steps_client(1), "ow-b": steps_client(222)}))
+
+    assert sync("2026-10-12") == 1
+
+    assert day_of(env, "ow-b").steps == 222
+    err = capsys.readouterr().err
+    assert "DatabaseError" in err
+    assert "secret detail" not in err
+
+
+def test_a_failing_refresh_still_deletes_queued_folders(env, monkeypatch):
+    at(monkeypatch, NOW)
+    add_account(env, "ow-a", "a@example.test")
+    gone = env / "data" / "users" / "gone"
+    gone.mkdir(parents=True)
+    with open_accounts(env) as store:
+        store.deletions_add("gone", NOW)
+
+    class NoUsers(FakeClient):
+        def users(self):
+            raise ValueError("boom")
+
+    use_client(monkeypatch, NoUsers())
+
+    assert sync("2026-10-12") == 1
+
+    assert not gone.exists()

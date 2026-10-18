@@ -317,7 +317,7 @@ def test_connections_and_data_summary_return_the_json():
     assert client.data_summary("u1") == {"by_provider": []}
 
 
-def test_sample_head_reads_only_the_first_page():
+def test_sample_head_asks_for_one_sample_of_one_provider():
     calls: list[httpx.URL] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -332,11 +332,24 @@ def test_sample_head_reads_only_the_first_page():
             200, json={"data": [item], "pagination": {"next_cursor": "x", "has_more": True}}
         )
 
-    samples = make_client(handler).sample_head("u1", "energy", utc(2026, 10, 9), utc(2026, 10, 16))
+    samples = make_client(handler).sample_head(
+        "u1", "energy", "google", utc(2026, 10, 9), utc(2026, 10, 16)
+    )
 
     assert [(s.type, s.source.provider) for s in samples] == [("active_energy", "google")]
     assert len(calls) == 1
     assert calls[0].params.get_list("types") == ["energy"]
+    assert calls[0].params["provider"] == "google"
+    assert calls[0].params["limit"] == "1"
+
+
+def test_a_malformed_body_is_an_api_error():
+    client = make_client(lambda request: httpx.Response(200, content=b"<html>"))
+
+    with pytest.raises(OWError):
+        client.connections("u1")
+    with pytest.raises(OWError):
+        client.data_summary("u1")
 
 
 def test_summary_pairs_lists_provider_and_type_with_data():

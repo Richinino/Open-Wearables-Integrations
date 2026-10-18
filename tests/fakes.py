@@ -26,7 +26,7 @@ class FakeClient:
         self._ow_users = list(ow_users)
         self._connections = list(connections)
         self._summary = summary or {"by_provider": []}
-        self.head_calls: list[str] = []
+        self.head_calls: list[tuple[str, str]] = []
         self._samples = list(samples)
         self._workouts = list(workouts)
         self._sleeps = list(sleeps)
@@ -59,9 +59,12 @@ class FakeClient:
     def data_summary(self, user_id: str) -> dict[str, Any]:
         return self._summary
 
-    def sample_head(self, user_id: str, type_: str, start: datetime, end: datetime) -> list[Sample]:
-        self.head_calls.append(type_)
-        return self.timeseries(user_id, [type_], start, end)[:1]
+    def sample_head(
+        self, user_id: str, type_: str, provider: str, start: datetime, end: datetime
+    ) -> list[Sample]:
+        self.head_calls.append((type_, provider))
+        found = self.timeseries(user_id, [type_], start, end)
+        return [s for s in found if s.source.provider == provider][:1]
 
     def workouts(self, user_id: str, start: datetime, end: datetime) -> list[Workout]:
         return [w for w in self._workouts if start <= w.start <= end]

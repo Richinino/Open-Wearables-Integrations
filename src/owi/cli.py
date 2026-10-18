@@ -55,6 +55,7 @@ from owi.store import MAX_PLAUSIBLE_HR, Store
 DEFAULT_SYNC_DAYS = 3
 SYNC_BATCH_DAYS = 14
 ARRIVING_DAYS = 7
+SOURCES_EVERY = timedelta(hours=24)
 
 
 def _now() -> datetime:
@@ -426,26 +427,41 @@ def _refresh_ow_users(settings: Settings, accounts: Accounts) -> None:
     accounts.ow_users_replace([OwUser(item["id"], _ow_label(item)) for item in found])
 
 
+def _fresh(stored: dict, now: datetime) -> bool:
+    try:
+        return now - datetime.fromisoformat(stored["checked_at"]) < SOURCES_EVERY
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def _store_sources(
     settings: Settings, accounts: Accounts, ow_user_id: str, seen: Seen, now: datetime
 ) -> None:
-    """Connections, the types of data with whether they arrive, and the newest sample.
+    """The newest sample every run; connections and the types of data, with whether they
+    arrive, at most once in 24 hours.
 
-    A type arrives for a provider when it had a sample in the last week. The samples of the
+    A type arrives from a provider when it had a sample in the last week. The samples of the
     sync window tell it for the types owi downloads when the window covers the week; the
-    rest costs one request per type (its first page).
+    rest costs one request per provider and type.
     """
+    known = accounts.last_data(ow_user_id)
+    if seen.latest is not None and (known is None or seen.latest > known):
+        accounts.last_data_set(ow_user_id, seen.latest)
+    stored = accounts.sources(ow_user_id) or {}
+    was_samsung = bool(stored.get("samsung_health"))
+    if _fresh(stored, now) and (was_samsung or not seen.samsung):
+        return
     since = now - timedelta(days=ARRIVING_DAYS)
     with OWClient(settings.api_url, settings.api_key) as client:
         connections = client.connections(ow_user_id)
         pairs = summary_pairs(client.data_summary(ow_user_id))
         resolved = set(DAY_TYPES) if seen.covers_week else set()
-        for type_ in sorted({t for _, t in pairs} - resolved):
-            wanted = [(provider, t) for provider, t in pairs if t == type_]
-            if all(pair in seen.arriving for pair in wanted):
+        for provider, type_ in pairs:
+            if (provider, type_) in seen.arriving or type_ in resolved:
                 continue
-            for item in client.sample_head(ow_user_id, type_, since, now):
+            for item in client.sample_head(ow_user_id, type_, provider, since, now):
                 seen.note(item, since)
+                seen.arriving.add((provider, type_))
     providers = {p for p, _ in pairs} | {(c.get("provider") or "").lower() for c in connections}
     payload = {
         "connections": [
@@ -456,12 +472,11 @@ def _store_sources(
             {"type": type_, "provider": provider, "arriving": (provider, type_) in seen.arriving}
             for provider, type_ in sorted(pairs, key=lambda pair: (pair[1], pair[0]))
         ],
-        "samsung_health": seen.samsung or SAMSUNG_PROVIDER in providers,
+        # Once Samsung has been seen the flag stays: a quiet week does not undo it.
+        "samsung_health": was_samsung or seen.samsung or SAMSUNG_PROVIDER in providers,
+        "checked_at": now.isoformat(),
     }
     accounts.sources_replace(ow_user_id, json.dumps(payload), now)
-    known = accounts.last_data(ow_user_id)
-    if seen.latest is not None and (known is None or seen.latest > known):
-        accounts.last_data_set(ow_user_id, seen.latest)
 
 
 def _delete_queued_folders(settings: Settings, accounts: Accounts) -> None:
@@ -477,26 +492,41 @@ def _delete_queued_folders(settings: Settings, accounts: Accounts) -> None:
         accounts.deletions_done(ow_user_id)
 
 
+def _problem(what: str, exc: Exception) -> None:
+    """One short line on stderr; for other than API errors only the kind of failure."""
+    reason = str(exc) if isinstance(exc, OWError) else type(exc).__name__
+    print(f"chyba: {what}: {reason}", file=sys.stderr)
+
+
 def _sync_accounts(settings: Settings, days: list[date], now: datetime) -> bool:
-    """Sync every paired active account; one account failing does not stop the others."""
+    """Sync every paired active account; a failing step does not stop the others."""
     ok = True
     with Accounts(settings.accounts_path) as accounts:
         try:
             _refresh_ow_users(settings, accounts)
-        except OWError as exc:
-            print(f"chyba: zoznam používateľov: {exc}", file=sys.stderr)
+        except Exception as exc:
+            _problem("zoznam používateľov", exc)
             ok = False
-        for account in accounts.paired():
-            ow_user_id = account.ow_user_id or ""
+        try:
+            paired = accounts.paired()
+        except Exception as exc:
+            _problem("zoznam účtov", exc)
+            paired = []
+            ok = False
+        for account in paired:
             try:
-                seen = _sync_user(
-                    settings, account, users.user_paths(settings.data_dir, ow_user_id), days, now
-                )
+                ow_user_id = account.ow_user_id or ""
+                paths = users.user_paths(settings.data_dir, ow_user_id)
+                seen = _sync_user(settings, account, paths, days, now)
                 _store_sources(settings, accounts, ow_user_id, seen, now)
-            except OWError as exc:
-                print(f"chyba: účet {account.id}: {exc}", file=sys.stderr)
+            except Exception as exc:
+                _problem(f"účet {account.id}", exc)
                 ok = False
-        _delete_queued_folders(settings, accounts)
+        try:
+            _delete_queued_folders(settings, accounts)
+        except Exception as exc:
+            _problem("mazanie priečinkov", exc)
+            ok = False
     return ok
 
 
