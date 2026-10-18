@@ -25,7 +25,8 @@ services:
 
   # HTTP API for the web. It gets the results, its two tokens and nothing else: no Open
   # Wearables key and no access to that stack's network. It reads the results and writes
-  # only the Samsung Health entries (data/zapisy, created by owi sync and owi serve).
+  # only the accounts (data/accounts) and the Samsung Health entries (data/zapisy); both
+  # folders are created by owi sync and owi serve.
   api:
     image: owi:local
     command: ["owi", "serve", "--host", "0.0.0.0", "--port", "8787"]
@@ -38,6 +39,7 @@ services:
       OWI_DATA_DIR: /data
     volumes:
       - ../data:/data:ro
+      - ../data/accounts:/data/accounts
       - ../data/zapisy:/data/zapisy
     ports:
       # Local only; a reverse proxy (Tailscale Funnel) publishes it over HTTPS.

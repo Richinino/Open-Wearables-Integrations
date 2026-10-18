@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from owi import entries
+from owi import accounts, entries
 
 DEFAULT_API_URL = "http://localhost:8000"
 DEFAULT_TIMEZONE = "Europe/Bratislava"
@@ -33,6 +33,10 @@ class Settings:
     @property
     def db_path(self) -> Path:
         return self.data_dir / "owi.db"
+
+    @property
+    def accounts_path(self) -> Path:
+        return accounts.accounts_path(self.data_dir)
 
     @property
     def truth_path(self) -> Path:

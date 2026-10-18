@@ -1,4 +1,4 @@
-"""Command line entry point: owi sync | rescore | day | calibrate | check | entries | serve."""
+"""Command line entry point: owi sync | rescore | day | calibrate | check | entries | users | ..."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from owi import entries, samsung_scores, scoring, tuning
+from owi import entries, samsung_scores, scoring, tuning, users
 from owi.calibration import (
     FIT_WINDOW_DAYS,
     RefDay,
@@ -309,11 +309,12 @@ def _tune(settings: Settings, now: datetime) -> None:
 
 
 def _ensure_entries_dir(settings: Settings) -> None:
-    """The api container mounts this folder for writing; Docker needs it to exist."""
-    try:
-        settings.entries_path.parent.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        print(f"pozor: priečinok zápisov sa nedá vytvoriť: {exc}", file=sys.stderr)
+    """The api container mounts these folders for writing; Docker needs them to exist."""
+    for folder in (settings.entries_path.parent, settings.accounts_path.parent):
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            print(f"pozor: priečinok {folder} sa nedá vytvoriť: {exc}", file=sys.stderr)
 
 
 def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
@@ -473,6 +474,25 @@ def _cmd_entries_import(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _cmd_users_migrate(args: argparse.Namespace, settings: Settings) -> int:
+    """Move the single-user files into the user's folders, after a backup of data/."""
+    if not settings.data_dir.is_dir():
+        print(f"chýba {settings.data_dir}", file=sys.stderr)
+        return 1
+    backup = users.backup_data(settings.data_dir, _now())
+    print(f"záloha: {backup}")
+    try:
+        moved = users.migrate_legacy(settings.data_dir, args.ow_user)
+    except FileExistsError as exc:
+        print(f"chyba: {exc}", file=sys.stderr)
+        return 1
+    for name in moved:
+        print(f"presunuté: {name}")
+    if not moved:
+        print("nič na presun")
+    return 0
+
+
 def _cmd_serve(args: argparse.Namespace, settings: Settings) -> int:
     if len(settings.serve_token) < MIN_TOKEN_LENGTH:
         print(
@@ -545,6 +565,14 @@ def _parser() -> argparse.ArgumentParser:
     import_ = entry_actions.add_parser("import", help="jednorazovo prenesie data/truth.csv")
     import_.add_argument("--path", type=Path, help="CSV súbor (predvolene data/truth.csv)")
     import_.set_defaults(run=_cmd_entries_import)
+
+    user_commands = commands.add_parser("users", help="priečinky používateľov")
+    user_actions = user_commands.add_subparsers(dest="action", required=True)
+    migrate = user_actions.add_parser(
+        "migrate", help="jednorazovo presunie doterajšie dáta do priečinkov používateľa"
+    )
+    migrate.add_argument("--ow-user", required=True, help="ID používateľa v Open Wearables")
+    migrate.set_defaults(run=_cmd_users_migrate)
 
     serve = commands.add_parser(
         "serve", help="sprístupní uložené dni cez HTTP a prijíma zápisy zo Samsung Health"
