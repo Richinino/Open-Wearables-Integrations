@@ -5,9 +5,11 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 from owi import accounts, entries
+from owi.users import UserPaths
 
 DEFAULT_API_URL = "http://localhost:8000"
 DEFAULT_TIMEZONE = "Europe/Bratislava"
@@ -29,10 +31,20 @@ class Settings:
     write_token: str = ""
     age: int | None = None
     sex: str | None = None
+    # Set for one account's sync: its birth date and its folders instead of the single-user ones.
+    birth_date: date | None = None
+    paths: UserPaths | None = None
+
+    def age_on(self, day: date) -> int | None:
+        """The age at `day` from the birth date, else the configured age."""
+        born = self.birth_date
+        if born is None:
+            return self.age
+        return day.year - born.year - ((day.month, day.day) < (born.month, born.day))
 
     @property
     def db_path(self) -> Path:
-        return self.data_dir / "owi.db"
+        return self.paths.db_path if self.paths else self.data_dir / "owi.db"
 
     @property
     def accounts_path(self) -> Path:
@@ -44,15 +56,17 @@ class Settings:
 
     @property
     def params_path(self) -> Path:
-        return self.data_dir / "params.json"
+        return self.paths.params_path if self.paths else self.data_dir / "params.json"
 
     @property
     def score_weights_path(self) -> Path:
+        if self.paths:
+            return self.paths.score_weights_path
         return self.data_dir / "score_weights.json"
 
     @property
     def entries_path(self) -> Path:
-        return entries.path_in(self.data_dir)
+        return self.paths.entries_path if self.paths else entries.path_in(self.data_dir)
 
 
 def _read_env_file(path: Path) -> dict[str, str]:

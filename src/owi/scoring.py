@@ -8,7 +8,7 @@ the next (sleep need, the overreaching memory of the load status). Formulas: doc
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import date, timedelta
 from statistics import fmean
@@ -137,12 +137,13 @@ def rescore(
     base: Person,
     timezone: str,
     models: SamsungModels | None = None,
+    age_on: Callable[[date], int | None] | None = None,
 ) -> int:
     """Score every day with stored features from `first` to `last`, in date order.
 
     `base.max_hr` is the configured or calibrated maximum heart rate; without it each day
-    uses the highest stored one. Features are read in chunks and only the last 180 days
-    are kept, so memory stays bounded. Returns how many days were scored.
+    uses the highest stored one. `age_on` gives the age at each day (else `base.age`).
+    Features are read in chunks and only the last 180 days are kept, so memory stays bounded. Returns how many days were scored.
     """
     window = deque(
         store.features(first - timedelta(days=HISTORY_DAYS - 1), first - timedelta(days=1))
@@ -162,6 +163,8 @@ def rescore(
                 previous.popleft()
             max_hr = base.max_hr or store.max_hr_recent(features.day) or DEFAULT_MAX_HR
             person = person_for(base, window, max_hr)
+            if age_on is not None:
+                person = replace(person, age=age_on(features.day))
             scores = score_day(list(window), list(previous), person, timezone, models)
             store.save_scores(scores)
             previous.append(scores)

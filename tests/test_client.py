@@ -3,7 +3,7 @@ from datetime import UTC, date
 import httpx
 import pytest
 
-from owi.client import OWClient, OWError
+from owi.client import OWClient, OWError, summary_pairs
 from owi.models import SleepInterval, SleepSession
 from tests.factories import utc
 
@@ -291,3 +291,60 @@ def test_connection_failure_becomes_ow_error():
 
     with pytest.raises(OWError):
         make_client(handler).user_id()
+
+
+def test_users_follows_the_pages():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/users"
+        page = int(request.url.params["page"])
+        return httpx.Response(
+            200, json={"items": [{"id": f"u{page}"}], "page": page, "has_next": page < 2}
+        )
+
+    assert [u["id"] for u in make_client(handler).users()] == ["u1", "u2"]
+
+
+def test_connections_and_data_summary_return_the_json():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/connections"):
+            return httpx.Response(200, json=[{"provider": "garmin", "status": "active"}])
+        assert request.url.path == "/api/v1/users/u1/summaries/data"
+        return httpx.Response(200, json={"by_provider": []})
+
+    client = make_client(handler)
+
+    assert client.connections("u1") == [{"provider": "garmin", "status": "active"}]
+    assert client.data_summary("u1") == {"by_provider": []}
+
+
+def test_sample_head_reads_only_the_first_page():
+    calls: list[httpx.URL] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url)
+        item = {
+            "timestamp": "2026-10-12T07:30:00Z",
+            "type": "energy",
+            "value": 1.5,
+            "source": SOURCE,
+        }
+        return httpx.Response(
+            200, json={"data": [item], "pagination": {"next_cursor": "x", "has_more": True}}
+        )
+
+    samples = make_client(handler).sample_head("u1", "energy", utc(2026, 10, 9), utc(2026, 10, 16))
+
+    assert [(s.type, s.source.provider) for s in samples] == [("active_energy", "google")]
+    assert len(calls) == 1
+    assert calls[0].params.get_list("types") == ["energy"]
+
+
+def test_summary_pairs_lists_provider_and_type_with_data():
+    summary = {
+        "by_provider": [
+            {"provider": "Garmin", "series_counts": {"steps": 2, "energy": 1, "spo2": 0}},
+            {"provider": "samsung"},
+        ]
+    }
+
+    assert summary_pairs(summary) == [("garmin", "active_energy"), ("garmin", "steps")]

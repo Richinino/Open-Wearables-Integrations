@@ -59,6 +59,17 @@ def _intervals(raw: list[dict[str, Any]] | None) -> tuple[SleepInterval, ...]:
     return tuple(sorted(intervals, key=lambda interval: interval.start))
 
 
+def summary_pairs(summary: dict[str, Any]) -> list[tuple[str, str]]:
+    """(provider, type) pairs with data in a `summaries/data` answer, sorted."""
+    pairs = {
+        ((entry.get("provider") or "unknown").lower(), _TYPE_ALIASES.get(type_, type_))
+        for entry in summary.get("by_provider") or []
+        for type_, count in (entry.get("series_counts") or {}).items()
+        if count
+    }
+    return sorted(pairs)
+
+
 class OWClient:
     def __init__(
         self,
@@ -123,23 +134,63 @@ class OWClient:
             raise OWError(f"Expected exactly one user, found {len(items)}; set OWI_USER_ID")
         return items[0]["id"]
 
-    def timeseries(
-        self, user_id: str, types: Sequence[str], start: datetime, end: datetime
-    ) -> list[Sample]:
-        params = [
+    def users(self) -> list[dict[str, Any]]:
+        """Every Open Wearables user, as the API lists them (id, names, e-mail, ...)."""
+        found: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            body = self._get("/users", [("page", str(page)), ("limit", str(PAGE_LIMIT))])
+            items = body.get("items") or []
+            found.extend(items)
+            if not body.get("has_next") or not items:
+                return found
+            page += 1
+
+    def connections(self, user_id: str) -> list[dict[str, Any]]:
+        return self._get_list(f"/users/{user_id}/connections")
+
+    def data_summary(self, user_id: str) -> dict[str, Any]:
+        """Counts of the user's data per provider and type, over all time."""
+        return self._get(f"/users/{user_id}/summaries/data", [])
+
+    def _get_list(self, path: str) -> list[dict[str, Any]]:
+        try:
+            response = self._http.get(path)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise OWError(f"Open Wearables API request failed for {path}: {exc}") from exc
+        return response.json()
+
+    @staticmethod
+    def _sample(item: dict[str, Any]) -> Sample:
+        return Sample(
+            timestamp=_parse_time(item["timestamp"]),
+            type=_TYPE_ALIASES.get(item["type"], item["type"]),
+            value=float(item["value"]),
+            source=_source(item.get("source")),
+        )
+
+    @staticmethod
+    def _timeseries_params(
+        types: Sequence[str], start: datetime, end: datetime
+    ) -> list[tuple[str, str]]:
+        return [
             ("start_time", _format_time(start)),
             ("end_time", _format_time(end)),
             *[("types", type_) for type_ in types],
         ]
-        return [
-            Sample(
-                timestamp=_parse_time(item["timestamp"]),
-                type=_TYPE_ALIASES.get(item["type"], item["type"]),
-                value=float(item["value"]),
-                source=_source(item.get("source")),
-            )
-            for item in self._pages(f"/users/{user_id}/timeseries", params)
-        ]
+
+    def timeseries(
+        self, user_id: str, types: Sequence[str], start: datetime, end: datetime
+    ) -> list[Sample]:
+        params = self._timeseries_params(types, start, end)
+        return [self._sample(item) for item in self._pages(f"/users/{user_id}/timeseries", params)]
+
+    def sample_head(self, user_id: str, type_: str, start: datetime, end: datetime) -> list[Sample]:
+        """The first page of one type: enough to tell that it arrives, one request."""
+        params = [*self._timeseries_params([type_], start, end), ("limit", str(PAGE_LIMIT))]
+        body = self._get(f"/users/{user_id}/timeseries", params)
+        return [self._sample(item) for item in body.get("data") or []]
 
     def workouts(self, user_id: str, start: datetime, end: datetime) -> list[Workout]:
         params = [("start_date", _format_time(start)), ("end_date", _format_time(end))]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date, datetime
+from typing import Any
 
 from owi.models import HealthScore, Sample, SleepSession, Workout
 
@@ -18,7 +19,14 @@ class FakeClient:
         sleeps: Sequence[SleepSession] = (),
         user: str = "u1",
         health_scores: Sequence[HealthScore] = (),
+        ow_users: Sequence[dict[str, Any]] = (),
+        connections: Sequence[dict[str, Any]] = (),
+        summary: dict[str, Any] | None = None,
     ) -> None:
+        self._ow_users = list(ow_users)
+        self._connections = list(connections)
+        self._summary = summary or {"by_provider": []}
+        self.head_calls: list[str] = []
         self._samples = list(samples)
         self._workouts = list(workouts)
         self._sleeps = list(sleeps)
@@ -41,6 +49,19 @@ class FakeClient:
         self, user_id: str, types: Sequence[str], start: datetime, end: datetime
     ) -> list[Sample]:
         return [s for s in self._samples if s.type in types and start <= s.timestamp <= end]
+
+    def users(self) -> list[dict[str, Any]]:
+        return list(self._ow_users)
+
+    def connections(self, user_id: str) -> list[dict[str, Any]]:
+        return list(self._connections)
+
+    def data_summary(self, user_id: str) -> dict[str, Any]:
+        return self._summary
+
+    def sample_head(self, user_id: str, type_: str, start: datetime, end: datetime) -> list[Sample]:
+        self.head_calls.append(type_)
+        return self.timeseries(user_id, [type_], start, end)[:1]
 
     def workouts(self, user_id: str, start: datetime, end: datetime) -> list[Workout]:
         return [w for w in self._workouts if start <= w.start <= end]

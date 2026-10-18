@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sqlite3
 import sys
 import time
-from dataclasses import asdict, replace
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from owi import entries, samsung_scores, scoring, tuning, users
+from owi.accounts import Account, Accounts, OwUser
 from owi.calibration import (
     FIT_WINDOW_DAYS,
     RefDay,
@@ -22,12 +25,22 @@ from owi.calibration import (
     save_params,
     stride_samples,
 )
-from owi.client import OWClient, OWError
+from owi.client import OWClient, OWError, summary_pairs
 from owi.config import Settings, load_settings
 from owi.days import day_window, today
 from owi.entries import Entry
-from owi.models import DEFAULT_MAX_HR, HEART_RATE, DayInputs, DayResult, Params, Profile
+from owi.models import (
+    DEFAULT_MAX_HR,
+    HEART_RATE,
+    SAMSUNG_PROVIDER,
+    DayInputs,
+    DayResult,
+    Params,
+    Profile,
+    Sample,
+)
 from owi.pipeline import (
+    DAY_TYPES,
     compute,
     day_features,
     fetch_day,
@@ -41,6 +54,7 @@ from owi.store import MAX_PLAUSIBLE_HR, Store
 
 DEFAULT_SYNC_DAYS = 3
 SYNC_BATCH_DAYS = 14
+ARRIVING_DAYS = 7
 
 
 def _now() -> datetime:
@@ -53,6 +67,29 @@ def _date(value: str) -> date:
 
 def _days_between(first: date, last: date) -> list[date]:
     return [first + timedelta(days=offset) for offset in range((last - first).days + 1)]
+
+
+@dataclass
+class Seen:
+    """What a user's sync run saw of the data: the newest sample, whether any came from
+    Samsung, and which (provider, type) pairs had a sample in the last week."""
+
+    latest: datetime | None = None
+    samsung: bool = False
+    arriving: set[tuple[str, str]] = field(default_factory=set)
+    covers_week: bool = False
+
+    def observe(self, samples: Sequence[Sample], since: datetime) -> None:
+        for item in samples:
+            if self.latest is None or item.timestamp > self.latest:
+                self.latest = item.timestamp
+            self.note(item, since)
+
+    def note(self, item: Sample, since: datetime) -> None:
+        source = item.source
+        self.samsung = self.samsung or source.is_samsung_direct or source.is_samsung_health_app
+        if item.timestamp >= since:
+            self.arriving.add((source.provider, item.type))
 
 
 def _max_hr(
@@ -114,10 +151,10 @@ def _line(result: DayResult) -> str:
     )
 
 
-def _person(settings: Settings, profile: Profile) -> Person:
+def _person(settings: Settings, profile: Profile, day: date) -> Person:
     """What the features of a day need, with the maximum heart rate the day was computed with."""
     return Person(
-        age=settings.age,
+        age=settings.age_on(day),
         sex=settings.sex,
         weight_kg=profile.weight_kg,
         body_fat_pct=profile.body_fat_pct,
@@ -125,7 +162,9 @@ def _person(settings: Settings, profile: Profile) -> Person:
     )
 
 
-def _sync_batch(settings: Settings, days: list[date], now: datetime) -> list[date]:
+def _sync_batch(
+    settings: Settings, days: list[date], now: datetime, seen: Seen | None = None
+) -> list[date]:
     """Fetch the whole batch before saving any of it, so a failed batch changes nothing.
 
     Days are saved in date order, so each day's features see those of the days before it.
@@ -135,19 +174,26 @@ def _sync_batch(settings: Settings, days: list[date], now: datetime) -> list[dat
     saved: list[date] = []
     with Store(settings.db_path) as store, OWClient(settings.api_url, settings.api_key) as client:
         inputs = _fetch(settings, params.max_hr, client, store, days, now)
+        if seen is not None:
+            for item in inputs.values():
+                seen.observe(item.samples, now - timedelta(days=ARRIVING_DAYS))
         for day in sorted(inputs):
             item = inputs[day]
             if item.complete and not has_data(item):
                 continue
             result = compute(item, params, settings.timezone)
             store.save_day(result)
-            store.save_features(day_features(store, item, result, _person(settings, item.profile)))
+            store.save_features(
+                day_features(store, item, result, _person(settings, item.profile, day))
+            )
             saved.append(day)
             print(_line(result))
     return saved
 
 
-def _sync_once(settings: Settings, days: list[date], now: datetime) -> None:
+def _sync_once(
+    settings: Settings, days: list[date], now: datetime, seen: Seen | None = None
+) -> None:
     """Long ranges go in batches to bound memory; finished batches stay saved.
 
     Scores chain from day to day, so every stored day from the first saved one on is
@@ -156,7 +202,7 @@ def _sync_once(settings: Settings, days: list[date], now: datetime) -> None:
     first_saved: date | None = None
     try:
         for offset in range(0, len(days), SYNC_BATCH_DAYS):
-            saved = _sync_batch(settings, days[offset : offset + SYNC_BATCH_DAYS], now)
+            saved = _sync_batch(settings, days[offset : offset + SYNC_BATCH_DAYS], now, seen)
             if saved and first_saved is None:
                 first_saved = min(saved)
             sys.stdout.flush()
@@ -175,7 +221,9 @@ def _rescore(settings: Settings, first: date, last: date | None = None) -> None:
         if span is None:
             return
         last = last or span[1]
-        count = scoring.rescore(store, first, last, base, settings.timezone, models)
+        count = scoring.rescore(
+            store, first, last, base, settings.timezone, models, settings.age_on
+        )
     print(f"skóre prepočítané od {first} do {last}, počet dní: {count}")
 
 
@@ -247,7 +295,7 @@ def _fit(
         refs,
         stride_samples(w for day in stored for w in day.workouts),
         history,
-        Person(age=settings.age, sex=settings.sex),
+        Person(age=settings.age_on(last), sex=settings.sex),
         settings.timezone,
         replace(params, max_hr=max_hr),
         samsung_scores.load_models(settings.score_weights_path),
@@ -317,6 +365,141 @@ def _ensure_entries_dir(settings: Settings) -> None:
             print(f"pozor: priečinok {folder} sa nedá vytvoriť: {exc}", file=sys.stderr)
 
 
+def _user_settings(settings: Settings, account: Account, paths: users.UserPaths) -> Settings:
+    """The settings of one account's sync: its folders, its profile and not the owner's.
+
+    The values in .env (age, sex, weights, maximum heart rate) are those of the user the old
+    single-user setup was made for; only that user's account falls back to them.
+    """
+    owner = account.ow_user_id == settings.user_id
+    base = (
+        settings
+        if owner
+        else replace(
+            settings,
+            age=None,
+            sex=None,
+            max_hr=None,
+            weight_kg=None,
+            vo2max=None,
+            basal_kcal=None,
+        )
+    )
+    return replace(
+        base,
+        user_id=paths.ow_user_id,
+        sex=account.sex or base.sex,
+        birth_date=date.fromisoformat(account.birth_date) if account.birth_date else None,
+        paths=paths,
+    )
+
+
+def _sync_user(
+    settings: Settings,
+    account: Account,
+    paths: users.UserPaths,
+    days: list[date],
+    now: datetime,
+) -> Seen:
+    """Sync one account into its own folder; tune only when the account allows it."""
+    user = _user_settings(settings, account, paths)
+    for folder in (paths.folder, paths.entries_path.parent):
+        folder.mkdir(parents=True, exist_ok=True)
+    tz = ZoneInfo(settings.timezone)
+    first_start, _ = day_window(min(days), tz)
+    _, last_end = day_window(max(days), tz)
+    seen = Seen(covers_week=first_start <= now - timedelta(days=ARRIVING_DAYS) and last_end >= now)
+    _sync_once(user, days, now, seen)
+    if account.training_consent:
+        _tune(user, now)
+    return seen
+
+
+def _ow_label(item: dict) -> str:
+    name = " ".join(part for part in (item.get("first_name"), item.get("last_name")) if part)
+    return " · ".join(part for part in (name, item.get("email")) if part) or item["id"]
+
+
+def _refresh_ow_users(settings: Settings, accounts: Accounts) -> None:
+    with OWClient(settings.api_url, settings.api_key) as client:
+        found = client.users()
+    accounts.ow_users_replace([OwUser(item["id"], _ow_label(item)) for item in found])
+
+
+def _store_sources(
+    settings: Settings, accounts: Accounts, ow_user_id: str, seen: Seen, now: datetime
+) -> None:
+    """Connections, the types of data with whether they arrive, and the newest sample.
+
+    A type arrives for a provider when it had a sample in the last week. The samples of the
+    sync window tell it for the types owi downloads when the window covers the week; the
+    rest costs one request per type (its first page).
+    """
+    since = now - timedelta(days=ARRIVING_DAYS)
+    with OWClient(settings.api_url, settings.api_key) as client:
+        connections = client.connections(ow_user_id)
+        pairs = summary_pairs(client.data_summary(ow_user_id))
+        resolved = set(DAY_TYPES) if seen.covers_week else set()
+        for type_ in sorted({t for _, t in pairs} - resolved):
+            wanted = [(provider, t) for provider, t in pairs if t == type_]
+            if all(pair in seen.arriving for pair in wanted):
+                continue
+            for item in client.sample_head(ow_user_id, type_, since, now):
+                seen.note(item, since)
+    providers = {p for p, _ in pairs} | {(c.get("provider") or "").lower() for c in connections}
+    payload = {
+        "connections": [
+            {key: item.get(key) for key in ("provider", "status", "last_synced_at")}
+            for item in connections
+        ],
+        "types": [
+            {"type": type_, "provider": provider, "arriving": (provider, type_) in seen.arriving}
+            for provider, type_ in sorted(pairs, key=lambda pair: (pair[1], pair[0]))
+        ],
+        "samsung_health": seen.samsung or SAMSUNG_PROVIDER in providers,
+    }
+    accounts.sources_replace(ow_user_id, json.dumps(payload), now)
+    known = accounts.last_data(ow_user_id)
+    if seen.latest is not None and (known is None or seen.latest > known):
+        accounts.last_data_set(ow_user_id, seen.latest)
+
+
+def _delete_queued_folders(settings: Settings, accounts: Accounts) -> None:
+    """Remove the folders of users taken out of the app, unless an account uses them again."""
+    kept = {account.ow_user_id for account in accounts.all()}
+    root = (settings.data_dir / users.USERS_DIR).resolve()
+    for ow_user_id in accounts.deletions_pending():
+        if ow_user_id in kept:
+            continue
+        folder = users.user_paths(settings.data_dir, ow_user_id).folder
+        if folder.resolve().parent == root:
+            shutil.rmtree(folder, ignore_errors=True)
+        accounts.deletions_done(ow_user_id)
+
+
+def _sync_accounts(settings: Settings, days: list[date], now: datetime) -> bool:
+    """Sync every paired active account; one account failing does not stop the others."""
+    ok = True
+    with Accounts(settings.accounts_path) as accounts:
+        try:
+            _refresh_ow_users(settings, accounts)
+        except OWError as exc:
+            print(f"chyba: zoznam používateľov: {exc}", file=sys.stderr)
+            ok = False
+        for account in accounts.paired():
+            ow_user_id = account.ow_user_id or ""
+            try:
+                seen = _sync_user(
+                    settings, account, users.user_paths(settings.data_dir, ow_user_id), days, now
+                )
+                _store_sources(settings, accounts, ow_user_id, seen, now)
+            except OWError as exc:
+                print(f"chyba: účet {account.id}: {exc}", file=sys.stderr)
+                ok = False
+        _delete_queued_folders(settings, accounts)
+    return ok
+
+
 def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
     tz = ZoneInfo(settings.timezone)
     _ensure_entries_dir(settings)
@@ -325,8 +508,13 @@ def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
         last = args.to or today(tz, now)
         first = args.from_ or last - timedelta(days=args.days - 1)
         try:
-            _sync_once(settings, _days_between(first, last), now)
-            _tune(settings, now)
+            if settings.accounts_path.is_file():
+                if not _sync_accounts(settings, _days_between(first, last), now) and not args.loop:
+                    return 1
+            else:
+                # Until the data is migrated there are no accounts: the one user of .env.
+                _sync_once(settings, _days_between(first, last), now)
+                _tune(settings, now)
         except OWError as exc:
             print(f"chyba: {exc}", file=sys.stderr)
             if not args.loop:

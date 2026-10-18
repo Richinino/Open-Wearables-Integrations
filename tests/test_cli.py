@@ -5,10 +5,12 @@ from datetime import date, timedelta
 import pytest
 
 from owi import cli, entries, tuning
+from owi.accounts import Accounts, accounts_path
 from owi.calibration import day_weight, load_params, save_params
 from owi.client import OWError
-from owi.models import ACTIVE_ENERGY, STEPS, Params
+from owi.models import ACTIVE_ENERGY, STEPS, Params, SourceRef
 from owi.store import Store
+from owi.users import user_paths
 from tests.factories import (
     HC_SHEALTH,
     SAMSUNG_WATCH,
@@ -577,3 +579,273 @@ def test_a_locked_entries_store_postpones_the_fit(env, monkeypatch, capsys):
     assert "doladenie odložené" in capsys.readouterr().err
     with Store(env / "data" / "owi.db") as store:
         assert store.latest_fit() is None
+
+
+# Several users: one folder each
+
+OTHER_DAY = date(2026, 10, 14)
+
+
+class ByUser(FakeClient):
+    """Answers each Open Wearables user from that user's own fake data."""
+
+    def __init__(self, clients: dict[str, FakeClient], **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.clients = clients
+
+    def timeseries(self, user_id, types, start, end):
+        return self.clients[user_id].timeseries(user_id, types, start, end)
+
+    def workouts(self, user_id, start, end):
+        return self.clients[user_id].workouts(user_id, start, end)
+
+    def sleeps(self, user_id, start, end):
+        return self.clients[user_id].sleeps(user_id, start, end)
+
+    def health_scores(self, user_id, category, provider, first, last):
+        return self.clients[user_id].health_scores(user_id, category, provider, first, last)
+
+
+def open_accounts(env) -> Accounts:
+    return Accounts(accounts_path(env / "data"))
+
+
+def add_account(env, ow_user_id, email, *, status="active", **changes):
+    """A paired account (suspended afterwards when asked); `changes` go to Accounts.update."""
+    with open_accounts(env) as store:
+        account = store.create(email, "Test", None, "correct horse battery", "user", "pending", NOW)
+        store.pair(account.id, ow_user_id)
+        if changes:
+            store.update(account.id, changes)
+        if status != "active":
+            store.set_role_status(account.id, None, status)
+        return account
+
+
+def paths_of(env, ow_user_id):
+    return user_paths(env / "data", ow_user_id)
+
+
+def day_of(env, ow_user_id, day: date = DAY):
+    with Store(paths_of(env, ow_user_id).db_path) as store:
+        return store.get_day(day)
+
+
+def steps_client(steps: int) -> FakeClient:
+    return FakeClient([sample(START, STEPS, steps, HC_SHEALTH)])
+
+
+def test_sync_runs_for_every_paired_active_account(env, monkeypatch):
+    at(monkeypatch, NOW)
+    add_account(env, "ow-a", "a@example.test")
+    add_account(env, "ow-b", "b@example.test")
+    add_account(env, "ow-c", "c@example.test", status="suspended")
+    clients = {"ow-a": steps_client(111), "ow-b": steps_client(222), "ow-c": steps_client(333)}
+    use_client(monkeypatch, ByUser(clients))
+
+    assert sync("2026-10-12") == 0
+
+    assert day_of(env, "ow-a").steps == 111
+    assert day_of(env, "ow-b").steps == 222
+    assert not paths_of(env, "ow-c").folder.exists()
+    assert not (env / "data" / "owi.db").exists()
+
+
+def test_sync_without_accounts_db_keeps_the_single_user_behaviour(env, monkeypatch):
+    at(monkeypatch, NOW)
+    monkeypatch.setenv("OWI_USER_ID", "ow-legacy")
+    use_client(monkeypatch, FakeClient([sample(START, STEPS, 777, HC_SHEALTH)], user="ow-legacy"))
+
+    assert sync("2026-10-12") == 0
+
+    with Store(env / "data" / "owi.db") as store:
+        assert store.get_day(DAY).steps == 777
+    assert not (env / "data" / "users").exists()
+    assert not accounts_path(env / "data").exists()
+
+
+def sleeping_client() -> FakeClient:
+    """Worn long enough on 12 and 14 October for strain, with a night before each."""
+    samples = []
+    nights = []
+    for day in (DAY, OTHER_DAY):
+        start = utc(day.year, day.month, day.day - 1, 22)
+        samples += [sample(start, STEPS, 5000, HC_SHEALTH), *hr_minutes(start, [55.0] * 1000)]
+        nights.append(
+            sleep_session(f"n{day}", start - timedelta(hours=1), start + timedelta(hours=7))
+        )
+    return FakeClient(samples, sleeps=nights)
+
+
+def sleep_need(env, ow_user_id, day: date) -> float:
+    with Store(paths_of(env, ow_user_id).db_path) as store:
+        return store.get_scores(day).sleep_need_minutes
+
+
+def test_age_comes_from_birth_date_at_each_day(env, monkeypatch):
+    at(monkeypatch, NOW)
+    # Turns 18 on 13 October: a teenager's need on the 12th, an adult's on the 14th.
+    add_account(env, "ow-a", "a@example.test", birth_date="2008-10-13", sex="male")
+    use_client(monkeypatch, ByUser({"ow-a": sleeping_client()}))
+
+    assert cli.main(["sync", "--from", "2026-10-12", "--to", "2026-10-14"]) == 0
+
+    assert sleep_need(env, "ow-a", DAY) == pytest.approx(480.0, abs=5.0)
+    assert sleep_need(env, "ow-a", OTHER_DAY) == pytest.approx(450.0, abs=5.0)
+
+
+def test_account_without_a_profile_does_not_get_the_env_profile(env, monkeypatch):
+    at(monkeypatch, NOW)
+    monkeypatch.setenv("OWI_AGE", "17")
+    add_account(env, "ow-a", "a@example.test")
+    use_client(monkeypatch, ByUser({"ow-a": sleeping_client()}))
+
+    assert cli.main(["sync", "--from", "2026-10-12", "--to", "2026-10-12"]) == 0
+
+    assert sleep_need(env, "ow-a", DAY) == pytest.approx(450.0, abs=5.0)
+
+
+def test_the_old_user_falls_back_to_the_env_profile(env, monkeypatch):
+    at(monkeypatch, NOW)
+    monkeypatch.setenv("OWI_USER_ID", "ow-a")
+    monkeypatch.setenv("OWI_AGE", "17")
+    add_account(env, "ow-a", "a@example.test")
+    use_client(monkeypatch, ByUser({"ow-a": sleeping_client()}))
+
+    assert cli.main(["sync", "--from", "2026-10-12", "--to", "2026-10-12"]) == 0
+
+    assert sleep_need(env, "ow-a", DAY) == pytest.approx(480.0, abs=5.0)
+
+
+def test_consent_off_skips_tuning_and_uses_defaults(env, monkeypatch):
+    at(monkeypatch, NOW)
+    add_account(env, "ow-a", "a@example.test", training_consent=False)
+    add_account(env, "ow-b", "b@example.test")
+    for ow_user_id in ("ow-a", "ow-b"):
+        entries.save(paths_of(env, ow_user_id).entries_path, DAY, {"steps": 10000}, NOW)
+    clients = {"ow-a": steps_client(10000), "ow-b": steps_client(10000)}
+    use_client(monkeypatch, ByUser(clients))
+
+    assert sync("2026-10-12") == 0
+
+    assert not paths_of(env, "ow-a").params_path.exists()
+    assert load_params(paths_of(env, "ow-a").params_path) == Params()
+    with Store(paths_of(env, "ow-a").db_path) as store:
+        assert store.latest_fit() is None
+    with Store(paths_of(env, "ow-b").db_path) as store:
+        assert store.latest_fit() is not None
+
+
+GARMIN = SourceRef("garmin")
+SUMMARY = {
+    "series_type_counts": {"steps": 3, "heart_rate": 2, "spo2": 4},
+    "by_provider": [
+        {
+            "provider": "garmin",
+            "data_points": 9,
+            "series_counts": {"steps": 3, "heart_rate": 2, "spo2": 4},
+        }
+    ],
+}
+OW_USERS = [
+    {"id": "ow-a", "first_name": "Ada", "last_name": "Test", "email": "ada@example.test"},
+    {"id": "ow-b", "first_name": None, "last_name": "", "email": "b@example.test"},
+]
+CONNECTIONS = [{"provider": "garmin", "status": "active", "last_synced_at": "2026-10-16T08:00:00Z"}]
+
+
+def test_sync_stores_ow_users_sources_and_last_data_in_accounts(env, monkeypatch):
+    at(monkeypatch, NOW)
+    add_account(env, "ow-a", "a@example.test")
+    samples = [sample(START, STEPS, 100, GARMIN), sample(utc(2026, 10, 14, 8), "spo2", 97, GARMIN)]
+    client = FakeClient(samples, ow_users=OW_USERS, connections=CONNECTIONS, summary=SUMMARY)
+    use_client(monkeypatch, client)
+
+    assert sync("2026-10-12") == 0
+
+    with open_accounts(env) as store:
+        assert {user.id: user.label for user in store.ow_users()} == {
+            "ow-a": "Ada Test · ada@example.test",
+            "ow-b": "b@example.test",
+        }
+        sources = store.sources("ow-a")
+        assert store.last_data("ow-a") == START
+    assert sources["connections"] == CONNECTIONS
+    assert sources["types"] == [
+        {"type": "heart_rate", "provider": "garmin", "arriving": False},
+        {"type": "spo2", "provider": "garmin", "arriving": True},
+        {"type": "steps", "provider": "garmin", "arriving": True},
+    ]
+    assert sources["samsung_health"] is False
+    # Steps arrived in the synced window; only the other two types needed a request.
+    assert sorted(client.head_calls) == ["heart_rate", "spo2"]
+
+
+@pytest.mark.parametrize("source", [SAMSUNG_WATCH, HC_SHEALTH])
+def test_samsung_health_flag_is_set_for_samsung_samples(env, monkeypatch, source):
+    at(monkeypatch, NOW)
+    add_account(env, "ow-a", "a@example.test")
+    use_client(monkeypatch, FakeClient([sample(START, STEPS, 100, source)]))
+
+    assert sync("2026-10-12") == 0
+
+    with open_accounts(env) as store:
+        assert store.sources("ow-a")["samsung_health"] is True
+
+
+def test_a_week_long_window_needs_no_request_for_the_types_it_downloads(env, monkeypatch):
+    at(monkeypatch, NOW)
+    add_account(env, "ow-a", "a@example.test")
+    summary = {"by_provider": [{"provider": "garmin", "series_counts": {"steps": 1, "spo2": 1}}]}
+    client = FakeClient([sample(START, STEPS, 100, GARMIN)], summary=summary)
+    use_client(monkeypatch, client)
+
+    assert cli.main(["sync", "--days", "8"]) == 0
+
+    assert client.head_calls == ["spo2"]
+    with open_accounts(env) as store:
+        types = {t["type"]: t["arriving"] for t in store.sources("ow-a")["types"]}
+    assert types == {"steps": True, "spo2": False}
+
+
+def test_sync_deletes_queued_folders_of_unpaired_users(env, monkeypatch):
+    at(monkeypatch, NOW)
+    add_account(env, "ow-a", "a@example.test")
+    data = env / "data"
+    for name in ("gone", "ow-a", "other"):
+        (data / "users" / name).mkdir(parents=True)
+        if name != "ow-a":
+            (data / "users" / name / "owi.db").write_text("x", "utf-8")
+    (data / "victim").mkdir()
+    with open_accounts(env) as store:
+        for name in ("gone", "ow-a", "../victim"):
+            store.deletions_add(name, NOW)
+    use_client(monkeypatch, FakeClient())
+
+    assert sync("2026-10-12") == 0
+
+    assert not (data / "users" / "gone").exists()
+    assert (data / "users" / "other").exists()
+    assert (data / "users" / "ow-a").exists()
+    assert (data / "victim").exists()
+    with open_accounts(env) as store:
+        assert store.deletions_pending() == ["ow-a"]
+
+
+def test_one_failing_user_does_not_stop_the_others(env, monkeypatch, capsys):
+    at(monkeypatch, NOW)
+    add_account(env, "ow-a", "a@example.test")
+    add_account(env, "ow-b", "b@example.test")
+
+    class Broken(ByUser):
+        def timeseries(self, user_id, *args, **kwargs):
+            if user_id == "ow-a":
+                raise OWError("unreachable")
+            return super().timeseries(user_id, *args, **kwargs)
+
+    use_client(monkeypatch, Broken({"ow-a": steps_client(1), "ow-b": steps_client(222)}))
+
+    assert sync("2026-10-12") == 1
+
+    assert day_of(env, "ow-b").steps == 222
+    assert "unreachable" in capsys.readouterr().err
