@@ -953,3 +953,46 @@ def test_a_failing_refresh_still_deletes_queued_folders(env, monkeypatch):
     assert sync("2026-10-12") == 1
 
     assert not gone.exists()
+
+
+def test_the_loop_survives_a_locked_accounts_store(env, monkeypatch, capsys):
+    at(monkeypatch, NOW)
+    add_account(env, "ow-a", "a@example.test")
+    use_client(monkeypatch, ByUser({"ow-a": steps_client(111)}))
+    real = cli.Accounts
+    opened = []
+
+    def flaky(path):
+        opened.append(path)
+        if len(opened) == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return real(path)
+
+    sleeps = []
+
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 2:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "Accounts", flaky)
+    monkeypatch.setattr(cli.time, "sleep", fake_sleep)
+
+    with pytest.raises(KeyboardInterrupt):
+        cli.main(["sync", "--from", "2026-10-12", "--to", "2026-10-12", "--loop", "5"])
+
+    assert len(opened) == 2
+    assert "OperationalError" in capsys.readouterr().err
+    assert day_of(env, "ow-a").steps == 111
+
+
+def test_a_broken_accounts_store_fails_a_single_run(env, monkeypatch, capsys):
+    add_account(env, "ow-a", "a@example.test")
+
+    def locked(path):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(cli, "Accounts", locked)
+
+    assert sync("2026-10-12") == 1
+    assert "OperationalError" in capsys.readouterr().err

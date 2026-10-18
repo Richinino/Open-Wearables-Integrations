@@ -530,27 +530,33 @@ def _sync_accounts(settings: Settings, days: list[date], now: datetime) -> bool:
     return ok
 
 
-def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
-    tz = ZoneInfo(settings.timezone)
+def _sync_round(args: argparse.Namespace, settings: Settings) -> bool:
+    """One pass over the requested days; False when something failed."""
+    now = _now()
+    last = args.to or today(ZoneInfo(settings.timezone), now)
+    first = args.from_ or last - timedelta(days=args.days - 1)
+    days = _days_between(first, last)
     _ensure_entries_dir(settings)
+    if settings.accounts_path.is_file():
+        return _sync_accounts(settings, days, now)
+    # Until the data is migrated there are no accounts: the one user of .env.
+    _sync_once(settings, days, now)
+    _tune(settings, now)
+    return True
+
+
+def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
     while True:
-        now = _now()
-        last = args.to or today(tz, now)
-        first = args.from_ or last - timedelta(days=args.days - 1)
         try:
-            if settings.accounts_path.is_file():
-                if not _sync_accounts(settings, _days_between(first, last), now) and not args.loop:
-                    return 1
-            else:
-                # Until the data is migrated there are no accounts: the one user of .env.
-                _sync_once(settings, _days_between(first, last), now)
-                _tune(settings, now)
+            ok = _sync_round(args, settings)
         except OWError as exc:
             print(f"chyba: {exc}", file=sys.stderr)
-            if not args.loop:
-                return 1
+            ok = False
+        except Exception as exc:  # the loop must outlive a locked or broken database
+            print(f"chyba: {type(exc).__name__}", file=sys.stderr)
+            ok = False
         if not args.loop:
-            return 0
+            return 0 if ok else 1
         sys.stdout.flush()
         time.sleep(args.loop)
 
