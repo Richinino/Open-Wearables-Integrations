@@ -207,15 +207,3 @@ def delete(path: Path, day: date) -> None:
         db.execute('DELETE FROM entries WHERE "day" = ?', (day.isoformat(),))
 
     _run(path, False, remove)
-
-
-def signature(path: Path) -> tuple[int, str | None]:
-    """Row count and newest saved_at: changes whenever an entry is saved or deleted."""
-    if not path.is_file():
-        return 0, None
-
-    def read(db: sqlite3.Connection) -> tuple[int, str | None]:
-        count, newest = db.execute('SELECT COUNT(*), MAX("saved_at") FROM entries').fetchone()
-        return int(count), newest
-
-    return _run(path, True, read)

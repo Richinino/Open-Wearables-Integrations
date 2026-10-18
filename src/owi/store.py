@@ -79,7 +79,8 @@ CREATE TABLE IF NOT EXISTS params_history (
     "entries" INTEGER NOT NULL,
     "entries_saved_at" TEXT,
     "params" TEXT NOT NULL,
-    "quality" TEXT NOT NULL
+    "quality" TEXT NOT NULL,
+    "signature" TEXT
 );
 CREATE TABLE IF NOT EXISTS recompute_state (
     "id" INTEGER PRIMARY KEY CHECK ("id" = 1),
@@ -92,7 +93,10 @@ SCORES_TABLE = "day_scores"
 HISTORY_TABLE = "params_history"
 RECOMPUTE_TABLE = "recompute_state"
 # Columns added to existing tables after their first release: (table, column, type).
-_ADDED_COLUMNS = (("workouts", "phone_steps", "INTEGER"),)
+_ADDED_COLUMNS = (
+    ("workouts", "phone_steps", "INTEGER"),
+    ("params_history", "signature", "TEXT"),
+)
 
 T = TypeVar("T")
 
@@ -105,10 +109,11 @@ class FitRecord:
     """One tuning run: when, the entries it saw, the values it chose and how well they did."""
 
     fitted_at: datetime
-    entries: int
-    entries_saved_at: str | None  # newest saved_at among the entries, to notice changes
+    entries: int  # days with the user's entry or one of Samsung's own numbers (auto entries)
+    entries_saved_at: str | None  # newest saved_at among the user's entries
     params: dict[str, Any]
     quality: dict[str, Any]
+    signature: str | None = None  # digest of every value the fit saw, to notice changes
 
 
 def _encode(value: Any) -> Any:
@@ -318,6 +323,7 @@ class Store:
             "entries_saved_at": record.entries_saved_at,
             "params": json.dumps(record.params),
             "quality": json.dumps(record.quality),
+            "signature": record.signature,
         }
         with self._db:
             self._db.execute(_insert(HISTORY_TABLE, tuple(row)), row)
@@ -336,6 +342,8 @@ class Store:
             entries_saved_at=row["entries_saved_at"],
             params=json.loads(row["params"]),
             quality=json.loads(row["quality"]),
+            # A read-only store over an older database lacks the column.
+            signature=row["signature"] if "signature" in row.keys() else None,
         )
 
     def set_recompute_state(self, params: dict[str, Any], recomputed_at: datetime | None) -> None:

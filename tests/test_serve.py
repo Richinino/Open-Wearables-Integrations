@@ -143,7 +143,7 @@ def test_a_day_carries_every_stored_field_and_its_workouts(db_path):
 
     (day,) = body["days"]
     stored = {f.name for f in fields(DayResult)}
-    assert set(day) == stored | {"scores", "sleep_timeline", "samsung"}
+    assert set(day) == stored | {"scores", "sleep_timeline", "samsung", "samsung_auto"}
     assert day["complete"] is True
     assert day["steps_source"] == "samsung_health_total"
     assert day["total_kcal_est"] == 2550.5
@@ -490,6 +490,30 @@ def test_days_carry_their_samsung_entry_or_null(db_path):
     days = get(db_path, "/v1/days").body["days"]
 
     assert [d["samsung"] for d in days] == [None, saved, None]
+
+
+def test_days_carry_samsungs_own_numbers_or_null(db_path):
+    with Store(db_path) as store:
+        store.save_features(
+            make_features(
+                date(2026, 10, 2),
+                samsung_steps=18230,
+                samsung_active_kcal=960.0,
+                samsung_sleep_score=84.0,
+            )
+        )
+    saved = put(db_path, "2026-10-02").body
+
+    days = get(db_path, "/v1/days").body["days"]
+
+    # Day 1 has features without Samsung's numbers, day 3 no features at all.
+    assert [d["samsung_auto"] for d in days] == [
+        None,
+        {"steps": 18230, "active_kcal": 960.0, "sleep_score": 84.0},
+        None,
+    ]
+    # The user's entry stays apart from them.
+    assert days[1]["samsung"] == saved
 
 
 def test_days_without_an_entries_store_and_a_fit_have_the_empty_calibration(db_path):

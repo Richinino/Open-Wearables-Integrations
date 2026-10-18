@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import date, datetime
 
-from owi.models import Sample, SleepSession, Workout
+from owi.models import HealthScore, Sample, SleepSession, Workout
 
 
 class FakeClient:
@@ -17,11 +17,13 @@ class FakeClient:
         workouts: Sequence[Workout] = (),
         sleeps: Sequence[SleepSession] = (),
         user: str = "u1",
+        health_scores: Sequence[HealthScore] = (),
     ) -> None:
         self._samples = list(samples)
         self._workouts = list(workouts)
         self._sleeps = list(sleeps)
         self._user = user
+        self._health_scores = list(health_scores)
 
     def __enter__(self) -> FakeClient:
         return self
@@ -45,3 +47,15 @@ class FakeClient:
 
     def sleeps(self, user_id: str, start: datetime, end: datetime) -> list[SleepSession]:
         return [s for s in self._sleeps if start <= s.start <= end]
+
+    def health_scores(
+        self, user_id: str, category: str, provider: str, first: date, last: date
+    ) -> list[HealthScore]:
+        """Scores whose UTC date of recorded_at falls between `first` and `last`."""
+        return [
+            s
+            for s in self._health_scores
+            if s.category == category
+            and s.provider == provider
+            and first <= s.recorded_at.date() <= last
+        ]

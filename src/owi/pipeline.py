@@ -12,15 +12,19 @@ from zoneinfo import ZoneInfo
 from owi import estimates, features, heart, sleep, steps, workouts
 from owi.days import day_window, elapsed_fraction, today
 from owi.models import (
+    ACTIVE_ENERGY,
     BASAL_ENERGY,
     BODY_FAT,
     DISTANCE,
     HEART_RATE,
+    SAMSUNG_PROVIDER,
+    SLEEP_CATEGORY,
     STEPS,
     VO2_MAX,
     WEIGHT,
     DayInputs,
     DayResult,
+    HealthScore,
     Params,
     Profile,
     Sample,
@@ -30,12 +34,18 @@ from owi.models import (
 from owi.score_models import DayFeatures, Person
 from owi.store import Store
 
-DAY_TYPES = (STEPS, HEART_RATE, DISTANCE)
+DAY_TYPES = (STEPS, HEART_RATE, DISTANCE, ACTIVE_ENERGY)
 PROFILE_TYPES = (WEIGHT, VO2_MAX, BASAL_ENERGY, BODY_FAT)
 PROFILE_LOOKBACK = timedelta(days=400)
 # A night's sleep starts on the previous local day.
 SLEEP_LOOKBACK = timedelta(days=1)
 REST_HR_DAYS = 14
+# Health scores are asked for by date; two days on each side cover any time zone, and only
+# those of the day's night are kept.
+SCORE_LOOKAROUND = timedelta(days=2)
+# A Sleep Score without a session owi knows belongs to the local date 12 hours after the
+# sleep started: an evening or after-midnight start lands on the morning it ended.
+SCORE_SHIFT = timedelta(hours=12)
 
 
 class Client(Protocol):
@@ -46,6 +56,10 @@ class Client(Protocol):
     def workouts(self, user_id: str, start: datetime, end: datetime) -> list[Workout]: ...
 
     def sleeps(self, user_id: str, start: datetime, end: datetime) -> list[SleepSession]: ...
+
+    def health_scores(
+        self, user_id: str, category: str, provider: str, first: date, last: date
+    ) -> list[HealthScore]: ...
 
 
 def load_profile_samples(client: Client, user_id: str, until: datetime) -> list[Sample]:
@@ -67,6 +81,26 @@ def profile_for(samples: Sequence[Sample], until: datetime, defaults: Profile) -
     )
 
 
+def night_scores(
+    scores: Sequence[HealthScore],
+    sessions: Sequence[SleepSession],
+    start: datetime,
+    end: datetime,
+) -> tuple[HealthScore, ...]:
+    """Sleep Scores of the nights that ended in the window: those whose sleep session ended
+    in it, and those of a session owi did not fetch when 12 hours after the sleep started
+    fall in it."""
+    known = {s.id: s for s in sessions}
+
+    def belongs(score: HealthScore) -> bool:
+        session = known.get(score.event_record_id) if score.event_record_id else None
+        if session is not None:
+            return start <= session.end < end
+        return start <= score.recorded_at + SCORE_SHIFT < end
+
+    return tuple(score for score in scores if belongs(score))
+
+
 def fetch_day(
     client: Client, user_id: str, day: date, tz: ZoneInfo, profile: Profile, now: datetime
 ) -> DayInputs:
@@ -77,6 +111,9 @@ def fetch_day(
     lead_in = min([start, *(s.start for s in sleeps if not s.is_nap)])
     samples = client.timeseries(user_id, DAY_TYPES, lead_in, end)
     found_workouts = client.workouts(user_id, start, end)
+    scores = client.health_scores(
+        user_id, SLEEP_CATEGORY, SAMSUNG_PROVIDER, day - SCORE_LOOKAROUND, day + SCORE_LOOKAROUND
+    )
     return DayInputs(
         day=day,
         start=start,
@@ -91,6 +128,7 @@ def fetch_day(
             s for s in samples if s.type == HEART_RATE and lead_in <= s.timestamp < start
         ),
         tonight_sleeps=tuple(s for s in found_sleeps if start <= s.start < end <= s.end),
+        samsung_sleep_scores=night_scores(scores, found_sleeps, start, end),
     )
 
 

@@ -416,3 +416,44 @@ def test_scores_stored_before_the_samsung_estimates_load_with_empty_ones(store):
 
     assert loaded.samsung_sleep == Score(None)
     assert loaded.energy_score == Score(None)
+
+
+def test_features_keep_samsungs_own_numbers_and_older_rows_load_without_them(store):
+    features = make_features(
+        DAY, samsung_steps=18230, samsung_active_kcal=960.0, samsung_sleep_score=84.0
+    )
+    store.save_features(features)
+    assert store.get_features(DAY) == features
+
+    data = jsonable(make_features(DAY))
+    for name in ("samsung_steps", "samsung_active_kcal", "samsung_sleep_score"):
+        del data[name]
+    store._db.execute(
+        "INSERT OR REPLACE INTO day_features VALUES (?, ?, ?)",
+        (DAY.isoformat(), json.dumps(data), "x"),
+    )
+
+    assert store.get_features(DAY) == make_features(DAY)
+
+
+def test_fits_keep_the_signature_of_what_they_saw(store):
+    record = FitRecord(utc(2026, 10, 15, 9), 3, None, {}, {}, signature="abc123")
+
+    store.save_fit(record)
+
+    assert store.latest_fit() == record
+
+
+def test_a_history_without_the_signature_column_still_reads_and_gains_it(tmp_path):
+    path = tmp_path / "owi.db"
+    with Store(path) as old:
+        old.save_fit(FitRecord(utc(2026, 10, 15, 9), 3, None, {}, {}))
+    with sqlite3.connect(path) as db:
+        db.execute('ALTER TABLE params_history DROP COLUMN "signature"')
+    db.close()
+
+    with Store(path, readonly=True) as reader:
+        assert reader.latest_fit().signature is None
+    with Store(path) as writer:
+        writer.save_fit(FitRecord(utc(2026, 10, 16, 9), 4, None, {}, {}, signature="d"))
+        assert writer.latest_fit().signature == "d"

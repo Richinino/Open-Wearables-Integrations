@@ -9,6 +9,7 @@ from owi import load
 from owi.features import extract
 from owi.heart import minute_series
 from owi.models import (
+    ACTIVE_ENERGY,
     HEART_RATE,
     STEPS,
     DayInputs,
@@ -26,6 +27,7 @@ from tests.factories import (
     SAMSUNG_WATCH,
     hr_minutes,
     sample,
+    sleep_score,
     utc,
     workout,
 )
@@ -127,6 +129,7 @@ def run(
     lead_in=(),
     tonight=(),
     awake_history=(),
+    scores=(),
 ) -> DayFeatures:
     inputs = DayInputs(
         day=DAY,
@@ -138,6 +141,7 @@ def run(
         profile=profile,
         lead_in_samples=tuple(lead_in),
         tonight_sleeps=tuple(tonight),
+        samsung_sleep_scores=tuple(scores),
     )
     return extract(inputs, result or make_result(), person, rest_hr, awake_history)
 
@@ -815,3 +819,86 @@ def test_without_a_main_sleep_sleep_values_are_missing():
         assert getattr(features, name) is None, name
     assert features.nap_minutes == 0.0
     assert features.sleep_intervals == ()
+
+
+# Samsung's own numbers
+
+
+def test_samsung_steps_and_active_kcal_are_samsungs_own_sums_of_the_day():
+    samples = [
+        sample(local(9), STEPS, 1200, SAMSUNG_WATCH),
+        sample(local(10), STEPS, 800, SAMSUNG_PHONE),
+        sample(local(9), STEPS, 5000, HC_PHONE),
+        sample(local(0), STEPS, 9000, HC_SHEALTH),
+        sample(local(9), ACTIVE_ENERGY, 100.24, SAMSUNG_WATCH),
+        sample(local(10), ACTIVE_ENERGY, 50.1, SAMSUNG_WATCH),
+        sample(local(10), ACTIVE_ENERGY, 400.0, HC_PHONE),
+        sample(local(21), ACTIVE_ENERGY, 0.0, SAMSUNG_WATCH),  # the evening is in
+        sample(local(24), STEPS, 300, SAMSUNG_WATCH),  # the next day
+    ]
+
+    features = run(samples)
+
+    assert features.samsung_steps == 2000
+    assert features.samsung_active_kcal == 150.3
+
+
+def test_samsung_sums_are_missing_when_its_records_stop_before_the_evening():
+    # The phone stopped uploading in the afternoon: the sums would be part of a day (A).
+    samples = [
+        sample(local(9), STEPS, 1200, SAMSUNG_WATCH),
+        sample(local(19), ACTIVE_ENERGY, 80.0, SAMSUNG_WATCH),
+    ]
+
+    features = run(samples)
+
+    assert features.samsung_steps is None
+    assert features.samsung_active_kcal is None
+
+
+def test_without_samsung_samples_the_samsung_values_are_missing():
+    features = run([sample(local(9), STEPS, 5000, HC_PHONE)])
+
+    assert features.samsung_steps is None
+    assert features.samsung_active_kcal is None
+    assert features.samsung_sleep_score is None
+
+
+def test_samsung_sleep_score_is_the_one_linked_to_the_main_sleep():
+    health_connect = session("hc", local(-1), local(6))
+    # Dropped as a duplicate of the same night, but Samsung scored this copy.
+    samsung = session("samsung", local(-2), local(7), source=SAMSUNG_WATCH)
+    scores = [
+        sleep_score("main", 84, local(-2), "samsung"),
+        sleep_score("later", 60, local(-1, 30)),
+    ]
+
+    features = run(sleeps=[samsung, health_connect], scores=scores)
+
+    assert features.samsung_sleep_score == 84.0
+
+
+def test_samsung_sleep_score_without_a_link_to_the_main_sleep_is_the_latest():
+    night = session("night", local(-1), local(6))
+    scores = [
+        sleep_score("a", 70, local(-3)),
+        sleep_score("b", 75, local(-1)),
+        sleep_score("c", 72, local(-2)),
+    ]
+
+    assert run(sleeps=[night], scores=scores).samsung_sleep_score == 75.0
+    assert run(scores=scores).samsung_sleep_score == 75.0
+
+
+def test_a_samsung_sleep_score_of_a_nap_is_left_out():
+    night = session("night", local(-1), local(6))
+    nap = session("nap", local(14), local(15), is_nap=True)
+    for_nap = sleep_score("for-nap", 95, local(14), "nap")
+
+    assert run(sleeps=[night, nap], scores=[for_nap]).samsung_sleep_score is None
+    assert (
+        run(
+            sleeps=[night, nap], scores=[for_nap, sleep_score("night", 80, local(-1))]
+        ).samsung_sleep_score
+        == 80.0
+    )

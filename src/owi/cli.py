@@ -198,29 +198,42 @@ def _reference_days(
     return refs, max_hr
 
 
+FitEntries = tuple[list[Entry], list[Entry], tuning.Signature]
+
+
+def _fit_entries(settings: Settings, now: datetime) -> FitEntries:
+    """The user's entries of the last year, the same filled in with Samsung's own numbers
+    (auto entries), and the signature of what a fit would read."""
+    last = today(ZoneInfo(settings.timezone), now)
+    first = last - timedelta(days=FIT_WINDOW_DAYS - 1)
+    manual = entries.load(settings.entries_path, first, last)
+    with Store(settings.db_path) as store:
+        features = store.features(first, last)
+    merged = tuning.merge(manual, features)
+    return manual, merged, tuning.signature(merged)
+
+
 def _fit(
-    settings: Settings, now: datetime, inputs: dict[date, DayInputs] | None = None
+    settings: Settings,
+    now: datetime,
+    inputs: dict[date, DayInputs] | None = None,
+    loaded: FitEntries | None = None,
 ) -> tuning.Tuning:
     """Tune on the entries of the last year and save params, score weights and history.
 
-    `inputs` are already downloaded reference days; without them the days whose entry has
-    an active time or calories are downloaded here.
+    `inputs` are already downloaded reference days; the other days whose entry has an active
+    time or calories (tuning.reference_days) are downloaded here.
     """
     last = today(ZoneInfo(settings.timezone), now)
     since = last - timedelta(days=FIT_WINDOW_DAYS)
-    found = entries.load(settings.entries_path, since + timedelta(days=1), last)
-    signature = entries.signature(settings.entries_path)
+    manual, found, signature = loaded or _fit_entries(settings, now)
     params = load_params(settings.params_path)
-    if inputs is None:
-        heart_days = [
-            e.day
-            for e in found
-            if e.active_minutes is not None or e.active_kcal is not None or e.total_kcal is not None
-        ]
-        refs, max_hr = _reference_days(settings, params.max_hr, heart_days, now)
-    else:
-        refs = {day: RefDay.of(item) for day, item in inputs.items()}
-        max_hr = next(iter(inputs.values())).profile.max_hr if inputs else params.max_hr
+    refs = {day: RefDay.of(item) for day, item in (inputs or {}).items()}
+    max_hr = next(iter(inputs.values())).profile.max_hr if inputs else params.max_hr
+    missing = [day for day in tuning.reference_days(manual, found, last) if day not in refs]
+    if missing:
+        downloaded, max_hr = _reference_days(settings, max_hr, missing, now)
+        refs.update(downloaded)
     scored = [e.day for e in found if e.sleep_score is not None or e.energy_score is not None]
     with Store(settings.db_path) as store:
         stored = store.days(since + timedelta(days=1), last)
@@ -267,26 +280,28 @@ def _refresh(settings: Settings, now: datetime, fitted: bool, force: bool = Fals
 
 
 def _tune(settings: Settings, now: datetime) -> None:
-    """Refit when an entry changed since the last fit or a day has passed, then refresh.
+    """Refit when a value the fit reads changed since the last fit or a day has passed, then
+    refresh.
 
-    Nothing happens before the entries store exists (owi entries import or the first entry
-    from the web), so existing parameters are not reset by a fit without any entry.
+    Nothing happens while there is neither an entries store (owi entries import or the first
+    entry from the web) nor any of Samsung's own numbers, so existing parameters are not
+    reset by a fit without anything to fit on.
     """
-    if not settings.entries_path.is_file():
-        return
     try:
-        signature = entries.signature(settings.entries_path)
+        loaded = _fit_entries(settings, now)
     except sqlite3.OperationalError as exc:
-        print(f"zápisy sa teraz nedajú prečítať: {exc}", file=sys.stderr)
+        # The web held the entries longer than the retries; the next run tries again.
+        print(f"doladenie odložené: {exc}", file=sys.stderr)
+        return
+    if not loaded[1] and not settings.entries_path.is_file():
         return
     with Store(settings.db_path) as store:
         last = store.latest_fit()
-    fitted = tuning.fit_due(last, signature, now)
+    fitted = tuning.fit_due(last, loaded[2], now)
     if fitted:
         try:
-            result = _fit(settings, now)
+            result = _fit(settings, now, loaded=loaded)
         except sqlite3.OperationalError as exc:
-            # The web held the entries longer than the retries; the next run tries again.
             print(f"doladenie odložené: {exc}", file=sys.stderr)
             return
         print(_params_line(settings, result.params))

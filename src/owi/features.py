@@ -15,6 +15,7 @@ from typing import Any
 from owi import heart, load, sleep
 from owi.estimates import REST_VO2
 from owi.models import (
+    ACTIVE_ENERGY,
     STEPS,
     DayInputs,
     DayResult,
@@ -43,6 +44,8 @@ MIN_WORN_HOUR_MINUTES = 30
 ZONE_LOW_RESERVE = 0.5
 ZONE_HIGH_RESERVE = 0.8
 MIN_AWAKE_BOUT = timedelta(minutes=1)
+# Samsung's hourly records must reach 21:00 for its day sums to count as the whole day.
+SAMSUNG_EVENING_BEFORE_END = timedelta(hours=3)
 
 AWAKE = "awake"
 ASLEEP = "asleep"
@@ -315,6 +318,51 @@ def _wake_after_onset(intervals: Sequence[SleepInterval]) -> tuple[float | None,
     return minutes, bouts
 
 
+def _samsung_sums(samples: Iterable[Sample], start: datetime, end: datetime) -> dict[str, Any]:
+    """Samsung's own steps and active calories of the day.
+
+    None without any of its records, and None when they stop before the evening: the phone
+    then stopped uploading part way through, and part of a day must not pass as the day (A).
+    """
+    sums: dict[str, float] = {}
+    latest: datetime | None = None
+    for item in samples:
+        if item.source.is_samsung_direct and start <= item.timestamp < end:
+            if item.type in (STEPS, ACTIVE_ENERGY):
+                sums[item.type] = sums.get(item.type, 0.0) + item.value
+                latest = item.timestamp if latest is None else max(latest, item.timestamp)
+    if latest is None or latest < end - SAMSUNG_EVENING_BEFORE_END:
+        sums = {}
+    steps, kcal = sums.get(STEPS), sums.get(ACTIVE_ENERGY)
+    return {
+        "samsung_steps": None if steps is None else round(steps),
+        "samsung_active_kcal": None if kcal is None else round(kcal, 1),
+    }
+
+
+def _samsung_sleep_score(inputs: DayInputs, main: SleepSession | None) -> float | None:
+    """Samsung's Sleep Score of the day's night (fetch_day keeps only those).
+
+    Scores of a nap are left out. Of the rest, a score of the main sleep wins, also when it
+    names a copy of it from another source that dedupe dropped; else the latest one.
+    """
+    sessions = {s.id: s for s in inputs.sleeps}
+    main_scores, other_scores = [], []
+    for score in inputs.samsung_sleep_scores:
+        session = sessions.get(score.event_record_id) if score.event_record_id else None
+        if session is not None and session.is_nap:
+            continue
+        of_main = (
+            session is not None
+            and main is not None
+            and session.start < main.end
+            and main.start < session.end
+        )
+        (main_scores if of_main else other_scores).append(score)
+    chosen = main_scores or other_scores
+    return max(chosen, key=lambda s: s.recorded_at).value if chosen else None
+
+
 def _sleep(main: SleepSession | None) -> dict[str, Any]:
     if main is None:
         return dict.fromkeys(_SLEEP_FIELDS)
@@ -436,4 +484,6 @@ def extract(
         vo2max=vo2max,
         weight_kg=inputs.profile.weight_kg,
         body_fat_pct=person.body_fat_pct,
+        samsung_sleep_score=_samsung_sleep_score(inputs, main),
+        **_samsung_sums(inputs.samples, inputs.start, inputs.end),
     )

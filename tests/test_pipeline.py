@@ -7,6 +7,7 @@ import pytest
 from owi import estimates
 from owi.features import extract
 from owi.models import (
+    ACTIVE_ENERGY,
     BASAL_ENERGY,
     BODY_FAT,
     DISTANCE,
@@ -35,6 +36,7 @@ from tests.factories import (
     hr_minutes,
     make_features,
     sample,
+    sleep_score,
     sleep_session,
     utc,
     workout,
@@ -136,6 +138,36 @@ def test_fetch_day_without_a_night_has_no_lead_in():
 
     assert inputs.lead_in_samples == ()
     assert len(inputs.samples) == 60
+
+
+def test_fetch_day_also_fetches_active_calories():
+    client = FakeClient([sample(utc(2026, 10, 12, 9), ACTIVE_ENERGY, 120.0, SAMSUNG_WATCH)])
+
+    inputs = fetch_day(client, "u1", DAY, TZ, Profile(), NOW)
+
+    assert [(s.type, s.value) for s in inputs.samples] == [(ACTIVE_ENERGY, 120.0)]
+
+
+def test_fetch_day_keeps_the_samsung_sleep_scores_of_the_night_that_ended_on_the_day():
+    night = sleep_session("night", utc(2026, 10, 11, 20), utc(2026, 10, 12, 4))
+    tonight = sleep_session("tonight", utc(2026, 10, 12, 21), utc(2026, 10, 13, 5))
+    # Fell asleep at 00:30 on the 11th: fetched with this day's sleeps, but it ended the day before.
+    previous = sleep_session("previous", utc(2026, 10, 10, 22, 30), utc(2026, 10, 11, 4))
+    scores = [
+        sleep_score("linked", 88, utc(2026, 10, 11, 20), "night"),
+        sleep_score("tonight", 70, utc(2026, 10, 12, 21), "tonight"),
+        sleep_score("previous", 60, utc(2026, 10, 10, 22, 30), "previous"),
+        # Without a session owi knows: the local date 12 hours after the sleep started.
+        sleep_score("late-evening", 80, utc(2026, 10, 11, 21, 30), "unknown"),
+        sleep_score("from-noon", 66, utc(2026, 10, 11, 10)),
+        sleep_score("afternoon", 75, utc(2026, 10, 12, 11)),
+        sleep_score("morning-before", 65, utc(2026, 10, 11, 9)),
+    ]
+    client = FakeClient(sleeps=[night, tonight, previous], health_scores=scores)
+
+    inputs = fetch_day(client, "u1", DAY, TZ, Profile(), NOW)
+
+    assert [s.id for s in inputs.samsung_sleep_scores] == ["linked", "late-evening", "from-noon"]
 
 
 def test_fetch_day_marks_today_as_incomplete():

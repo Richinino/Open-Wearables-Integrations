@@ -86,6 +86,11 @@ class DayFeatures:
     weight_kg: float | None = None
     body_fat_pct: float | None = None
 
+    # Samsung's own numbers, sent by the direct Samsung Health connection (auto entries)
+    samsung_sleep_score: float | None = None  # Sleep Score of the night that ended on the day
+    samsung_steps: int | None = None  # sum of Samsung's step counts of the day
+    samsung_active_kcal: float | None = None  # sum of Samsung's active calories of the day
+
 
 @dataclass(frozen=True)
 class Score:

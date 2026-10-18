@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 import httpx
 
-from owi.models import Sample, SleepInterval, SleepSession, SourceRef, Workout
+from owi.models import HealthScore, Sample, SleepInterval, SleepSession, SourceRef, Workout
 
 PAGE_LIMIT = 100
 # Open Wearables 0.9.0 renamed the series; older servers still send the old name.
@@ -105,6 +105,18 @@ class OWClient:
             if not pagination.get("has_more") or not cursor:
                 return
 
+    def _offset_pages(self, path: str, params: list[tuple[str, str]]) -> Iterator[dict[str, Any]]:
+        """Pages counted by offset, as the health scores come."""
+        offset = 0
+        while True:
+            query = [*params, ("limit", str(PAGE_LIMIT)), ("offset", str(offset))]
+            body = self._get(path, query)
+            items = body.get("data") or []
+            yield from items
+            offset += len(items)
+            if not (body.get("pagination") or {}).get("has_more") or not items:
+                return
+
     def user_id(self) -> str:
         items = self._get("/users", [("limit", "2")]).get("items") or []
         if len(items) != 1:
@@ -165,3 +177,27 @@ class OWClient:
                 )
             )
         return sessions
+
+    def health_scores(
+        self, user_id: str, category: str, provider: str, first: date, last: date
+    ) -> list[HealthScore]:
+        """Scores the provider computed itself, recorded from `first` to `last`; those
+        without a value are skipped."""
+        params = [
+            ("start_date", first.isoformat()),
+            ("end_date", last.isoformat()),
+            ("category", category),
+            ("provider", provider),
+        ]
+        return [
+            HealthScore(
+                id=item["id"],
+                category=item.get("category") or category,
+                value=float(item["value"]),
+                recorded_at=_parse_time(item["recorded_at"]),
+                provider=(item.get("provider") or provider).lower(),
+                event_record_id=item.get("event_record_id"),
+            )
+            for item in self._offset_pages(f"/users/{user_id}/health-scores", params)
+            if item.get("value") is not None
+        ]

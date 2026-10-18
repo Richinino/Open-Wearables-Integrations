@@ -78,7 +78,8 @@ def _day(
     scores: DayScores | None,
     entry: Entry | None,
 ) -> dict[str, Any]:
-    """The stored day, its scores, sleep timeline and Samsung entry, and each workout's strain."""
+    """The stored day, its scores, sleep timeline, Samsung entry and Samsung's own numbers,
+    and each workout's strain."""
     strain = features.workout_strain if features else {}
     day = {name: _iso(value) for name, value in asdict(result).items() if name != "workouts"}
     day["workouts"] = [
@@ -91,6 +92,7 @@ def _day(
     day["sleep_timeline"] = jsonable(features.sleep_intervals) if features else []
     day["scores"] = jsonable(scores)
     day["samsung"] = entries.as_json(entry) if entry else None
+    day["samsung_auto"] = tuning.auto_json(features)
     return day
 
 

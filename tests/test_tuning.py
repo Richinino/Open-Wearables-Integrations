@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date, timedelta
 
 import pytest
@@ -25,22 +26,27 @@ def record(**changes) -> FitRecord:
         "entries_saved_at": "2026-10-16T08:00:00+00:00",
         "params": {},
         "quality": {},
+        "signature": "d1",
     }
     values.update(changes)
     return FitRecord(**values)
+
+
+def signature(entries: int = 3, digest: str = "d1") -> tuning.Signature:
+    return tuning.Signature(entries, digest, "2026-10-16T08:00:00+00:00")
 
 
 # When
 
 
 def test_a_fit_is_due_the_first_time_after_any_change_and_once_a_day():
-    signature = (3, "2026-10-16T08:00:00+00:00")
-
-    assert tuning.fit_due(None, signature, NOW)
-    assert not tuning.fit_due(record(), signature, NOW)
-    assert tuning.fit_due(record(), (4, "2026-10-16T09:00:00+00:00"), NOW)
-    assert tuning.fit_due(record(), (3, "2026-10-16T09:00:00+00:00"), NOW)
-    assert tuning.fit_due(record(fitted_at=NOW - timedelta(hours=24)), signature, NOW)
+    assert tuning.fit_due(None, signature(), NOW)
+    assert not tuning.fit_due(record(), signature(), NOW)
+    assert tuning.fit_due(record(), signature(entries=4), NOW)
+    assert tuning.fit_due(record(), signature(digest="d2"), NOW)
+    # A fit from before the signatures.
+    assert tuning.fit_due(record(signature=None), signature(), NOW)
+    assert tuning.fit_due(record(fitted_at=NOW - timedelta(hours=24)), signature(), NOW)
 
 
 def test_a_recompute_is_due_when_the_days_were_computed_with_other_values():
@@ -101,10 +107,11 @@ def test_a_record_keeps_the_values_and_the_quality_as_json():
         quality={"distance_km": Quality(3, 4.0, 6.0, "%")},
     )
 
-    saved = tuning.record(result, (3, "2026-10-16T08:00:00+00:00"), NOW)
+    saved = tuning.record(result, signature(digest="d7"), NOW)
 
     assert saved.fitted_at == NOW
     assert (saved.entries, saved.entries_saved_at) == (3, "2026-10-16T08:00:00+00:00")
+    assert saved.signature == "d7"
     assert saved.params["stride_m"] == 0.76
     assert saved.params["max_hr"] == 190.0
     assert saved.params["score_weights"]["samsung_sleep"] == {
@@ -158,3 +165,136 @@ def test_run_tunes_the_estimates_and_both_scores():
     assert result.models.energy == ScoreModel(0, None)
     assert set(result.quality) == {"distance_km", "sleep_score"}
     assert result.quality["sleep_score"].unit == "body"
+
+
+# Auto entries: what Samsung sends by itself
+
+
+def days_back(count: int) -> date:
+    return D - timedelta(days=count)
+
+
+def test_auto_values_are_samsungs_numbers_within_the_entry_ranges():
+    sent = make_features(
+        D, samsung_steps=18230, samsung_active_kcal=960.0, samsung_sleep_score=84.0
+    )
+    # An early sync stored a distance as calories: out of range, so no value.
+    broken = make_features(D, samsung_active_kcal=15000.0)
+
+    assert tuning.auto_values(sent) == {"steps": 18230, "active_kcal": 960.0, "sleep_score": 84.0}
+    assert tuning.auto_values(broken) == {"steps": None, "active_kcal": None, "sleep_score": None}
+
+
+def test_the_api_shows_the_auto_values_or_null():
+    assert tuning.auto_json(None) is None
+    assert tuning.auto_json(make_features(D)) is None
+    assert tuning.auto_json(make_features(D, samsung_sleep_score=81.0)) == {
+        "steps": None,
+        "active_kcal": None,
+        "sleep_score": 81.0,
+    }
+
+
+def test_merge_lets_the_users_fields_win_and_fills_the_rest_from_samsung():
+    saved = utc(2026, 10, 15, 8)
+    manual = [
+        Entry(days_back(2), steps=12000, distance_km=9.0, saved_at=saved),
+        Entry(days_back(1), total_kcal=2600.0, saved_at=saved),
+        Entry(days_back(30), energy_score=70.0, saved_at=saved),  # no features that day
+    ]
+    stored = [
+        make_features(days_back(4)),  # nothing from Samsung
+        make_features(days_back(3), samsung_steps=7000),
+        make_features(
+            days_back(2), samsung_steps=12500, samsung_active_kcal=900.0, samsung_sleep_score=85.0
+        ),
+        make_features(days_back(1), samsung_steps=8000, samsung_active_kcal=600.0),
+        make_features(
+            D,
+            complete=False,
+            samsung_steps=3000,
+            samsung_active_kcal=200.0,
+            samsung_sleep_score=78.0,
+        ),
+    ]
+
+    merged = tuning.merge(manual, stored)
+
+    assert merged == [
+        Entry(days_back(30), energy_score=70.0, saved_at=saved),
+        Entry(days_back(3), steps=7000),
+        Entry(
+            days_back(2),
+            steps=12000,
+            distance_km=9.0,
+            active_kcal=900.0,
+            sleep_score=85.0,
+            saved_at=saved,
+        ),
+        Entry(days_back(1), steps=8000, active_kcal=600.0, total_kcal=2600.0, saved_at=saved),
+        # A day still running gives only its Sleep Score: the night is over, the steps are not.
+        Entry(D, sleep_score=78.0),
+    ]
+
+
+def test_the_signature_changes_with_every_value_the_fit_sees():
+    merged = [
+        Entry(days_back(1), steps=8000, saved_at=utc(2026, 10, 15, 8)),
+        Entry(D, sleep_score=78.0),
+    ]
+
+    first = tuning.signature(merged)
+
+    assert (first.entries, first.saved_at) == (2, "2026-10-15T08:00:00+00:00")
+    assert tuning.signature(list(merged)) == first
+    assert tuning.signature([merged[0], Entry(D, sleep_score=79.0)]).digest != first.digest
+    assert tuning.signature(merged[:1]).entries == 1
+    assert tuning.signature([]) == tuning.Signature(0, tuning.signature([]).digest, None)
+    # Saving the same numbers again asks for no new fit.
+    resaved = replace(merged[0], saved_at=utc(2026, 10, 16, 8))
+    assert tuning.signature([resaved, merged[1]]).digest == first.digest
+
+
+def test_reference_days_are_the_users_heart_entries_and_four_weeks_of_samsung_calories():
+    manual = [
+        Entry(days_back(100), active_minutes=200.0),
+        Entry(days_back(90), total_kcal=2500.0),
+        Entry(days_back(80), steps=9000),
+        Entry(days_back(70), active_kcal=900.0),
+    ]
+    merged = [
+        *manual,
+        Entry(days_back(40), active_kcal=700.0),
+        Entry(days_back(27), active_kcal=650.0),
+        Entry(days_back(2), sleep_score=80.0),
+        Entry(days_back(1), active_kcal=600.0),
+    ]
+
+    assert tuning.reference_days(manual, merged, D) == [
+        days_back(100),
+        days_back(90),
+        days_back(70),
+        days_back(27),
+        days_back(1),
+    ]
+
+
+def test_the_samsung_sleep_estimate_learns_from_samsungs_own_scores():
+    history = [
+        replace(f, samsung_sleep_score=78.0 + index % 7) for index, f in enumerate(features(60))
+    ]
+
+    result = tuning.run(
+        tuning.merge([], history),
+        {},
+        [],
+        history,
+        TEEN,
+        TIMEZONE,
+        Params(max_hr=190.0),
+        SamsungModels(),
+        D,
+    )
+
+    assert result.models.sleep.entries == 60
+    assert result.quality["sleep_score"].n == 60

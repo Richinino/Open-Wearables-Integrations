@@ -121,3 +121,32 @@ Bez zápisov: `"calibration": {"fitted_at": null, "entries": 0, "params": <aktu�
 - Web: unit testy validácie a route handlera (relácia, pôvod, chyby owi), logiky zoznamu chýbajúcich dní a kvality; build, lint; screenshoty s umelými dátami.
 - Po integrácii: import `truth.csv`, skúšobný zápis cez API na skutočných dátach a jeho zmazanie, kontrola, že web po nasadení zapisuje.
 - Žiadne skutočné zdravotné dáta, tokeny ani adresy v repe.
+
+## Doplnok 2026-10-17: automatické zápisy zo Samsungu
+
+Open Wearables 0.10.0 s priamym napojením na Samsung Health (provider `samsung`) posiela tri čísla samo. owi ich berie ako **automatické zápisy** (auto entries), aby používateľ menej písal.
+
+| Pole zápisu | Odkiaľ | `DayFeatures` |
+|---|---|---|
+| `sleep_score` | `GET /api/v1/users/{id}/health-scores?category=sleep&provider=samsung`, stránkovanie `limit`/`offset` | `samsung_sleep_score` |
+| `steps` | súčet série `steps` zo zdrojov s providerom `samsung` za lokálny deň | `samsung_steps` |
+| `active_kcal` | súčet série `active_energy` zo zdrojov s providerom `samsung` za lokálny deň | `samsung_active_kcal` |
+
+- Sleep Score patrí ku dňu, keď sa spánok skončil; `recorded_at` je jeho začiatok. Ak `event_record_id` zodpovedá spánku, ktorý owi stiahlo, rozhoduje koniec toho spánku, inak lokálny dátum `recorded_at + 12 h`. Skóre zdriemnutí sa vynechá. Ak na deň pripadnú dve, vyhráva skóre hlavného spánku (aj jeho kópie z iného zdroja, ktorú dedupe zahodil), inak najnovšie.
+- Hodnota mimo rozsahov zápisu (napr. vzdialenosť uložená ako kalórie pri prvom sync) sa ignoruje.
+- Polia sa plnia pri `owi sync`. Staršie uložené dni ich nemajú, kým sa neprepočítajú (`owi sync --from D`); starý JSON v `day_features` sa načíta s `null`.
+
+**Zlúčenie** (`tuning.merge`), po dňoch: pole z ručného zápisu vyhráva; inak automatická hodnota doplní `sleep_score` v každý deň a `steps`, `active_kcal` len za ukončené dni. `distance_km`, `active_minutes`, `total_kcal` a `energy_score` ostávajú len ručné. Dolaďovanie aj odhad Samsung Sleep Score čítajú zlúčené zápisy; prah 10 zápisov počíta zlúčené.
+
+- **Kedy:** podpis (`tuning.signature`) je počet zlúčených dní a hash ich hodnôt, uložený v novom stĺpci `signature` tabuľky `params_history`. Doladí sa pri zmene podpisu (uložený či zmazaný zápis, zmenená automatická hodnota), inak raz denne. Uloženie rovnakých čísel doladenie nespustí. Bez úložiska zápisov a zároveň bez automatických hodnôt sa nedolaďuje.
+- **Referenčné dni** (znova stiahnutý minútový tep pre `kcal_scale`): ručné zápisy s aktívnym časom alebo kalóriami ako doteraz, automatické aktívne kalórie **len za posledných 28 dní** **[A]**. Má ich každý ukončený deň a stiahnuť rok dní pri každom doladení by trvalo minúty; 28 dní posunie koeficient asi o tri štvrtiny cesty k fitu (`n/(n+7)`). Staršie automatické kalórie sa pre `kcal_scale` nepoužijú; pre `basal_kcal` áno (bez sťahovania).
+
+**API** `GET /v1/days`:
+- `days[].samsung_auto`: `{"steps": int|null, "active_kcal": float|null, "sleep_score": float|null}`, alebo `null`, keď sú všetky `null`. `days[].samsung` (ručný zápis) sa nemení.
+- `calibration.entries`: počet dní, ktoré posledné doladenie čítalo, teda s ručným zápisom alebo s automatickou hodnotou podľa pravidiel zlúčenia.
+
+**Web:**
+- `/zapis`: kroky, aktívne kalórie a Sleep Score s automatickou hodnotou sú vyplnené, len na čítanie, s poznámkou „automaticky zo Samsungu“, a v `PUT` idú ako `null` (owi ich dopĺňa samo). Deň bez ručného zápisu sa stále počíta medzi chýbajúce. Karta kvality ostáva.
+- Spánok: tretia možnosť **Samsung**. Noc ukazuje skutočné `samsung_auto.sleep_score`, inak odhad `scores.samsung_sleep` so znakom ≈, inak „učí sa“. V grafe histórie sú odhady duté stĺpce s legendou, v tabuľkách majú ≈.
+- Detail dňa: blok „Samsung a owi“ aj pre dni len s automatickými hodnotami, označenými „automaticky“; ručný zápis má prednosť.
+- Umelé dáta: `samsung_auto` od 4. 10. 2026, zápisy v tie dni bez polí, ktoré Samsung poslal.

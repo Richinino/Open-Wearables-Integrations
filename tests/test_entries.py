@@ -96,7 +96,6 @@ def test_a_body_that_is_not_an_object_is_invalid():
 
 def test_missing_store_reads_as_empty_without_creating_it(path):
     assert entries.load(path) == []
-    assert entries.signature(path) == (0, None)
     assert not path.parent.exists()
 
 
@@ -142,18 +141,6 @@ def test_delete_removes_the_day(path):
     entries.delete(path, DAY)  # nothing left to delete is fine
 
     assert entries.load(path) == []
-
-
-def test_signature_changes_with_every_save_and_delete(path):
-    entries.save(path, DAY, {"steps": 1000}, SAVED)
-    first = entries.signature(path)
-    entries.save(path, date(2026, 10, 13), {"steps": 1}, utc(2026, 10, 16, 11))
-    second = entries.signature(path)
-    entries.delete(path, date(2026, 10, 13))
-
-    assert first == (1, SAVED.isoformat())
-    assert second == (2, utc(2026, 10, 16, 11).isoformat())
-    assert entries.signature(path) == first
 
 
 def test_the_store_uses_a_rollback_journal_not_wal(path):

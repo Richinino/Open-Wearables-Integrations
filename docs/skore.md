@@ -203,7 +203,7 @@ Skóre regenerácie sa ukazuje až po 14 nociach, porovnania s priemerom po 7 d�
 
 ## 7. Dolaďovanie podľa zápisov zo Samsungu
 
-Návrh: [`superpowers/specs/2026-10-16-zapisy-a-doladovanie-design.md`](superpowers/specs/2026-10-16-zapisy-a-doladovanie-design.md). Vzorce sa nemenia, dolaďujú sa len čísla v nich. Pravdou sú čísla zo Samsung Health, ktoré používateľ zapíše na webe (`data/zapisy/zapisy.db`). Skóre podľa WHOOP, Oura, Apple a Polar ostávajú bez zmeny.
+Návrh: [`superpowers/specs/2026-10-16-zapisy-a-doladovanie-design.md`](superpowers/specs/2026-10-16-zapisy-a-doladovanie-design.md) a jeho doplnok z 2026-10-17. Vzorce sa nemenia, dolaďujú sa len čísla v nich. Pravdou sú čísla zo Samsung Health, ktoré používateľ zapíše na webe (`data/zapisy/zapisy.db`), a **automatické zápisy**: čísla, ktoré Samsung pošle sám cez priame napojenie (Sleep Score, súčet krokov a aktívnych kalórií dňa, `DayFeatures.samsung_*`). Po dňoch vyhráva ručne zapísané pole; automatická hodnota doplní Sleep Score v každý deň, kroky a aktívne kalórie len za ukončené dni, a to len ak hodinové záznamy Samsungu siahajú aspoň do 21:00; inak telefón prestal posielať cez deň a súčet by bol len časť dňa **[A]**. Vzdialenosť, aktívny čas, kalórie spolu a Energy Score sú len ručné. Skóre podľa WHOOP, Oura, Apple a Polar ostávajú bez zmeny.
 
 | Výpočet | Parameter | Predvolené | Hranice | Pravda zo zápisov |
 |---|---|---|---|---|
@@ -221,11 +221,13 @@ Postup pre každý parameter **[A]**:
 
 - Dĺžka kroku sa učí aj bez zápisov z chôdze a behu, ktoré majú vzdialenosť a zároveň kroky krokomera telefónu v čase tréningu. Tréning s krokom mimo 0,50–1,10 m sa vynechá, telefón vtedy nebol pri celom tréningu.
 - **Kvalita** (karta na webe): priemerná odchýlka na najnovšej štvrtine, pri menej ako 6 dňoch na všetkých; pri odhadoch v %, pri skóre v bodoch. `previous_error` je odchýlka doterajších hodnôt na tých istých dňoch. Pri kalóriách spolu sa meria bazálna časť, s aktívnymi kalóriami zo Samsungu.
-- **Kedy:** `owi sync` doladí po každom uložení či zmazaní zápisu, inak raz denne. Nové parametre odhadov znamenajú prepočet všetkých uložených dní, najviac raz za 24 h (dovtedy ich používajú len nasledujúce behy); nové váhy skóre len prepočet skóre. `owi calibrate` doladí a prepočíta hneď.
+- **Kedy:** `owi sync` doladí, keď sa zmení niektorá hodnota, ktorú doladenie číta (uložený či zmazaný zápis, nové alebo zmenené automatické číslo; podpis = počet dní a hash hodnôt), inak raz denne. Nové parametre odhadov znamenajú prepočet všetkých uložených dní, najviac raz za 24 h (dovtedy ich používajú len nasledujúce behy); nové váhy skóre len prepočet skóre. `owi calibrate` doladí a prepočíta hneď.
+- **Referenčné dni:** pre prah tepu a koeficient kalórií sa minútový tep dňa sťahuje znova. Pre automatické aktívne kalórie len za posledných 28 dní **[A]**: sú za každý ukončený deň a 28 dní posunie koeficient asi o tri štvrtiny cesty (`n/(n+7)`), pričom doladenie netrvá minúty.
+- **`calibration.entries`** v API: počet dní, ktoré posledné doladenie čítalo (ručný zápis alebo automatická hodnota).
 
 ### Samsung Sleep Score a Energy Score – odhady
 
-Samsung uvádza, z čoho skóre skladá, nie ako **[V]**. owi počíta každú časť 0–100 a skóre je `clamp(Σ wᵢ·cᵢ)` cez známe časti, váhy prenormované na ne **[A]**. Váhy sa učia váženou ridge regresiou stiahnutou k rovnakým váham silou 7 dní rozptylu častí; záporné sa orežú na 0 a súčet je 1; chýbajúca časť dňa sa nahradí priemerom jeho známych častí **[A]**. Odhad sa ukáže od 10 zápisov daného skóre, dovtedy `value: null`, `note: "learning"` a v `components` počet zápisov a potrebných 10.
+Samsung uvádza, z čoho skóre skladá, nie ako **[V]**. owi počíta každú časť 0–100 a skóre je `clamp(Σ wᵢ·cᵢ)` cez známe časti, váhy prenormované na ne **[A]**. Váhy sa učia váženou ridge regresiou stiahnutou k rovnakým váham silou 7 dní rozptylu častí; záporné sa orežú na 0 a súčet je 1; chýbajúca časť dňa sa nahradí priemerom jeho známych častí **[A]**. Odhad sa ukáže od 10 zápisov daného skóre (ručných aj automatických), dovtedy `value: null`, `note: "learning"` a v `components` počet zápisov a potrebných 10. Sleep Score sa tak učí hlavne zo skóre, ktoré Samsung pošle sám; web ukazuje pri noci skutočné číslo, keď ho má, inak tento odhad (≈).
 
 Sleep Score patrí k noci, ktorá skončila v daný deň:
 

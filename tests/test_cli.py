@@ -7,9 +7,18 @@ import pytest
 from owi import cli, entries, tuning
 from owi.calibration import day_weight, load_params, save_params
 from owi.client import OWError
-from owi.models import STEPS, Params
+from owi.models import ACTIVE_ENERGY, STEPS, Params
 from owi.store import Store
-from tests.factories import HC_SHEALTH, hr_minutes, make_features, sample, sleep_session, utc
+from tests.factories import (
+    HC_SHEALTH,
+    SAMSUNG_WATCH,
+    hr_minutes,
+    make_features,
+    sample,
+    sleep_score,
+    sleep_session,
+    utc,
+)
 from tests.fakes import FakeClient
 
 DAY = date(2026, 10, 12)
@@ -469,6 +478,88 @@ def test_calibrate_recomputes_the_stored_days_right_away(env, monkeypatch):
 
     stride = stride_after_one_entry(0.90)
     assert stored_distance(env, date(2026, 10, 10)) == pytest.approx(10000 * stride)
+
+
+# Auto entries: Samsung's own numbers
+
+
+def samsung_client(late_steps: int = 0) -> FakeClient:
+    """Samsung's own steps, active calories and Sleep Score for 12 October."""
+    night = sleep_session("night", utc(2026, 10, 11, 21), utc(2026, 10, 12, 5), SAMSUNG_WATCH)
+    samples = [
+        sample(utc(2026, 10, 12, 7), STEPS, 12000, SAMSUNG_WATCH),
+        sample(utc(2026, 10, 12, 8), STEPS, 230, SAMSUNG_WATCH),
+        sample(utc(2026, 10, 12, 7), ACTIVE_ENERGY, 600.0, SAMSUNG_WATCH),
+        sample(utc(2026, 10, 12, 8), ACTIVE_ENERGY, 360.0, SAMSUNG_WATCH),
+        # 21:00 local: the uploads cover the evening, so the sums count as the whole day.
+        sample(utc(2026, 10, 12, 19), ACTIVE_ENERGY, 0.0, SAMSUNG_WATCH),
+    ]
+    if late_steps:
+        samples.append(sample(utc(2026, 10, 12, 19), STEPS, late_steps, SAMSUNG_WATCH))
+    scores = [sleep_score("h1", 84, utc(2026, 10, 11, 21), "night")]
+    return FakeClient(samples, sleeps=[night], health_scores=scores)
+
+
+def test_sync_stores_samsungs_own_numbers_in_the_features(env, monkeypatch):
+    at(monkeypatch, NOW)
+    use_client(monkeypatch, samsung_client())
+
+    assert sync("2026-10-12") == 0
+
+    with Store(env / "data" / "owi.db") as store:
+        features = store.get_features(DAY)
+    assert features.samsung_steps == 12230
+    assert features.samsung_active_kcal == 960.0
+    assert features.samsung_sleep_score == 84.0
+
+
+def test_sync_tunes_on_samsungs_own_numbers_without_any_entry(env, monkeypatch):
+    at(monkeypatch, NOW)
+    use_client(monkeypatch, samsung_client())
+
+    assert sync("2026-10-12") == 0
+
+    assert not entries_path(env).exists()
+    with Store(env / "data" / "owi.db") as store:
+        fit = store.latest_fit()
+    assert (fit.fitted_at, fit.entries) == (NOW, 1)
+    weights = json.loads((env / "data" / "score_weights.json").read_text("utf-8"))
+    assert weights["samsung_sleep"]["entries"] == 1
+
+
+def test_a_changed_samsung_number_asks_for_a_new_fit(env, monkeypatch):
+    use_client(monkeypatch, samsung_client())
+    for moment in (NOW, NOW + timedelta(hours=1)):
+        at(monkeypatch, moment)
+        assert sync("2026-10-12") == 0
+    with Store(env / "data" / "owi.db") as store:
+        assert store.latest_fit().fitted_at == NOW
+
+    # The phone sends the evening's steps late.
+    later = NOW + timedelta(hours=2)
+    use_client(monkeypatch, samsung_client(late_steps=800))
+    at(monkeypatch, later)
+    assert sync("2026-10-12") == 0
+
+    with Store(env / "data" / "owi.db") as store:
+        assert store.latest_fit().fitted_at == later
+
+
+def test_a_fit_downloads_the_heart_rate_of_recent_days_with_samsungs_calories(env, monkeypatch):
+    at(monkeypatch, NOW)
+    use_client(monkeypatch, samsung_client())
+    asked = []
+    real = cli._reference_days
+
+    def spy(settings, max_hr, days, now):
+        asked.append(list(days))
+        return real(settings, max_hr, days, now)
+
+    monkeypatch.setattr(cli, "_reference_days", spy)
+
+    assert sync("2026-10-12") == 0
+
+    assert asked == [[DAY]]
 
 
 def test_a_locked_entries_store_postpones_the_fit(env, monkeypatch, capsys):

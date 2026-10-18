@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from owi.models import (
     HEART_RATE,
     SHEALTH_SOURCE,
+    HealthScore,
     Sample,
     SleepInterval,
     SleepSession,
@@ -67,6 +68,20 @@ def sleep_session(
 ) -> SleepSession:
     return SleepSession(
         id=id_, start=start, end=end, source=source, sleep_minutes=sleep_minutes, is_nap=is_nap
+    )
+
+
+def sleep_score(
+    id_: str, value: float, recorded_at: datetime, event_record_id: str | None = None
+) -> HealthScore:
+    """Samsung's Sleep Score as Open Wearables serves it; `recorded_at` is the sleep start."""
+    return HealthScore(
+        id=id_,
+        category="sleep",
+        value=float(value),
+        recorded_at=recorded_at,
+        provider="samsung",
+        event_record_id=event_record_id,
     )
 
 

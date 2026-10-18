@@ -11,11 +11,13 @@ SHEALTH_SOURCE = "com.sec.android.app.shealth"
 
 STEPS = "steps"
 HEART_RATE = "heart_rate"
+ACTIVE_ENERGY = "active_energy"
 DISTANCE = "distance_walking_running"
 WEIGHT = "weight"
 VO2_MAX = "vo2_max"
 BASAL_ENERGY = "basal_energy"
 BODY_FAT = "body_fat_percentage"
+SLEEP_CATEGORY = "sleep"
 
 DEFAULT_MAX_HR = 190.0
 
@@ -85,6 +87,18 @@ class SleepSession:
 
 
 @dataclass(frozen=True)
+class HealthScore:
+    """A score a provider computed itself, such as Samsung's Sleep Score."""
+
+    id: str
+    category: str
+    value: float
+    recorded_at: datetime  # UTC; for a Sleep Score the start of the sleep it scores
+    provider: str
+    event_record_id: str | None = None  # the sleep session it scores, as Open Wearables knows it
+
+
+@dataclass(frozen=True)
 class Params:
     """Tunable estimate parameters; calibration replaces the defaults.
 
@@ -113,7 +127,7 @@ class Profile:
 class DayInputs:
     """Everything fetched for one local day, already clipped to its window.
 
-    The last two fields reach outside the window. Only the score features read them, so the
+    The last three fields reach outside the window. Only the score features read them, so the
     DayResult stays a pure function of the day itself.
     """
 
@@ -130,6 +144,8 @@ class DayInputs:
     lead_in_samples: tuple[Sample, ...] = ()
     # Sleeps that start in the window and end after it: tonight's.
     tonight_sleeps: tuple[SleepSession, ...] = ()
+    # Samsung's Sleep Scores of nights that ended on the day.
+    samsung_sleep_scores: tuple[HealthScore, ...] = ()
 
 
 @dataclass(frozen=True)

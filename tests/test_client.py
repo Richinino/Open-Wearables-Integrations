@@ -1,4 +1,4 @@
-from datetime import UTC
+from datetime import UTC, date
 
 import httpx
 import pytest
@@ -220,6 +220,60 @@ def test_sleep_stages_are_normalised(raw, stage):
 @pytest.mark.parametrize("intervals", [None, []])
 def test_sleep_without_stage_intervals_has_an_empty_timeline(intervals):
     assert sleep_with_intervals(intervals).intervals == ()
+
+
+def health_score(id_: str, value: float | None, recorded_at: str, event: str | None) -> dict:
+    return {
+        "category": "sleep",
+        "value": value,
+        "qualifier": None,
+        "recorded_at": recorded_at,
+        "zone_offset": "+02:00",
+        "components": None,
+        "id": id_,
+        "data_source_id": "ds1",
+        "provider": "samsung",
+        "event_record_id": event,
+    }
+
+
+def test_health_scores_follow_the_offset_and_are_parsed():
+    calls: list[httpx.URL] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url)
+        if request.url.params["offset"] == "0":
+            items = [
+                health_score("h1", 84.0, "2026-10-11T22:15:00Z", "s1"),
+                health_score("h2", None, "2026-10-12T12:00:00Z", None),
+            ]
+            page = {"has_more": True, "total_count": 3}
+        else:
+            items = [health_score("h3", 71.0, "2026-10-12T23:10:00+02:00", None)]
+            page = {"has_more": False, "total_count": 3}
+        return httpx.Response(200, json={"data": items, "pagination": page})
+
+    scores = make_client(handler).health_scores(
+        "u1", "sleep", "samsung", date(2026, 10, 10), date(2026, 10, 14)
+    )
+
+    assert [(s.id, s.value, s.event_record_id) for s in scores] == [
+        ("h1", 84.0, "s1"),
+        ("h3", 71.0, None),
+    ]
+    assert scores[0].recorded_at == utc(2026, 10, 11, 22, 15)
+    assert scores[1].recorded_at == utc(2026, 10, 12, 21, 10)
+    assert (scores[0].category, scores[0].provider) == ("sleep", "samsung")
+    first = calls[0]
+    assert first.path == "/api/v1/users/u1/health-scores"
+    assert first.params["start_date"] == "2026-10-10"
+    assert first.params["end_date"] == "2026-10-14"
+    assert first.params["category"] == "sleep"
+    assert first.params["provider"] == "samsung"
+    assert first.params["limit"] == "100"
+    # The next page starts after every item of the first, also the one without a value.
+    assert calls[1].params["offset"] == "2"
+    assert len(calls) == 2
 
 
 def test_http_error_becomes_ow_error():
