@@ -115,4 +115,6 @@ Web ich dostane cez `owi serve` ako `scores` pri každom dni, k tomu `sleep_time
 | Verejná adresa | Tailscale Funnel: `/` pre telefón, `/owi` pre web |
 | Web | priečinok `web/`, nasadený na Vercel (projekt `zdravie`, root `web`, nasadí sa po každom pushi do vetvy); lokálne `npm run dev -- -p 3100` |
 
-Po reštarte notebooku treba spustiť Docker Desktop a appku Tailscale; kontajnery potom nabehnú samy.
+Po reštarte notebooku treba spustiť Docker Desktop a appku Tailscale (ideálne s Tailscale nastaveným na „Run unattended“); kontajnery potom nabehnú samy. Open Wearables potrebuje pre to vlastný `docker-compose.override.yml` s `restart: unless-stopped` pre všetky služby, inak celery worker po reštarte Dockeru nenabehne a dáta z telefónu ostanú nespracované vo fronte.
+
+**Funnel a VPN:** VPN na notebooku (NordVPN), ktorá sa pripojí alebo zmení server, nechá Tailscale bežať, ale Funnel prestane odpovedať, kým sa Tailscale znova nepripojí. Naplánovaná úloha Windows „owi Funnel watchdog“ spúšťa každých 5 minút [`scripts/funnel-watchdog.ps1`](../scripts/funnel-watchdog.ps1): skúsi Funnel zvonku (verejné adresy cez DNS over HTTPS) a keď dvakrát po sebe neodpovie, spraví `tailscale down` a `tailscale up` (najviac raz za 10 minút). Záznam je v `data/funnel-watchdog.log`.
