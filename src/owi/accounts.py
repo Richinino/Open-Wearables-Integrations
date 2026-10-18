@@ -729,14 +729,26 @@ class Accounts:
 
         return _run(self.path, work)
 
-    def delete(self, account_id: str) -> None:
-        def work(db: sqlite3.Connection) -> None:
+    def delete(self, account_id: str, now: datetime | None = None) -> Account:
+        """Remove the account and its reset links and return what was removed.
+
+        With `now`, the folder of a paired account's user is queued for deletion (deletions)
+        in the same transaction, so a removed account never leaves its folder unqueued.
+        """
+
+        def work(db: sqlite3.Connection) -> Account:
             account = _load(db, account_id)
             _guard_last_admin(db, account, "user", "deleted")
             db.execute("DELETE FROM reset_tokens WHERE account_id = ?", (account_id,))
             db.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+            if now is not None and account.ow_user_id is not None:
+                db.execute(
+                    "INSERT OR IGNORE INTO deletions (ow_user_id, requested_at) VALUES (?, ?)",
+                    (account.ow_user_id, _text(now)),
+                )
+            return account
 
-        _run(self.path, work)
+        return _run(self.path, work)
 
     def pair(self, account_id: str, ow_user_id: str) -> Account:
         def work(db: sqlite3.Connection) -> Account | AccountError:

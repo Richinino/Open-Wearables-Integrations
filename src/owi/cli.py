@@ -527,6 +527,13 @@ def _sync_accounts(settings: Settings, days: list[date], now: datetime) -> bool:
         except Exception as exc:
             _problem("mazanie priečinkov", exc)
             ok = False
+        try:
+            # The admin's system status (owi serve, GET /v1/admin/system) reads these.
+            accounts.system_set("last_sync_at", now.isoformat())
+            accounts.system_set("last_sync_ok", "1" if ok else "0")
+        except Exception as exc:
+            _problem("stav synchronizácie", exc)
+            ok = False
     return ok
 
 
@@ -747,6 +754,8 @@ def _cmd_serve(args: argparse.Namespace, settings: Settings) -> int:
         write_token=write_token,
         entries_path=settings.entries_path,
         params_path=settings.params_path,
+        accounts_path=settings.accounts_path,
+        data_dir=settings.data_dir,
     )
     host, port = server.server_address[:2]
     writes = "zápis zapnutý" if write_token else "len na čítanie"

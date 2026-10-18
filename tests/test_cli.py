@@ -851,6 +851,32 @@ def test_one_failing_user_does_not_stop_the_others(env, monkeypatch, capsys):
     assert "unreachable" in capsys.readouterr().err
 
 
+def test_sync_records_when_it_ran_and_whether_it_succeeded(env, monkeypatch):
+    at(monkeypatch, NOW)
+    add_account(env, "ow-a", "a@example.test")
+    use_client(monkeypatch, ByUser({"ow-a": steps_client(111)}))
+
+    assert sync("2026-10-12") == 0
+
+    with open_accounts(env) as store:
+        assert store.system_get("last_sync_at") == NOW.isoformat()
+        assert store.system_get("last_sync_ok") == "1"
+
+    class Broken(ByUser):
+        def timeseries(self, user_id, *args, **kwargs):
+            raise OWError("unreachable")
+
+    later = NOW + timedelta(minutes=10)
+    at(monkeypatch, later)
+    use_client(monkeypatch, Broken({"ow-a": steps_client(1)}))
+
+    assert sync("2026-10-12") == 1
+
+    with open_accounts(env) as store:
+        assert store.system_get("last_sync_at") == later.isoformat()
+        assert store.system_get("last_sync_ok") == "0"
+
+
 def test_samsung_health_flag_stays_true_after_a_quiet_run(env, monkeypatch):
     add_account(env, "ow-a", "a@example.test")
     at(monkeypatch, NOW)

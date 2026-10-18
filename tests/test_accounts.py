@@ -260,6 +260,27 @@ def test_delete_removes_the_account(store):
     assert gone.value.code == "not_found"
 
 
+def test_delete_with_a_time_queues_the_folder_of_a_paired_account(store):
+    admin(store)
+    paired = store.pair(register(store).id, "ow-1")
+    waiting = register(store, email="other@email.sk")
+
+    removed = store.delete(paired.id, NOW)
+    store.delete(waiting.id, NOW)
+
+    assert removed.ow_user_id == "ow-1"
+    assert store.deletions_pending() == ["ow-1"]
+
+
+def test_a_refused_delete_queues_nothing(store):
+    only = store.pair(admin(store).id, "ow-1")
+
+    with pytest.raises(AccountError):
+        store.delete(only.id, NOW)
+
+    assert store.deletions_pending() == []
+
+
 def test_update_changes_profile_and_merges_settings(store):
     account = register(store)
 
