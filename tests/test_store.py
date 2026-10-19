@@ -457,3 +457,56 @@ def test_a_history_without_the_signature_column_still_reads_and_gains_it(tmp_pat
     with Store(path) as writer:
         writer.save_fit(FitRecord(utc(2026, 10, 16, 9), 4, None, {}, {}, signature="d"))
         assert writer.latest_fit().signature == "d"
+
+
+MEASURED_COLUMNS = (
+    "distance_m",
+    "distance_m_source",
+    "active_kcal",
+    "active_kcal_source",
+    "total_kcal",
+    "total_kcal_source",
+    "resting_hr_measured",
+    "resting_hr_source",
+    "hrv_ms",
+    "hrv_kind",
+    "hrv_ms_source",
+)
+
+
+def test_measured_values_round_trip(store):
+    measured = make_day(
+        distance_m=7500.0,
+        distance_m_source="measured",
+        resting_hr_measured=52.0,
+        resting_hr_source="measured",
+        hrv_ms=70.0,
+        hrv_kind="rmssd",
+        hrv_ms_source="measured",
+    )
+
+    store.save_day(measured)
+
+    assert store.get_day(DAY) == measured
+
+
+def test_a_database_from_before_the_measured_values_reads_them_as_null(tmp_path):
+    path = tmp_path / "owi.db"
+    with Store(path) as store:
+        store.save_day(make_day())
+    db = sqlite3.connect(path)
+    for column in MEASURED_COLUMNS:
+        db.execute(f'ALTER TABLE daily DROP COLUMN "{column}"')
+    db.commit()
+    db.close()
+
+    with Store(path, readonly=True) as readonly:
+        old = readonly.get_day(DAY)
+    with Store(path) as store:  # opening for writing migrates it
+        migrated = store.get_day(DAY)
+        store.save_day(make_day(distance_m=1.0, distance_m_source="measured"))
+        assert store.get_day(DAY).distance_m == 1.0
+
+    for result in (old, migrated):
+        assert result.steps == 20000
+        assert all(getattr(result, column) is None for column in MEASURED_COLUMNS)

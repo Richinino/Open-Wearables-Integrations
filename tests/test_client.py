@@ -361,3 +361,22 @@ def test_summary_pairs_lists_provider_and_type_with_data():
     }
 
     assert summary_pairs(summary) == [("garmin", "active_energy"), ("garmin", "steps")]
+
+
+def test_client_reads_the_device_type_of_a_source():
+    item = {
+        "timestamp": "2026-10-12T07:30:00Z",
+        "type": "resting_heart_rate",
+        "value": 52.0,
+        "source": {**SOURCE, "provider": "Samsung", "device_type": "watch"},
+    }
+    client = make_client(
+        lambda request: httpx.Response(200, json={"data": [item], "pagination": LAST_PAGE})
+    )
+
+    (sample,) = client.timeseries(
+        "u1", ["resting_heart_rate"], utc(2026, 10, 12), utc(2026, 10, 13)
+    )
+
+    assert sample.type == "resting_heart_rate"
+    assert sample.source.is_watch

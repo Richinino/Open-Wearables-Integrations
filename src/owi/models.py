@@ -16,6 +16,10 @@ DISTANCE = "distance_walking_running"
 WEIGHT = "weight"
 VO2_MAX = "vo2_max"
 BASAL_ENERGY = "basal_energy"
+TOTAL_ENERGY = "total_energy"
+RESTING_HR = "resting_heart_rate"
+HRV_RMSSD = "heart_rate_variability_rmssd"
+HRV_SDNN = "heart_rate_variability_sdnn"
 BODY_FAT = "body_fat_percentage"
 SLEEP_CATEGORY = "sleep"
 
@@ -29,6 +33,11 @@ class SourceRef:
     provider: str
     source: str | None = None
     device: str | None = None
+    device_type: str | None = None  # "watch", "phone", ... when Open Wearables says
+
+    @property
+    def is_watch(self) -> bool:
+        return (self.device_type or "").lower() == "watch"
 
     @property
     def is_health_connect(self) -> bool:
@@ -42,6 +51,22 @@ class SourceRef:
     def is_samsung_health_app(self) -> bool:
         """Written to Health Connect by the Samsung Health app."""
         return self.is_health_connect and self.source == SHEALTH_SOURCE
+
+
+_PROVIDER_RANKS = {"samsung": 1, "apple": 2, "apple_health": 2, "suunto": 3}
+OTHER_RANK = 5
+
+
+def source_rank(source: SourceRef) -> int:
+    """Provider rank, lower is better: Health Connect 0, Samsung 1, Apple 2, Suunto 3, others 5."""
+    if source.is_health_connect:
+        return 0
+    return _PROVIDER_RANKS.get(source.provider, OTHER_RANK)
+
+
+def source_order(source: SourceRef) -> tuple[int, int]:
+    """Full preference order: provider rank, then a watch before a phone. Lower is better."""
+    return source_rank(source), 0 if source.is_watch else 1
 
 
 @dataclass(frozen=True)
@@ -196,3 +221,16 @@ class DayResult:
     sleep_awake_min: float | None
     nap_minutes: float | None
     workouts: tuple[WorkoutResult, ...] = ()
+    # What the device measured, else owi's estimate; `*_source` is "measured", "estimated"
+    # or None. The *_est values above stay: the tuning fits them.
+    distance_m: float | None = None
+    distance_m_source: str | None = None
+    active_kcal: float | None = None
+    active_kcal_source: str | None = None
+    total_kcal: float | None = None
+    total_kcal_source: str | None = None
+    resting_hr_measured: float | None = None
+    resting_hr_source: str | None = None
+    hrv_ms: float | None = None
+    hrv_kind: str | None = None  # "rmssd" or "sdnn"
+    hrv_ms_source: str | None = None

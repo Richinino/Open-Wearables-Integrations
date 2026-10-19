@@ -119,6 +119,7 @@ def _day(
     and each workout's strain."""
     strain = features.workout_strain if features else {}
     day = {name: _iso(value) for name, value in asdict(result).items() if name != "workouts"}
+    day["resting_hr"] = day.pop("resting_hr_measured")
     day["workouts"] = [
         {
             **{name: _iso(value) for name, value in asdict(workout).items()},

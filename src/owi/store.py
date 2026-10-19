@@ -96,6 +96,17 @@ RECOMPUTE_TABLE = "recompute_state"
 _ADDED_COLUMNS = (
     ("workouts", "phone_steps", "INTEGER"),
     ("params_history", "signature", "TEXT"),
+    ("daily", "distance_m", "REAL"),
+    ("daily", "distance_m_source", "TEXT"),
+    ("daily", "active_kcal", "REAL"),
+    ("daily", "active_kcal_source", "TEXT"),
+    ("daily", "total_kcal", "REAL"),
+    ("daily", "total_kcal_source", "TEXT"),
+    ("daily", "resting_hr_measured", "REAL"),
+    ("daily", "resting_hr_source", "TEXT"),
+    ("daily", "hrv_ms", "REAL"),
+    ("daily", "hrv_kind", "TEXT"),
+    ("daily", "hrv_ms_source", "TEXT"),
 )
 
 T = TypeVar("T")
@@ -245,7 +256,9 @@ class Store:
 
     @staticmethod
     def _day(row: sqlite3.Row, workouts: list[WorkoutResult]) -> DayResult:
-        data = {name: row[name] for name in _DAY_FIELDS}
+        # A read-only store over an older database lacks the columns added since.
+        present = set(row.keys())
+        data = {name: row[name] if name in present else None for name in _DAY_FIELDS}
         data["day"] = date.fromisoformat(data["day"])
         data["complete"] = bool(data["complete"])
         data["sleep_start"] = _time(data["sleep_start"])

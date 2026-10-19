@@ -9,7 +9,7 @@ from statistics import fmean
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
-from owi import estimates, features, heart, sleep, steps, workouts
+from owi import estimates, features, heart, measured, sleep, steps, workouts
 from owi.days import day_window, elapsed_fraction, today
 from owi.models import (
     ACTIVE_ENERGY,
@@ -109,7 +109,7 @@ def fetch_day(
     sleeps = tuple(s for s in found_sleeps if start <= s.end < end)
     # One fetch also covers the part of the night before midnight.
     lead_in = min([start, *(s.start for s in sleeps if not s.is_nap)])
-    samples = client.timeseries(user_id, DAY_TYPES, lead_in, end)
+    samples = client.timeseries(user_id, (*DAY_TYPES, *measured.TYPES), lead_in, end)
     found_workouts = client.workouts(user_id, start, end)
     scores = client.health_scores(
         user_id, SLEEP_CATEGORY, SAMSUNG_PROVIDER, day - SCORE_LOOKAROUND, day + SCORE_LOOKAROUND
@@ -163,6 +163,14 @@ def compute(inputs: DayInputs, params: Params, timezone: str) -> DayResult:
     summary = sleep.summarize(inputs.sleeps)
     main = summary.main if summary else None
 
+    device = measured.measure(inputs.samples, main)
+    distance, distance_source = measured.pick(
+        device.distance_m, estimates.distance_m(step_count, params)
+    )
+    active_kcal, active_source = measured.pick(device.active_kcal, activity if minute_hr else None)
+    total_kcal, total_source = _total_kcal(device, basal, total if minute_hr else None)
+    hrv_source = measured.MEASURED if device.hrv_ms is not None else None
+
     return DayResult(
         day=inputs.day,
         timezone=timezone,
@@ -193,7 +201,29 @@ def compute(inputs: DayInputs, params: Params, timezone: str) -> DayResult:
             workouts.enrich(w, inputs.samples, inputs.day, resting, inputs.profile, params)
             for w in inputs.workouts
         ),
+        distance_m=distance,
+        distance_m_source=distance_source,
+        active_kcal=active_kcal,
+        active_kcal_source=active_source,
+        total_kcal=total_kcal,
+        total_kcal_source=total_source,
+        resting_hr_measured=device.resting_hr,
+        resting_hr_source=measured.MEASURED if device.resting_hr is not None else None,
+        hrv_ms=device.hrv_ms,
+        hrv_kind=device.hrv_kind,
+        hrv_ms_source=hrv_source,
     )
+
+
+def _total_kcal(
+    device: measured.Measured, basal: float | None, estimate: float | None
+) -> tuple[float | None, str | None]:
+    """The device's total energy; else its active energy plus the basal; else the estimate."""
+    if device.total_kcal is not None:
+        return device.total_kcal, measured.MEASURED
+    if device.active_kcal is not None and basal is not None:
+        return device.active_kcal + basal, measured.MEASURED
+    return measured.pick(None, estimate)
 
 
 def day_features(store: Store, inputs: DayInputs, result: DayResult, person: Person) -> DayFeatures:

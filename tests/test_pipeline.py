@@ -12,11 +12,18 @@ from owi.models import (
     BODY_FAT,
     DISTANCE,
     HEART_RATE,
+    HRV_RMSSD,
+    HRV_SDNN,
+    RESTING_HR,
     STEPS,
+    TOTAL_ENERGY,
     VO2_MAX,
     WEIGHT,
     Params,
     Profile,
+    SourceRef,
+    source_order,
+    source_rank,
 )
 from owi.pipeline import (
     compute,
@@ -275,3 +282,173 @@ def test_a_fitted_basal_fills_in_only_on_days_without_a_samsung_basal_record():
     assert filled.basal_kcal == 1800.0
     assert filled.total_kcal_est == pytest.approx(1800.0 + filled.activity_kcal_est)
     assert (unknown.basal_kcal, unknown.total_kcal_est) == (None, None)
+
+
+# Measured values before estimates
+
+APPLE_WATCH = SourceRef("apple", "Watch", "Watch6", "watch")
+APPLE_PHONE = SourceRef("apple", "iPhone", "iPhone15", "phone")
+SUUNTO = SourceRef("suunto", "Suunto", "Race", "watch")
+OTHER = SourceRef("garmin", "Garmin", "Fenix", "watch")
+
+
+def measured_day(extra, steps=20000, now=NOW, with_hr=True):
+    samples = [sample(START, STEPS, steps, HC_SHEALTH), *extra]
+    if with_hr:
+        samples += hr_minutes(WORKOUT_START, [150.0] * 60) + hr_minutes(START, [50.0] * 120)
+    inputs = fetch_day(
+        FakeClient(samples),
+        "u1",
+        DAY,
+        TZ,
+        Profile(weight_kg=70.0, vo2max=48.0, basal_kcal_per_day=1650.0, max_hr=190.0),
+        now,
+    )
+    return compute(inputs, Params(stride_m=0.75), TIMEZONE)
+
+
+def test_device_distance_wins_over_the_stride_estimate():
+    result = measured_day(
+        [
+            sample(utc(2026, 10, 12, 9), DISTANCE, 5000.0, SAMSUNG_WATCH),
+            sample(utc(2026, 10, 12, 10), DISTANCE, 2500.0, SAMSUNG_WATCH),
+        ]
+    )
+
+    assert (result.distance_m, result.distance_m_source) == (7500.0, "measured")
+    assert result.distance_m_est == pytest.approx(20000 * 0.75)
+
+
+def test_without_device_distance_the_estimate_fills_in():
+    result = measured_day([])
+
+    assert (result.distance_m, result.distance_m_source) == (
+        pytest.approx(15000.0),
+        "estimated",
+    )
+
+
+def test_the_best_ranked_source_is_used_and_sources_are_not_added():
+    result = measured_day(
+        [
+            sample(utc(2026, 10, 12, 9), DISTANCE, 6000.0, APPLE_WATCH),
+            sample(utc(2026, 10, 12, 9), DISTANCE, 9000.0, SAMSUNG_WATCH),
+            sample(utc(2026, 10, 12, 9), DISTANCE, 100.0, HC_PHONE),
+            sample(utc(2026, 10, 12, 9), RESTING_HR, 60.0, APPLE_PHONE),
+            sample(utc(2026, 10, 12, 9), RESTING_HR, 58.0, APPLE_WATCH),
+        ]
+    )
+
+    assert result.distance_m == 100.0  # Health Connect ranks first
+    assert result.resting_hr_measured == 58.0  # a watch before a phone
+
+
+def test_source_rank_order():
+    assert [source_rank(s) for s in (HC_PHONE, SAMSUNG_WATCH, APPLE_PHONE, SUUNTO, OTHER)] == [
+        0,
+        1,
+        2,
+        3,
+        5,
+    ]
+    assert source_order(APPLE_WATCH) < source_order(APPLE_PHONE) < source_order(SUUNTO)
+
+
+def test_device_active_energy_wins_and_total_adds_basal():
+    result = measured_day(
+        [
+            sample(utc(2026, 10, 12, 9), ACTIVE_ENERGY, 300.0, SAMSUNG_WATCH),
+            sample(utc(2026, 10, 12, 12), ACTIVE_ENERGY, 200.0, SAMSUNG_WATCH),
+            sample(utc(2026, 9, 9, 5), BASAL_ENERGY, 1650.0),
+        ]
+    )
+
+    assert (result.active_kcal, result.active_kcal_source) == (500.0, "measured")
+    assert (result.total_kcal, result.total_kcal_source) == (2150.0, "measured")
+    assert result.activity_kcal_est is not None  # the estimate is still computed
+
+
+def test_device_total_energy_is_used_when_the_device_sends_it():
+    result = measured_day(
+        [
+            sample(utc(2026, 10, 12, 9), ACTIVE_ENERGY, 300.0, SAMSUNG_WATCH),
+            sample(utc(2026, 10, 12, 9), TOTAL_ENERGY, 2400.0, SAMSUNG_WATCH),
+            sample(utc(2026, 9, 9, 5), BASAL_ENERGY, 1650.0),
+        ]
+    )
+
+    assert (result.total_kcal, result.total_kcal_source) == (2400.0, "measured")
+
+
+def test_without_device_energy_the_estimates_fill_in():
+    result = measured_day([sample(utc(2026, 9, 9, 5), BASAL_ENERGY, 1650.0)])
+
+    assert (result.active_kcal, result.active_kcal_source) == (
+        result.activity_kcal_est,
+        "estimated",
+    )
+    assert (result.total_kcal, result.total_kcal_source) == (result.total_kcal_est, "estimated")
+
+
+def test_device_resting_heart_rate_is_reported_separately():
+    result = measured_day(
+        [
+            sample(utc(2026, 10, 12, 6), RESTING_HR, 55.0, SAMSUNG_WATCH),
+            sample(utc(2026, 10, 12, 18), RESTING_HR, 53.0, SAMSUNG_WATCH),
+            sample(utc(2026, 10, 12, 12), RESTING_HR, 99.0, SAMSUNG_WATCH),
+        ]
+    )
+
+    assert (result.resting_hr_measured, result.resting_hr_source) == (53.0, "measured")
+    assert result.hr_resting == pytest.approx(50.0)  # owi's own value stays its own
+
+
+def test_nightly_hrv_rmssd_or_sdnn_is_reported():
+    night = [
+        sample(utc(2026, 10, 12, 1), HRV_RMSSD, 60.0, SAMSUNG_WATCH),
+        sample(utc(2026, 10, 12, 3), HRV_RMSSD, 80.0, SAMSUNG_WATCH),
+        sample(utc(2026, 10, 12, 15), HRV_RMSSD, 10.0, SAMSUNG_WATCH),  # awake
+    ]
+    sleeps = [sleep_session("night", utc(2026, 10, 11, 20), utc(2026, 10, 12, 4))]
+    only_sdnn = [sample(utc(2026, 10, 12, 2), HRV_SDNN, 45.0, SAMSUNG_WATCH)]
+
+    def run(extra):
+        client = FakeClient([*extra, sample(START, STEPS, 100, HC_SHEALTH)], sleeps=sleeps)
+        return compute(fetch_day(client, "u1", DAY, TZ, Profile(), NOW), Params(), TIMEZONE)
+
+    rmssd = run([*night, *only_sdnn])
+    sdnn = run(only_sdnn)
+
+    assert (rmssd.hrv_ms, rmssd.hrv_kind, rmssd.hrv_ms_source) == (70.0, "rmssd", "measured")
+    assert (sdnn.hrv_ms, sdnn.hrv_kind, sdnn.hrv_ms_source) == (45.0, "sdnn", "measured")
+
+
+def test_no_value_at_all_is_null_with_null_source():
+    inputs = fetch_day(FakeClient(), "u1", DAY, TZ, Profile(), NOW)
+    result = compute(inputs, Params(), TIMEZONE)
+
+    for name in ("distance_m", "active_kcal", "total_kcal", "resting_hr_measured", "hrv_ms"):
+        assert getattr(result, name) is None
+    assert result.hrv_kind is None
+    for name in (
+        "distance_m_source",
+        "active_kcal_source",
+        "total_kcal_source",
+        "resting_hr_source",
+        "hrv_ms_source",
+    ):
+        assert getattr(result, name) is None
+
+
+def test_fetch_day_asks_for_the_resting_hr_and_hrv_series():
+    asked = []
+
+    class Spy(FakeClient):
+        def timeseries(self, user_id, types, start, end):
+            asked.append(tuple(types))
+            return super().timeseries(user_id, types, start, end)
+
+    fetch_day(Spy(), "u1", DAY, TZ, Profile(), NOW)
+
+    (types,) = asked
+    assert {RESTING_HR, HRV_RMSSD, HRV_SDNN, TOTAL_ENERGY} <= set(types)

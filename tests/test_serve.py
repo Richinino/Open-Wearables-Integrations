@@ -143,7 +143,8 @@ def test_a_day_carries_every_stored_field_and_its_workouts(db_path):
 
     (day,) = body["days"]
     stored = {f.name for f in fields(DayResult)}
-    assert set(day) == stored | {"scores", "sleep_timeline", "samsung", "samsung_auto"}
+    api_names = (stored - {"resting_hr_measured"}) | {"resting_hr"}
+    assert set(day) == api_names | {"scores", "sleep_timeline", "samsung", "samsung_auto"}
     assert day["complete"] is True
     assert day["steps_source"] == "samsung_health_total"
     assert day["total_kcal_est"] == 2550.5
@@ -575,3 +576,37 @@ def test_an_unreadable_params_file_does_not_break_the_days(db_path):
 
     assert response.status == 200
     assert response.body["calibration"]["params"] == DEFAULT_PARAMS
+
+
+def test_a_day_carries_measured_values_under_the_contract_keys(db_path):
+    with Store(db_path) as store:
+        store.save_day(
+            make_day(
+                date(2026, 10, 3),
+                distance_m=7500.0,
+                distance_m_source="measured",
+                resting_hr_measured=52.0,
+                resting_hr_source="measured",
+                hrv_ms=70.0,
+                hrv_kind="rmssd",
+                hrv_ms_source="measured",
+                total_kcal=2550.5,
+                total_kcal_source="estimated",
+            )
+        )
+
+    measured, plain = (
+        get(db_path, "/v1/days?from=2026-10-03").body["days"][0],
+        get(db_path, "/v1/days?from=2026-10-01&to=2026-10-01").body["days"][0],
+    )
+
+    assert (measured["distance_m"], measured["distance_m_source"]) == (7500.0, "measured")
+    assert (measured["resting_hr"], measured["resting_hr_source"]) == (52.0, "measured")
+    assert (measured["hrv_ms"], measured["hrv_kind"]) == (70.0, "rmssd")
+    assert measured["total_kcal_source"] == "estimated"
+    assert "resting_hr_measured" not in measured
+    assert measured["hr_resting"] == 45.5  # owi's own key stays
+    assert measured["total_kcal_est"] == 2550.5  # the estimates stay
+    for key in ("distance_m", "active_kcal", "total_kcal", "resting_hr", "hrv_ms"):
+        assert plain[key] is None
+        assert plain[f"{key}_source"] is None

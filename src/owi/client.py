@@ -44,6 +44,7 @@ def _source(raw: dict[str, Any] | None) -> SourceRef:
         provider=(raw.get("provider") or "unknown").lower(),
         source=raw.get("source"),
         device=raw.get("device"),
+        device_type=raw.get("device_type"),
     )
 
 
