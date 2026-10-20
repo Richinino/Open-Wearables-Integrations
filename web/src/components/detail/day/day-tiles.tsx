@@ -1,6 +1,7 @@
 // The tiles of one day: the day score with its three parts, strain and sleep need, the night,
 // activity, heart and workouts. Every score names the vendor its method comes from.
 
+import { dayFigure } from "@/lib/day-values";
 import Link from "next/link";
 import { ACTIVITY_TARGETS, CalibrationNote } from "@/components/detail/common/calibration";
 import { Chip, Rows, Swatch, VENDOR, VendorLine } from "@/components/detail/shared-b/parts";
@@ -283,13 +284,13 @@ export function ActivityTile({ day, calibration }: { day: Day; calibration?: Cal
       <Rows
         rows={[
           { k: "Aktívny čas", v: approx(formatDuration(day.active_minutes_est)) },
-          { k: "Vzdialenosť", v: approx(formatDistance(day.distance_m_est)) },
-          { k: "Kalórie spolu", v: approx(formatKcal(day.total_kcal_est)) },
-          { k: "z toho aktivita", v: approx(formatKcal(day.activity_kcal_est)) },
+          { k: "Vzdialenosť", v: dayFigure(day, "distance", formatDistance) },
+          { k: "Kalórie spolu", v: dayFigure(day, "totalEnergy", formatKcal) },
+          { k: "z toho aktivita", v: dayFigure(day, "activeEnergy", formatKcal) },
           { k: "z toho bazál", v: formatKcal(day.basal_kcal) },
         ]}
       />
-      <p className="text-[12px] text-muted">≈ odhad z tepu a krokov; hodinky tieto čísla neposielajú.</p>
+      <p className="text-[12px] text-muted">≈ označuje odhad z tepu a krokov. Ostatné hodnoty pochádzajú zo zariadenia alebo súčtu jeho meraní.</p>
       <CalibrationNote calibration={calibration} targets={DAY_TARGETS} />
     </TileShell>
   );

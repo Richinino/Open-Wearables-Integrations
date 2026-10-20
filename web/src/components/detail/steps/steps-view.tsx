@@ -3,6 +3,7 @@
 // /kroky: steps today with their source, 30 or 90 days with the average, the weekday
 // pattern, the distance estimate and the best days.
 
+import { dayFigure, periodFigure } from "@/lib/day-values";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -20,7 +21,7 @@ import {
   weekendShare,
   type WeekdaySteps,
 } from "@/lib/detail-activity";
-import { approx, DASH, formatDay, formatDecimal, formatDistance, formatInt, stepsSourceLabel } from "@/lib/format";
+import { DASH, formatDay, formatDecimal, formatDistance, formatInt, stepsSourceLabel } from "@/lib/format";
 import { windowEnding } from "@/lib/metrics";
 import { WEEKDAY_LETTERS } from "@/lib/overview";
 import type { Dataset, Day } from "@/lib/types";
@@ -57,8 +58,8 @@ function StepsTodayTile({ day, isToday, average }: { day: Day; isToday: boolean;
         </p>
       </div>
       <div className="grid grid-cols-2 gap-4">
-        <Figure label="Vzdialenosť" value={approx(formatDistance(day.distance_m_est))} note="odhad z dĺžky kroku" />
-        <Figure label="Zdroj" value={<span className="text-[18px]">{stepsSourceLabel(day.steps_source)}</span>} note="najvyššia z troch hodnôt" />
+        <Figure label="Vzdialenosť" value={dayFigure(day, "distance", formatDistance)} note="zo zariadenia alebo odhad z krokov" />
+        <Figure label="Zdroj" value={<span className="text-[18px]">{stepsSourceLabel(day.steps_source)}</span>} note="vybraný zdroj bez sčítania duplicít" />
       </div>
       <div className="flex flex-col gap-1.5 border-t border-line pt-4">
         <p className="text-[14px] text-ink2">
@@ -101,7 +102,7 @@ function StepsChartTile({ dataset, date }: { dataset: Dataset; date: string }) {
             return [
               formatDay(day.day),
               `${formatInt(day.steps)}${day.complete === false ? " (zatiaľ)" : ""}`,
-              approx(formatDistance(day.distance_m_est)),
+              dayFigure(day, "distance", formatDistance),
               stepsSourceLabel(day.steps_source),
             ];
           })
@@ -181,17 +182,16 @@ function DistanceTile({ dataset, day }: { dataset: Dataset; day: Day }) {
   const month = stepsStats(dataset.days, day.day, 30);
   return (
     <TileShell className="gap-5 p-6 sm:p-[30px]">
-      <h2 className="eyebrow">Vzdialenosť · odhad</h2>
+      <h2 className="eyebrow">Vzdialenosť</h2>
       <div className="grid grid-cols-2 gap-x-4 gap-y-5">
-        <Figure label={day.complete === false ? "Dnes, zatiaľ" : "V ten deň"} value={approx(formatDistance(day.distance_m_est))} />
-        <Figure label="Priemer za deň · 30 dní" value={approx(formatDistance(month.distanceAverage))} />
-        <Figure label="Posledných 7 dní" value={approx(formatDistance(week.distance))} note="ukončené dni" />
-        <Figure label="Posledných 30 dní" value={approx(formatDistance(month.distance))} note="ukončené dni" />
+        <Figure label={day.complete === false ? "Dnes, zatiaľ" : "V ten deň"} value={dayFigure(day, "distance", formatDistance)} />
+        <Figure label="Priemer za deň · 30 dní" value={periodFigure(dataset.days, day.day, 30, "distance", month.distanceAverage, formatDistance)} />
+        <Figure label="Posledných 7 dní" value={periodFigure(dataset.days, day.day, 7, "distance", week.distance, formatDistance)} note="ukončené dni" />
+        <Figure label="Posledných 30 dní" value={periodFigure(dataset.days, day.day, 30, "distance", month.distance, formatDistance)} note="ukončené dni" />
       </div>
       <CalibrationNote calibration={dataset.calibration} targets={[{ key: "distance_km" }]} />
       <p className="text-[12px] text-muted">
-        Vzdialenosť je kroky krát dĺžka kroku, naladená podľa dní zo Samsung Health. Tréningy s GPS majú vlastnú presnejšiu
-        vzdialenosť.
+        Vzdialenosť má prednosť zo zariadenia. Keď chýba, používa sa odhad z krokov označený ≈. Tréningy môžu mať vlastnú GPS vzdialenosť.
       </p>
     </TileShell>
   );
@@ -214,7 +214,7 @@ function BestDaysTile({ dataset, date }: { dataset: Dataset; date: string }) {
                 <span className="text-right text-[12px] text-ink2">
                   {formatDay(item.day)}
                   <br />
-                  {approx(formatDistance(item.distance))}
+                  {dayFigure(dataset.days.find((day) => day.day === item.day), "distance", formatDistance)}
                 </span>
               </Link>
             </li>

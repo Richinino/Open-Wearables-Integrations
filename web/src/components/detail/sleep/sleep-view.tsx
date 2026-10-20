@@ -4,10 +4,11 @@
 // stages, naps), the sleep need for tonight, regularity, and 14, 30 or 90 nights of history.
 
 import { useState } from "react";
+import { useAccount } from "@/lib/account-context";
 import { WithData } from "@/components/shell/shell";
 import { EmptyState } from "@/components/ui/parts";
 import { addDays } from "@/lib/dates";
-import { isSleepKind, lastNight, needTonight, SLEEP_KIND_KEY, sleepHistory } from "@/lib/detail-sleep";
+import { isSleepKind, lastNight, needTonight, SLEEP_KIND_KEY, sleepHistory, type SleepKind } from "@/lib/detail-sleep";
 import { formatClock, formatDay, formatDuration } from "@/lib/format";
 import { indexByDay } from "@/lib/metrics";
 import type { Dataset } from "@/lib/types";
@@ -24,12 +25,16 @@ const PERIODS = [
 ];
 
 function Sleep({ dataset, now }: { dataset: Dataset; now: Date }) {
+  const account = useAccount();
   const tz = dataset.timezone;
   const focus = focusOf(dataset, now);
   const byDay = indexByDay(dataset.days);
   const night = lastNight(dataset.days, focus.date);
   const previous = night ? (byDay.get(addDays(night.day, -1)) ?? null) : null;
-  const [kind, setKind] = useStoredChoice(SLEEP_KIND_KEY, isSleepKind, "performance");
+  const [storedKind, setStoredKind] = useStoredChoice(SLEEP_KIND_KEY, isSleepKind, "performance");
+  const [chosenKind, setChosenKind] = useState<SleepKind | null>(null);
+  const kind = chosenKind ?? account?.dataAccount.settings.sleep_score ?? storedKind;
+  const setKind = (value: SleepKind) => account ? setChosenKind(value) : setStoredKind(value);
   const [period, setPeriod] = useState(30);
   const plan = needTonight(dataset.days, tz, focus.date);
   const isLastNight = night?.day === focus.today;
@@ -78,5 +83,7 @@ function Sleep({ dataset, now }: { dataset: Dataset; now: Date }) {
 }
 
 export function SleepView() {
-  return <WithData>{(dataset, now) => <Sleep dataset={dataset} now={now} />}</WithData>;
+  const account = useAccount();
+  const key = `${account?.dataAccount.id ?? "demo"}:${account?.dataAccount.settings.sleep_score ?? "performance"}`;
+  return <WithData>{(dataset, now) => <Sleep key={key} dataset={dataset} now={now} />}</WithData>;
 }

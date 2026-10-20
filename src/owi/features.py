@@ -49,7 +49,6 @@ SAMSUNG_EVENING_BEFORE_END = timedelta(hours=3)
 
 AWAKE = "awake"
 ASLEEP = "asleep"
-STAGES = ("deep", "rem", "light")
 
 _ONE_MINUTE = timedelta(minutes=1)
 _ONE_HOUR = timedelta(hours=1)
@@ -367,15 +366,6 @@ def _sleep(main: SleepSession | None) -> dict[str, Any]:
     if main is None:
         return dict.fromkeys(_SLEEP_FIELDS)
     intervals = main.intervals
-    staged = any(i.stage in STAGES for i in intervals)
-
-    def stage_minutes(stage: str, reported: float | None) -> float | None:
-        if reported is not None:
-            return reported
-        if not staged:
-            return None
-        return sum(_length(i.start, i.end) for i in intervals if i.stage == stage)
-
     if main.sleep_minutes is not None:
         total = main.sleep_minutes
     elif intervals:
@@ -388,9 +378,9 @@ def _sleep(main: SleepSession | None) -> dict[str, Any]:
         "sleep_end": main.end,
         "sleep_minutes": total,
         "in_bed_minutes": _length(main.start, main.end),
-        "deep_minutes": stage_minutes("deep", main.deep_minutes),
-        "rem_minutes": stage_minutes("rem", main.rem_minutes),
-        "light_minutes": stage_minutes("light", main.light_minutes),
+        "deep_minutes": sleep.stage_minutes(main, "deep"),
+        "rem_minutes": sleep.stage_minutes(main, "rem"),
+        "light_minutes": sleep.stage_minutes(main, "light"),
         "awake_minutes": main.awake_minutes if awake is None else awake,
         "awake_bouts": bouts,
     }
@@ -484,6 +474,9 @@ def extract(
         vo2max=vo2max,
         weight_kg=inputs.profile.weight_kg,
         body_fat_pct=person.body_fat_pct,
+        hrv_ms=result.hrv_ms,
+        hrv_kind=result.hrv_kind,
+        hrv_ms_source=result.hrv_ms_source,
         samsung_sleep_score=_samsung_sleep_score(inputs, main),
         **_samsung_sums(inputs.samples, inputs.start, inputs.end),
     )

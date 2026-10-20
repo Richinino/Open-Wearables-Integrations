@@ -5,6 +5,7 @@
 // of averages and records. Texts are Slovak.
 
 import { addDays, dateRange, weekdayIndex } from "./dates";
+import { dayValue } from "./day-values";
 import { average, indexByDay, sum } from "./metrics";
 import type { CardioLoadStatus, Day } from "./types";
 
@@ -185,7 +186,7 @@ export interface StepsStats {
 export function stepsStats(days: Day[], end: string, length: number): StepsStats {
   const from = addDays(end, -(length - 1));
   const finished = days.filter((day) => day.day >= from && day.day <= end && finishedSteps(day) !== null);
-  const distances = finished.map((day) => day.distance_m_est);
+  const distances = finished.map((day) => dayValue(day, "distance"));
   return {
     average: average(finished.map(finishedSteps)),
     days: finished.length,
@@ -223,7 +224,7 @@ export function bestStepDays(days: Day[], end: string, length: number = 90, coun
   const from = addDays(end, -(length - 1));
   return days
     .filter((day) => day.day >= from && day.day <= end && finishedSteps(day) !== null)
-    .map((day) => ({ day: day.day, steps: day.steps as number, distance: isNumber(day.distance_m_est) ? day.distance_m_est : null }))
+    .map((day) => ({ day: day.day, steps: day.steps as number, distance: dayValue(day, "distance") }))
     .sort((a, b) => b.steps - a.steps || (a.day < b.day ? -1 : 1))
     .slice(0, count);
 }

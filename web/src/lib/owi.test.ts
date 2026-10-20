@@ -24,7 +24,7 @@ function configure(values: { url?: string; token?: string; production?: boolean 
 }
 
 async function failure(): Promise<DatasetUnavailableError> {
-  const error = await loadDataset().then(
+  const error = await loadDataset("account-a").then(
     () => null,
     (reason: unknown) => reason,
   );
@@ -48,11 +48,11 @@ describe("loadDataset with a configured source", () => {
     configure({ url: API_URL, token: TOKEN, production: true });
     fetchMock.mockResolvedValue(Response.json(BODY));
 
-    expect(await loadDataset()).toEqual(BODY);
+    expect(await loadDataset("account-a")).toEqual(BODY);
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("https://owi.example.test/owi/v1/days");
+    expect(url).toBe("https://owi.example.test/owi/v1/days?account=account-a");
     expect(new Headers(init?.headers).get("authorization")).toBe(`Bearer ${TOKEN}`);
     expect(init?.cache).toBe("no-store");
     expect((init as { next?: unknown }).next).toBeUndefined();
@@ -62,14 +62,14 @@ describe("loadDataset with a configured source", () => {
   it("strips a trailing slash from the base URL", async () => {
     configure({ url: `${API_URL}/`, token: TOKEN });
     fetchMock.mockResolvedValue(Response.json(BODY));
-    await loadDataset();
-    expect(fetchMock.mock.calls[0][0]).toBe("https://owi.example.test/owi/v1/days");
+    await loadDataset("account-a");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://owi.example.test/owi/v1/days?account=account-a");
   });
 
   it("uses the API, not demo data, in development once a URL is set", async () => {
     configure({ url: API_URL, token: TOKEN });
     fetchMock.mockResolvedValue(Response.json(BODY));
-    expect(await loadDataset()).toEqual(BODY);
+    expect(await loadDataset("account-a")).toEqual(BODY);
   });
 
   it.each([401, 404, 500, 503, 204])("is unavailable on status %i", async (status) => {
@@ -128,12 +128,20 @@ describe("loadDataset with a configured source", () => {
 });
 
 describe("loadDataset without a configured source", () => {
+  it("requires identity and never implicitly enables demo", async () => {
+    configure({});
+    await expect(loadDataset("")).rejects.toThrow("account is required");
+    await expect(loadDataset("account-a")).rejects.toThrow("not set");
+    vi.stubEnv("OWI_LOCAL_DEMO", "1");
+    await expect(loadDataset("account-a")).rejects.toThrow("not set");
+  });
   it("serves demo data in development, synced seven minutes ago", async () => {
     configure({});
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-13T22:30:00Z"));
 
-    const dataset = await loadDataset();
+    vi.stubEnv("OWI_LOCAL_DEMO", "1");
+    const dataset = await loadDataset("local-demo");
     expect(fetchMock).not.toHaveBeenCalled();
     // 22:30 UTC is already 14 October in Bratislava.
     expect(dataset.last_day).toBe("2026-10-14");
@@ -145,7 +153,8 @@ describe("loadDataset without a configured source", () => {
 
   it("serves demo data even when only the token is set", async () => {
     configure({ token: TOKEN });
-    expect((await loadDataset()).days.length).toBeGreaterThan(100);
+    vi.stubEnv("OWI_LOCAL_DEMO", "1");
+    expect((await loadDataset("local-demo")).days.length).toBeGreaterThan(100);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

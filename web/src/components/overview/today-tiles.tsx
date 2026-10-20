@@ -1,5 +1,6 @@
 "use client";
 
+import { dayFigure, periodFigure } from "@/lib/day-values";
 import { useId } from "react";
 import { trendPaths } from "@/components/charts/paths";
 import { ROUTES } from "@/components/shell/nav";
@@ -106,7 +107,7 @@ export function StepsTile({ dataset, day, date, isToday, latest }: TodayProps) {
   );
 }
 
-/** Active time, calories and distance of the day; all three are estimates. */
+/** Device values take precedence; only actual estimates carry the approximation mark. */
 export function Minis({ dataset, day, date }: TodayProps) {
   const week = (key: NumericDayKey) => values(dataset, date, 7, key);
   const usual = (key: NumericDayKey) => periodSummary(dataset.days, date, 30, key).average;
@@ -121,16 +122,16 @@ export function Minis({ dataset, day, date }: TodayProps) {
     {
       label: "Kalórie",
       href: ROUTES.activity,
-      value: approx(formatInt(day?.total_kcal_est)),
-      note: `z toho aktivita ${approx(formatInt(day?.activity_kcal_est))}`,
-      bars: week("total_kcal_est"),
+      value: dayFigure(day, "totalEnergy", formatInt),
+      note: `z toho aktivita ${dayFigure(day, "activeEnergy", formatInt)}`,
+      bars: week("total_kcal"),
     },
     {
       label: "Vzdialenosť",
       href: ROUTES.steps,
-      value: approx(formatDistance(day?.distance_m_est)),
-      note: `bežne ${approx(formatDistance(usual("distance_m_est")))}`,
-      bars: week("distance_m_est"),
+      value: dayFigure(day, "distance", formatDistance),
+      note: `bežne ${periodFigure(dataset.days, date, 30, "distance", usual("distance_m"), formatDistance)}`,
+      bars: week("distance_m"),
     },
   ];
   return (

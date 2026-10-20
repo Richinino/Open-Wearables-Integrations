@@ -2,11 +2,16 @@
 // null, undefined and absent days all mean "no data" and are never counted as zero.
 
 import { addDays, localMinutesOfDay } from "./dates";
+import { dayValue } from "./day-values";
 import type { Day, Workout } from "./types";
 
 export type NumericDayKey =
   | "steps"
   | "distance_m_est"
+  | "distance_m"
+  | "active_kcal"
+  | "total_kcal"
+  | "resting_hr"
   | "active_minutes_est"
   | "activity_kcal_est"
   | "basal_kcal"
@@ -94,7 +99,10 @@ export function series(
   const includeIncomplete = options.includeIncomplete ?? true;
   return slots.map(({ day, data }) => {
     if (!data || (!includeIncomplete && data.complete === false)) return { day, value: null };
-    const value = data[key];
+    const value = key === "distance_m" ? dayValue(data, "distance")
+      : key === "active_kcal" ? dayValue(data, "activeEnergy")
+      : key === "total_kcal" ? dayValue(data, "totalEnergy")
+      : key === "resting_hr" ? dayValue(data, "restingHr") : data[key];
     return { day, value: typeof value === "number" && Number.isFinite(value) ? value : null };
   });
 }

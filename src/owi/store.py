@@ -58,9 +58,9 @@ CREATE TABLE IF NOT EXISTS workouts (
     "hr_avg" REAL,
     "hr_max" REAL,
     "hr_min" REAL,
-    "zone_light_min" INTEGER NOT NULL,
-    "zone_moderate_min" INTEGER NOT NULL,
-    "zone_vigorous_min" INTEGER NOT NULL,
+    "zone_light_min" INTEGER,
+    "zone_moderate_min" INTEGER,
+    "zone_vigorous_min" INTEGER,
     "distance_m" REAL,
     "kcal_est" REAL,
     "phone_steps" INTEGER
@@ -206,7 +206,33 @@ class Store:
                 "CREATE TABLE IF NOT EXISTS sync_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
             )
             self._add_missing_columns()
+            self._nullable_workout_zones()
         self._db.row_factory = sqlite3.Row
+
+    def _nullable_workout_zones(self) -> None:
+        """Older stores required zero zones even without HR. Preserve all rows atomically."""
+        columns = list(self._db.execute("PRAGMA table_info(workouts)"))
+        if not any(row[3] for row in columns if row[1].startswith("zone_")):
+            return
+        names = ", ".join(f'"{row[1]}"' for row in columns)
+        definitions = ", ".join(
+            f'"{row[1]}" {row[2]}'
+            + (" PRIMARY KEY" if row[5] else "")
+            + (" NOT NULL" if row[3] and not row[1].startswith("zone_") else "")
+            for row in columns
+        )
+        with self.transaction():
+            self._db.execute(f"CREATE TABLE workouts_nullable ({definitions})")
+            self._db.execute(
+                f"INSERT INTO workouts_nullable ({names}) SELECT {names} FROM workouts"
+            )
+            self._db.execute("DROP TABLE workouts")
+            self._db.execute("ALTER TABLE workouts_nullable RENAME TO workouts")
+            self._db.execute('CREATE INDEX workouts_day ON workouts ("day")')
+            self._db.execute(
+                "UPDATE workouts SET zone_light_min = NULL, zone_moderate_min = NULL,"
+                " zone_vigorous_min = NULL WHERE hr_avg IS NULL"
+            )
 
     def _add_missing_columns(self) -> None:
         for table, column, kind in _ADDED_COLUMNS:
@@ -320,6 +346,9 @@ class Store:
         data["day"] = date.fromisoformat(data["day"])
         data["start"] = datetime.fromisoformat(data["start"])
         data["end"] = datetime.fromisoformat(data["end"])
+        if data["hr_avg"] is None:
+            for name in ("zone_light_min", "zone_moderate_min", "zone_vigorous_min"):
+                data[name] = None
         return WorkoutResult(**data)
 
     def save_features(self, features: DayFeatures, computed_at: datetime | None = None) -> None:

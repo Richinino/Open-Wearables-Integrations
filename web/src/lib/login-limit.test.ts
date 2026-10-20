@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { reserveLoginAttempt } from "./login-limit";
+import { reserveLoginAttempt, trustedClientKey } from "./login-limit";
 
 const fetchMock = vi.fn<typeof fetch>();
 vi.mock("next/headers", () => ({
@@ -20,6 +20,11 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 describe("persistent login quota", () => {
+  it("ignores forwarding headers outside trusted Vercel and refuses weak secrets", async () => {
+    vi.stubEnv("VERCEL", "0"); const local = await trustedClientKey();
+    vi.stubEnv("VERCEL", "1"); expect(await trustedClientKey()).not.toBe(local);
+    vi.stubEnv("SESSION_SECRET", "short"); expect(await trustedClientKey()).toBeNull();
+  });
   it("reserves an attempt without sending the password or raw IP", async () => {
     fetchMock.mockResolvedValue(Response.json({ allowed: true }));
     expect(await reserveLoginAttempt()).toBe("allowed");

@@ -348,6 +348,70 @@ def test_sleep_regularity_contributor_comes_from_the_given_sri():
     assert score.components["sleep_regularity"] == pytest.approx(80.0)
 
 
+@pytest.mark.parametrize("kind", ["rmssd", "sdnn"])
+def test_hrv_uses_same_metric_previous_60_days_and_exact_twelve_percent_weight(kind):
+    # Last 30 earlier nights have mean 40, population SD 5. Older history and the
+    # other metric must not skew the personal baseline.
+    earlier = [
+        steady_day(day, hrv_ms=35.0 if i % 2 else 45.0, hrv_kind=kind)
+        for i, day in enumerate(days_before(D - timedelta(days=1), 30))
+    ]
+    old = steady_day(D - timedelta(days=61), hrv_ms=1000, hrv_kind=kind)
+    today = steady_day(D, hrv_ms=35, hrv_kind=kind, sleep_hr_low_at=None)
+    legacy = readiness([old, *earlier, replace(today, hrv_ms=None)], ADULT, None)
+    scored = readiness([old, *earlier, today], ADULT, None)
+    assert scored.components["hrv_balance"] == pytest.approx(resting_hr_score(1))
+    assert scored.value == pytest.approx(
+        0.88 * expected_value(legacy.components) + 0.12 * 57.5, abs=0.05
+    )
+    assert scored.note == "estimate"
+
+
+def test_hrv_constant_baseline_uses_one_ms_floor():
+    history = steady_history(hrv_ms=40.0, hrv_kind="sdnn")
+    low = readiness(with_day(history, D, hrv_ms=39), ADULT, None)
+    high = readiness(with_day(history, D, hrv_ms=41), ADULT, None)
+    assert low.components["hrv_balance"] == pytest.approx(57.5)
+    assert high.components["hrv_balance"] == 100
+    assert readiness(history, ADULT, None).components["hrv_balance"] == 87.5
+
+
+@pytest.mark.parametrize("value", [None, 0, -1, float("nan"), float("inf")])
+def test_unusable_hrv_keeps_legacy_readiness_identical(value):
+    history = steady_history(hrv_ms=40.0, hrv_kind="rmssd")
+    actual = readiness(with_day(history, D, hrv_ms=value), ADULT, 85)
+    legacy = readiness(steady_history(), ADULT, 85)
+    assert actual == legacy
+
+
+def test_hrv_history_does_not_mix_rmssd_and_sdnn_or_use_today_in_baseline():
+    history = steady_history(hrv_ms=40.0, hrv_kind="rmssd")
+    mixed = with_day(history, D, hrv_ms=40, hrv_kind="sdnn")
+    assert readiness(mixed, ADULT, None) == readiness(steady_history(), ADULT, None)
+    # Six same-kind earlier nights plus today are still too few for a seven-night baseline.
+    for index in range(1, 7):
+        mixed = with_day(mixed, D - timedelta(days=index), hrv_ms=40, hrv_kind="sdnn")
+    assert "hrv_balance" not in readiness(mixed, ADULT, None).components
+    mixed = with_day(mixed, D - timedelta(days=7), hrv_ms=40, hrv_kind="sdnn")
+    assert readiness(mixed, ADULT, None).components["hrv_balance"] == 87.5
+
+
+def test_hrv_survives_stored_features_and_rescore(tmp_path):
+    from owi.scoring import rescore
+    from owi.store import Store
+
+    history = steady_history(hrv_ms=40, hrv_kind="sdnn")
+    history = with_day(history, D, hrv_ms=39)
+    with Store(tmp_path / "synthetic.db") as store:
+        for day in history:
+            store.save_features(day)
+        assert store.get_features(D).hrv_kind == "sdnn"
+        rescore(store, history[0].day, D, ADULT, "UTC")
+        scored = store.get_scores(D).readiness
+        assert scored.components["hrv_balance"] == 57.5
+        assert scored.note == "estimate"
+
+
 # night_signal()
 
 

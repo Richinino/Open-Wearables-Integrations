@@ -317,7 +317,7 @@ describe.each(datasets)("internal consistency of the window ending %s", (_today,
   it("has day zones that cover the zones of the day's workouts", () => {
     for (const day of data.days.filter((item) => item.zone_light_min !== null)) {
       for (const key of ["zone_light_min", "zone_moderate_min", "zone_vigorous_min"] as const) {
-        const inWorkouts = day.workouts.reduce((sum, workout) => sum + workout[key], 0);
+        const inWorkouts = day.workouts.reduce((sum, workout) => sum + (workout[key] ?? 0), 0);
         expect(day[key]!, `${day.day} ${key}`).toBeGreaterThanOrEqual(inWorkouts);
         expect(Number.isInteger(day[key]), `${day.day} ${key}`).toBe(true);
       }
@@ -396,11 +396,11 @@ describe.each(datasets)("internal consistency of the window ending %s", (_today,
           expect(Date.parse(workout.start), label).toBeGreaterThan(Date.parse(day.sleep_end));
         }
 
-        const zones = workout.zone_light_min + workout.zone_moderate_min + workout.zone_vigorous_min;
+        const zones = (workout.zone_light_min ?? 0) + (workout.zone_moderate_min ?? 0) + (workout.zone_vigorous_min ?? 0);
         expect(zones, label).toBeLessThanOrEqual(workout.duration_s / 60);
         if (workout.hr_avg === null) {
           expect([workout.hr_max, workout.hr_min, workout.kcal_est], label).toEqual([null, null, null]);
-          expect(zones, label).toBe(0);
+          expect([workout.zone_light_min, workout.zone_moderate_min, workout.zone_vigorous_min], label).toEqual([null, null, null]);
         } else {
           expect(workout.hr_min!, label).toBeLessThan(workout.hr_avg);
           expect(workout.hr_max!, label).toBeGreaterThan(workout.hr_avg);

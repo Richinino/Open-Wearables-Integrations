@@ -15,6 +15,8 @@ import { indexByDay } from "@/lib/metrics";
 import { ENTRY_WINDOW_DAYS, missingDaysText, missingEntryDays, savedEntryDays, withEntry } from "@/lib/samsung";
 import type { Dataset, Entry } from "@/lib/types";
 import { useDataset } from "@/lib/use-dataset";
+import { useAccount } from "@/lib/account-context";
+import { EmptyState } from "@/components/ui/parts";
 import { DetailHead, riseStyle, SectionBar } from "../common/bits";
 import { EntryCard, type CardStatus } from "./entry-card";
 import { QualityTile } from "./quality-tile";
@@ -181,7 +183,10 @@ function Entries({ dataset, now, requested }: { dataset: Dataset; now: Date; req
 }
 
 export function EntriesView() {
+  const account = useAccount();
   const requested = useSearchParams().get("den");
+  if (account?.viewOnly) return <EmptyState title="Prezeranie je len na čítanie">Počas prezerania iného účtu sa zápisy nemenia.</EmptyState>;
+  if (account && !account.dataAccount.has_samsung) return <EmptyState title="Zápisy pre Samsung Health">Tento účet nepoužíva zdroj Samsung Health.</EmptyState>;
   // A new ?den= starts the page afresh, with that day open.
   return <WithData>{(dataset, now) => <Entries key={requested ?? ""} dataset={dataset} now={now} requested={requested} />}</WithData>;
 }

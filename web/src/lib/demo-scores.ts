@@ -103,7 +103,7 @@ function muscleLoad(workout: Workout): number {
 
 /** WHOOP-shaped strain of one workout, 0-21; null without heart rate. */
 export function workoutStrain(workout: Workout): number | null {
-  if (workout.hr_avg === null) return null;
+  if (workout.hr_avg === null || workout.zone_light_min === null || workout.zone_moderate_min === null || workout.zone_vigorous_min === null) return null;
   const load =
     workout.zone_light_min * ZONE_WEIGHTS.light +
     workout.zone_moderate_min * ZONE_WEIGHTS.moderate +

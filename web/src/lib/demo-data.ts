@@ -263,9 +263,9 @@ function planWorkout(random: Random, day: string, candidate: Candidate, index: n
       hr_avg: heartRateMissing ? null : heartRate,
       hr_max: heartRateMissing ? null : peak,
       hr_min: heartRateMissing ? null : low,
-      zone_light_min: heartRateMissing ? 0 : light,
-      zone_moderate_min: heartRateMissing ? 0 : moderate,
-      zone_vigorous_min: heartRateMissing ? 0 : vigorous,
+      zone_light_min: heartRateMissing ? null : light,
+      zone_moderate_min: heartRateMissing ? null : moderate,
+      zone_vigorous_min: heartRateMissing ? null : vigorous,
       distance_m: speed === null || distanceMissing ? null : Math.round((speed * minutes * 60) / 10) * 10,
       kcal_est: heartRateMissing ? null : kcal,
     },
@@ -350,7 +350,7 @@ function buildDay(day: string, cutoffMs: number | null): Day {
     total(workouts.map((workout) => workout.kcal_est ?? 0));
 
   const zone = (ambient: number, key: "zone_light_min" | "zone_moderate_min" | "zone_vigorous_min") =>
-    watchWorn ? Math.round(ambient * moved) + total(workouts.map((workout) => workout[key])) : null;
+    watchWorn ? Math.round(ambient * moved) + total(workouts.map((workout) => workout[key] ?? 0)) : null;
 
   return {
     day,

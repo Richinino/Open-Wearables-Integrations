@@ -25,7 +25,7 @@ Dátum: 2026-10-14, dolaďovanie a odhady Samsungu (§7) 2026-10-16. Podklad pre
 | spánok s úplným priebehom fáz, zdriemnutia | výkon (watty), tempo |
 | váha, výška, telesný tuk, VO2max z hodiniek, občas SpO2 | vek a pohlavie (treba doplniť do `.env`) |
 
-Kvôli chýbajúcemu HRV sú skóre regenerácie (WHOOP Recovery, Oura Readiness, Garmin Body Battery) len odhady; HRV v nich nahrádza nočný pokojový tep. Na webe ich označujeme ako odhad.
+Skóre regenerácie sú odhady. Readiness vie doplniť nameranú HRV z Apple Health alebo Suunto, keď existuje osobná história rovnakého typu HRV (§4); rekonštruované krivky, váhy a chýbajúca teplota však zostávajú aproximáciou. Bez HRV sa používa doterajší výpočet s nočným pokojovým tepom.
 
 ## 1. Spoločné základy
 
@@ -151,7 +151,7 @@ Použitie: číslo „potrebuješ dnes X h Y min“ na webe.
 
 ## 4. Regenerácia
 
-### Oura Readiness bez HRV a teploty – odporúčané
+### Oura Readiness s voliteľnou HRV, bez teploty – odhad
 
 Zložky (každá 0–100, krivky z patentu US10842429B2 **[P]**):
 
@@ -166,6 +166,24 @@ Zložky (každá 0–100, krivky z patentu US10842429B2 **[P]**):
 | Pravidelnosť spánku | SRI za 14 dní; `100` pri SRI ≥ 85, inak `100 − 2·(85 − SRI)` **[A]** | 0,05 |
 
 Výsledok = vážený priemer, každá zložka orezaná na 0–100. Pásma 85+ optimálne, 70–84 dobré, 60–69 slabšie, < 60 pozor **[V]**. Oura: pokojový tep o 3–5 bpm vyšší alebo o 10–15 bpm nižší než zvyčajne znižuje skóre **[V]** – krivka to spĺňa. Dôvera: stredná; chýbajúce HRV a teplota tvoria asi 17 % váhy.
+
+**Voliteľná bilancia HRV [A]:** `z = (HRV_dnes − μ60)/max(σ60, 1 ms)`;
+zložka = `resting_hr_score(−z)` s rovnakou krivkou ako pokojový tep. Osobný priemer
+a populačná smerodajná odchýlka pochádzajú výhradne z predchádzajúcich 60 kalendárnych dní,
+aspoň zo 7 platných hodnôt. RMSSD a SDNN majú oddelené histórie; nulové, záporné a neplatné
+hodnoty sa nepoužívajú. Ochranné minimum 1 ms bráni deleniu nulou pri konštantnej histórii.
+HRV má presne váhu 0,12, ostatné dostupné zložky sa prenormujú na spolu 0,88.
+Bez použiteľnej HRV alebo dostatočnej histórie zostáva doterajší výpočet úplne rovnaký.
+Platí aj doterajšia podmienka aspoň 14 skorších nocí s nočným pokojovým tepom.
+Na rozdiel od pôvodného plánu z 18. 10. 2026 zostáva výsledné Readiness označené ako odhad
+aj pri nameranej HRV: nameraný vstup nemení odvodené skóre na namerané skóre výrobcu.
+
+**Apple Health a Suunto:** poradie zdrojov je Health Connect, Samsung, Apple, Suunto,
+ostatní; v rámci providera majú hodinky prednosť pred telefónom. Rovnaké poradie sa používa
+pri prekrývajúcom sa spánku, duplicitných tréningoch a nameraných denných hodnotách.
+Samsung denné počítadlá si zachovávajú osobitné pravidlá; hodnoty Apple/Suunto do nich nevstupujú.
+Etapy spánku prichádzajú v normalizovanom OW formáte (`light`, `deep`, `rem`, `awake`).
+Bez minútového tepu chýbajú zóny, strain a Activity; žiadne z týchto hodnôt sa nenahrádzajú nulou.
 
 ### WHOOP Recovery – odhad
 
@@ -192,7 +210,7 @@ Nočný tep `A` = priemer tepu 00:00–07:00 z minút bez krokov **[PUB]**; owi 
 |---|---|---|
 | **Skóre dňa** (0–100) | priemer troch častí nižšie, rovnaké váhy **[PUB: tak to robia LE8 aj väčšina kompozitných indexov podľa OECD/JRC]**; pri červenom NightSignal najviac 50 **[A]**; chýbajúca časť sa vynechá, ale treba aspoň dve z troch, inak skóre nie je **[A]** | podľa častí |
 | **Spánok** (0–100) | Apple Sleep Score | stredná až vysoká |
-| **Regenerácia** (0–100) | Oura Readiness bez HRV a teploty, označená ako odhad | stredná |
+| **Regenerácia** (0–100) | Oura Readiness s voliteľnou HRV, bez teploty, označená ako odhad | stredná |
 | **Aktivita** (0–100) | Oura Activity | nízka až stredná |
 | **Strain dňa** (0–21) | WHOOP Strain | stredná |
 | **Potreba spánku** | WHOOP | stredná až vysoká |

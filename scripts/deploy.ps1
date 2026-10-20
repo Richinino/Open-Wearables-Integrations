@@ -20,7 +20,29 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Image build failed; the running services were not changed' }
     }
     if ($BuildOnly) { Write-Output "Candidate built: owi:$Revision"; return }
-    & docker @Compose run --rm --no-deps api python -c 'import os; from owi.config import load_settings; from owi.store import Store; import owi.serve; s=load_settings(); assert os.getuid()!=0; st=Store(s.db_path,readonly=True); assert st.span(); st.close(); print("Candidate image and data access verified")'
+    $Smoke = @'
+import os, sqlite3
+from owi.config import load_settings
+from owi.store import Store
+from owi.users import user_paths
+import owi.serve
+s = load_settings()
+assert os.getuid() != 0
+paths = [s.db_path]
+if s.accounts_path.is_file():
+    with sqlite3.connect(s.accounts_path.resolve().as_uri() + '?mode=ro', uri=True) as accounts:
+        paired = accounts.execute("SELECT ow_user_id FROM accounts WHERE status='active' AND ow_user_id IS NOT NULL").fetchall()
+    paths = [user_paths(s.data_dir, row[0]).db_path for row in paired]
+checked = 0
+for path in paths:
+    if not path.is_file():
+        continue  # a newly paired account may be waiting for its first sync
+    with Store(path, readonly=True) as store:
+        store.span()
+    checked += 1
+print(f'Candidate image and data access verified ({checked} result stores)')
+'@
+    & docker @Compose run --rm --no-deps api python -c $Smoke
     if ($LASTEXITCODE -ne 0) { throw 'Candidate smoke test failed; the running services were not changed' }
     & docker @Compose up -d --no-build
     if ($LASTEXITCODE -ne 0) { throw 'Could not start new containers' }

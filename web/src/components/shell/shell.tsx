@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { logout } from "@/app/login/actions";
+import { logoutAccount } from "@/lib/account-actions";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { EmptyState } from "@/components/ui/parts";
 import { todayIn } from "@/lib/dates";
@@ -11,7 +11,11 @@ import { formatDayLong, formatRelative } from "@/lib/format";
 import { dataStatus } from "@/lib/data-status";
 import type { Dataset } from "@/lib/types";
 import { useDataset } from "@/lib/use-dataset";
-import { DETAIL_NAV, isActive, PRIMARY_NAV, ROUTES, TILE_ONLY_NAV } from "./nav";
+import { useAccount } from "@/lib/account-context";
+import { exitView } from "@/app/(app)/admin/actions";
+import { ActionForm } from "@/components/admin/form";
+import { accountName } from "@/components/admin/helpers";
+import { DETAIL_NAV, isActive, PRIMARY_NAV, ROUTES, TILE_ONLY_NAV, visibleDetailNav } from "./nav";
 
 /** Current time, refreshed every minute so relative labels and the day mode stay honest. */
 export function useNow() {
@@ -104,11 +108,13 @@ const POPUP_STYLE: React.CSSProperties = {
 
 /** "Detaily" in the header: the detail pages in a small menu. */
 function DetailMenu({ pathname }: { pathname: string }) {
+  const context = useAccount();
+  const details = visibleDetailNav(context?.dataAccount.has_samsung ?? false, context?.viewOnly ?? false);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const id = useId();
-  const current = [...DETAIL_NAV, ...TILE_ONLY_NAV].find((item) => isActive(pathname, item.href));
+  const current = [...details, ...TILE_ONLY_NAV].find((item) => isActive(pathname, item.href));
   const close = useCallback(() => setOpen(false), []);
   useDismiss(open, close, ref, button);
 
@@ -129,7 +135,7 @@ function DetailMenu({ pathname }: { pathname: string }) {
       {open && (
         <div id={id} className={`${POPUP} top-[52px] left-0 w-[290px]`} style={POPUP_STYLE}>
           <ul>
-            {DETAIL_NAV.map((item) => (
+            {details.map((item) => (
               <li key={item.href}>
                 <Link
                   href={item.href}
@@ -181,13 +187,14 @@ const TABS = [PRIMARY_NAV[0], PRIMARY_NAV[1], DETAIL_NAV[0], DETAIL_NAV[3]];
 
 /** Phone navigation: four tabs and "Viac" with the rest and the logout. */
 function TabBar({ pathname }: { pathname: string }) {
+  const context = useAccount();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLElement>(null);
   const more = useRef<HTMLButtonElement>(null);
   const id = useId();
   const close = useCallback(() => setOpen(false), []);
   useDismiss(open, close, ref, more);
-  const extra = [...DETAIL_NAV.filter((item) => !TABS.includes(item)), ...TILE_ONLY_NAV];
+  const extra = [...visibleDetailNav(context?.dataAccount.has_samsung ?? false, context?.viewOnly ?? false).filter((item) => !TABS.includes(item)), ...TILE_ONLY_NAV];
   const moreActive = extra.some((item) => isActive(pathname, item.href));
 
   const tab = (active: boolean) =>
@@ -220,13 +227,8 @@ function TabBar({ pathname }: { pathname: string }) {
                 </Link>
               </li>
             ))}
-            <li>
-              <form action={logout}>
-                <button type="submit" className="row-link !m-0 flex min-h-11 w-full items-center !px-3.5 text-left text-[15px] font-semibold text-ink2">
-                  Odhlásiť
-                </button>
-              </form>
-            </li>
+            <li><Link href="/ucet" onClick={close} className="row-link !m-0 flex min-h-11 items-center !px-3.5 text-[15px] font-semibold">Nastavenia účtu</Link></li>
+            <li><Link href="/nastavenia" onClick={close} className="row-link !m-0 flex min-h-11 items-center !px-3.5 text-[15px] font-semibold">Nastavenia</Link></li>
           </ul>
         </div>
       )}
@@ -257,6 +259,7 @@ function TabBar({ pathname }: { pathname: string }) {
 }
 
 export function Shell({ children }: { children: React.ReactNode }) {
+  const context = useAccount();
   const pathname = usePathname();
   const { dataset, error } = useDataset();
   const now = useNow();
@@ -272,7 +275,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <Mark />
               <span className="text-[19px] font-semibold tracking-[-0.01em]">Zdravie</span>
             </Link>
-            <nav aria-label="Hlavná navigácia" className="hidden gap-1.5 sm:flex">
+            <nav aria-label="Hlavná navigácia" className={`${context?.account.status === "pending" ? "hidden" : "hidden sm:flex"} gap-1.5`}>
               {PRIMARY_NAV.map((item) => (
                 <Link key={item.href} href={item.href} aria-current={isActive(pathname, item.href) ? "page" : undefined} className="pill">
                   {item.label}
@@ -292,19 +295,28 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <div className="sm:hidden">
               <ThemeToggle compact />
             </div>
-            <form action={logout} className="hidden sm:block">
-              <button type="submit" className="pill pill-outline">
-                Odhlásiť
-              </button>
-            </form>
+            <AccountMenu />
           </div>
         </header>
 
+        {context?.viewOnly && <aside role="status" aria-label="Prezeranie cudzieho účtu" className="flex min-w-0 flex-col gap-3 rounded-2xl border border-warn bg-warn-bg p-4 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="break-words font-semibold">Prezeráš účet {accountName(context.dataAccount)}</p><p className="text-sm text-ink2">Iba na čítanie · zmeny a zápisy sú zamknuté.</p></div><ActionForm action={exitView} submit="Späť na môj účet" /></aside>}
         <main className="flex min-w-0 flex-col gap-[18px]">{children}</main>
       </div>
-      <TabBar pathname={pathname} />
+      {context?.account.status !== "pending" && <TabBar pathname={pathname} />}
     </div>
   );
+}
+
+function AccountMenu() {
+  const context = useAccount();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const id = useId();
+  const close = useCallback(() => setOpen(false), []);
+  useDismiss(open, close, ref, button);
+  if (!context) return null;
+  return <div ref={ref} className="relative"><button ref={button} type="button" className="pill pill-outline max-w-[160px]" aria-expanded={open} aria-controls={id} onClick={() => setOpen((value) => !value)}><svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="shrink-0"><circle cx="12" cy="8" r="4" /><path d="M4 21v-2a8 8 0 0 1 16 0v2" /></svg><span className="truncate">{context.account.first_name}</span><span className="sr-only"> · Menu účtu</span></button>{open && <div id={id} className={`${POPUP} right-0 top-[52px] w-[min(290px,calc(100vw-32px))]`} style={POPUP_STYLE}><p className="px-3.5 py-2 text-xs text-ink2">{context.account.role === "admin" ? "Administrátor" : "Používateľ"}</p><ul><li><Link className="row-link !m-0 block !px-3.5 !py-3 font-semibold" href="/ucet" onClick={close}>Nastavenia účtu</Link></li>{context.account.status === "active" && <li><Link className="row-link !m-0 block !px-3.5 !py-3 font-semibold" href="/nastavenia" onClick={close}>Nastavenia</Link></li>}{context.account.role === "admin" && context.account.status === "active" && !context.viewOnly && <><li><Link className="row-link !m-0 block !px-3.5 !py-3 font-semibold" href="/admin/ucty" onClick={close}>Prepnúť účet</Link></li><li><Link className="row-link !m-0 block !px-3.5 !py-3 font-semibold" href="/admin" onClick={close}>Admin panel</Link></li></>}<li><ActionForm action={logoutAccount} submit="Odhlásiť sa" /></li></ul></div>}</div>;
 }
 
 /**

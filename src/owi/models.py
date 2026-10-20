@@ -165,7 +165,7 @@ class DayInputs:
     profile: Profile
     complete: bool = True
     elapsed_fraction: float = 1.0
-    # Heart rate before `start`, back to the start of the night's sleep.
+    # Heart rate and HRV before `start`, back to the start of the night's sleep.
     lead_in_samples: tuple[Sample, ...] = ()
     # Sleeps that start in the window and end after it: tonight's.
     tonight_sleeps: tuple[SleepSession, ...] = ()
@@ -185,9 +185,9 @@ class WorkoutResult:
     hr_avg: float | None
     hr_max: float | None
     hr_min: float | None
-    zone_light_min: int
-    zone_moderate_min: int
-    zone_vigorous_min: int
+    zone_light_min: int | None
+    zone_moderate_min: int | None
+    zone_vigorous_min: int | None
     distance_m: float | None
     kcal_est: float | None
     phone_steps: int | None = None  # the phone pedometer's steps inside the workout

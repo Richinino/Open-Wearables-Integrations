@@ -1,5 +1,6 @@
 "use client";
 
+import { dayFigure } from "@/lib/day-values";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -79,7 +80,7 @@ function SelectedDay({ date, day, timeZone }: { date: string | null; day: Day | 
             v: day.sleep_start && day.sleep_end ? `${formatClock(day.sleep_start, timeZone)} → ${formatClock(day.sleep_end, timeZone)}` : DASH,
           },
           { k: "Aktívny čas", v: approx(formatDuration(day.active_minutes_est)) },
-          { k: "Kalórie", v: approx(formatKcal(day.total_kcal_est)) },
+          { k: "Kalórie", v: dayFigure(day, "totalEnergy", formatKcal) },
           { k: "Pokojový tep", v: formatBpm(day.hr_resting) },
           { k: "Strain dňa", v: formatStrain(day.scores?.strain) },
           {

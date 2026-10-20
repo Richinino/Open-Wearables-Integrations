@@ -1,4 +1,4 @@
-"""Oura-style Readiness without HRV and temperature, and the NightSignal warning.
+"""Oura-style Readiness approximation with optional HRV, and the NightSignal warning.
 
 Contributor curves come from Oura patent US10842429B2 as listed in docs/skore.md §4.
 Every comparison is against the person's own nights and days before the scored day D.
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date, timedelta
+from math import isfinite
 from statistics import fmean, median, pstdev
 
 from owi.score_models import DayFeatures, NightSignal, Person, Score
@@ -35,6 +36,8 @@ MIN_RHR_NIGHTS = 14  # the overall score is shown after 14 nights
 MIN_WEAR_MINUTES = 1000  # less worn days skew activity baselines (Radin 2020, docs/skore.md §6)
 
 RHR_SD_FLOOR = 2.0
+HRV_WEIGHT = 0.12
+HRV_SD_FLOOR = 1.0  # milliseconds; constant baselines remain usable without division by zero (A)
 # SD floors for activity z-scores, so a nearly constant baseline does not blow them up (A).
 ACTIVITY_SD_FLOORS = {"active_kcal": 50.0, "met_minutes_high": 10.0, "inactive_hours": 0.5}
 
@@ -116,13 +119,25 @@ def readiness(
             None if sleep_regularity is None else sleep_regularity_score(sleep_regularity)
         ),
     }
+    hrv = _hrv_balance(history, today)
+    if hrv is not None:
+        components["hrv_balance"] = hrv
     nights = _before(history, today.day, BASELINE_DAYS)
     if sum(1 for d in nights if d.sleep_rhr is not None) < MIN_RHR_NIGHTS:
         return Score(None, components, TOO_LITTLE_HISTORY)
     # Oura scores readiness once the night is in; without it only day contributors remain.
     if today.sleep_minutes is None:
         return Score(None, components, NO_SLEEP)
-    value = weighted_score(components, WEIGHTS)
+    if hrv is None:
+        value = weighted_score(components, WEIGHTS)
+    else:
+        # HRV is exactly 12% of the available score, including when another contributor
+        # is missing. Normalize the remaining contributors into the other 88%.
+        available_weight = sum(
+            WEIGHTS[k] for k, v in components.items() if k in WEIGHTS and v is not None
+        )
+        weights = {k: (1 - HRV_WEIGHT) * v / available_weight for k, v in WEIGHTS.items()}
+        value = weighted_score(components, {**weights, "hrv_balance": HRV_WEIGHT})
     if value is None:
         return Score(None, components, "no data")
     return Score(round(value, 1), components, ESTIMATE)
@@ -161,6 +176,33 @@ def _resting_hr(history: Sequence[DayFeatures], today: DayFeatures) -> float | N
         return None
     z = (today.sleep_rhr - fmean(values)) / max(pstdev(values), RHR_SD_FLOOR)
     return resting_hr_score(z)
+
+
+def _hrv_balance(history: Sequence[DayFeatures], today: DayFeatures) -> float | None:
+    """Today's HRV against earlier 60-day history of the same metric (A).
+
+    Seven earlier valid nights are required, as for the other personal baselines. Measured
+    HRV improves the inputs but does not make the reconstructed Readiness a measured score.
+    """
+    if (
+        today.hrv_kind not in ("rmssd", "sdnn")
+        or today.hrv_ms is None
+        or not isfinite(today.hrv_ms)
+        or today.hrv_ms <= 0
+    ):
+        return None
+    values = [
+        d.hrv_ms
+        for d in _before(history, today.day, BASELINE_DAYS)
+        if d.hrv_kind == today.hrv_kind
+        and d.hrv_ms is not None
+        and isfinite(d.hrv_ms)
+        and d.hrv_ms > 0
+    ]
+    if len(values) < MIN_BASELINE_DAYS:
+        return None
+    z = (today.hrv_ms - fmean(values)) / max(pstdev(values), HRV_SD_FLOOR)
+    return resting_hr_score(-z)
 
 
 def _activity_balance(history: Sequence[DayFeatures], day: date) -> float | None:

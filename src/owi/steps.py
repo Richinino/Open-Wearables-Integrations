@@ -8,6 +8,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from owi.days import local_date
+from owi.measured import best_source
 from owi.models import STEPS, Sample
 
 SAMSUNG_HEALTH_TOTAL = "samsung_health_total"
@@ -32,8 +33,14 @@ def select_steps(
     local midnight that starts the day, so it is matched by local date and never summed.
     Taking the highest candidate guards against a total that was synced part-way through.
     """
+    items = list(samples)
+    ranked = best_source(s for s in items if s.type == STEPS and start <= s.timestamp < end)
+    # Samsung's counters have special running-total semantics; all other providers send
+    # summable records. Never let an unrelated provider enter the Samsung comparisons.
+    if ranked and not (ranked[0].source.is_samsung_direct or ranked[0].source.is_health_connect):
+        return StepsChoice(round(sum(s.value for s in ranked)), ranked[0].source.provider)
     candidates: dict[str, float] = {}
-    for item in samples:
+    for item in items:
         if item.type != STEPS:
             continue
         if item.source.is_samsung_health_app:

@@ -26,6 +26,7 @@ from types import TracebackType
 from typing import Any
 
 from owi.passwords import dummy_hash, hash_password, verify_password
+from owi.users import FOLDER_ID
 
 ACCOUNTS_DIR = "accounts"
 ACCOUNTS_FILE = "accounts.db"
@@ -570,6 +571,34 @@ class Accounts:
         )
 
     # signing in
+
+    def create_admin(self, email: str, first_name: str, ow_user_id: str, now: datetime) -> str:
+        """Atomically bootstrap a paired admin and return only its one-use reset token.
+
+        The random initial password is never returned or logged. Duplicate email/OW IDs
+        roll back the entire operation, including the account and token.
+        """
+        password = secrets.token_urlsafe(48)
+        mail, first, last = _validated_new(email, first_name, None, password)
+        if not isinstance(ow_user_id, str) or not FOLDER_ID.fullmatch(ow_user_id):
+            raise AccountError("invalid", fields={"ow_user_id": "neplatné ID"})
+        password_hash = hash_password(password)
+        token = secrets.token_urlsafe(32)
+
+        def work(db: sqlite3.Connection) -> str:
+            if db.execute("SELECT id FROM accounts WHERE ow_user_id = ?", (ow_user_id,)).fetchone():
+                raise AccountError("ow_user_taken")
+            account = _insert(db, mail, first, last, password_hash, "admin", "active", now)
+            db.execute("UPDATE accounts SET ow_user_id = ? WHERE id = ?", (ow_user_id, account.id))
+            db.execute(
+                "INSERT INTO reset_tokens (token_hash, account_id, created_at, expires_at)"
+                " VALUES (?, ?, ?, ?)",
+                (_token_hash(token), account.id, _text(now), _text(now + RESET_LIFETIME)),
+            )
+            db.execute("DELETE FROM deletions WHERE ow_user_id = ?", (ow_user_id,))
+            return token
+
+        return _run(self.path, work)
 
     def login(self, email: str, password: str, now: datetime) -> Account:
         mail = _normalize_email(email)

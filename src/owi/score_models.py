@@ -86,6 +86,11 @@ class DayFeatures:
     weight_kg: float | None = None
     body_fat_pct: float | None = None
 
+    # HRV from the main sleep; RMSSD and SDNN have distinct personal baselines.
+    hrv_ms: float | None = None
+    hrv_kind: str | None = None
+    hrv_ms_source: str | None = None
+
     # Samsung's own numbers, sent by the direct Samsung Health connection (auto entries)
     samsung_sleep_score: float | None = None  # Sleep Score of the night that ended on the day
     samsung_steps: int | None = None  # sum of Samsung's step counts of the day
@@ -138,7 +143,7 @@ class DayScores:
     sleep_regularity: float | None  # Sleep Regularity Index over the last 14 days, -100..100
 
     # Readiness, activity, overall
-    readiness: Score  # Oura-style, without HRV and temperature
+    readiness: Score  # Oura-style approximation, with HRV when its baseline is available
     activity: Score  # Oura-style
     night_signal: NightSignal
     day_score: float | None  # mean of readiness, sleep_performance and activity

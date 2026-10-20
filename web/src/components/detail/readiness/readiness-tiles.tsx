@@ -39,7 +39,7 @@ export function ReadinessTile({ day, isToday }: { day: Day; isToday: boolean }) 
     <TileShell className="gap-5 p-6 sm:p-[30px]">
       <div className="flex flex-col gap-2">
         <h2 className="eyebrow">{isToday ? "Readiness · dnes ráno" : `Readiness · ${formatDay(day.day)}`}</h2>
-        <VendorLine>Metóda podľa Oura · bez HRV a teploty</VendorLine>
+        <VendorLine>Metóda podľa Oura · {score?.components.hrv_balance != null ? "s HRV, bez teploty" : "bez HRV a teploty"}</VendorLine>
       </div>
       <ScoreDial
         share={value === null ? 0 : value / 100}
@@ -50,8 +50,8 @@ export function ReadinessTile({ day, isToday }: { day: Day; isToday: boolean }) 
         label={value === null ? "Readiness zatiaľ nie je" : `Readiness približne ${formatInt(value)} zo 100, ${band?.label ?? ""}`}
       />
       <p className="text-[13px] text-ink2">
-        Ako je telo pripravené na deň, zo spánku, nočného tepu a záťaže posledných dní. Je to odhad: hodinky neposielajú HRV
-        ani teplotu, ktoré u Oura tvoria asi pätinu skóre, preto ich nahrádza nočný pokojový tep.
+        Ako je telo pripravené na deň, zo spánku, nočného tepu a záťaže posledných dní. HRV sa pridá, keď je dostupné spolu
+        s použiteľnou históriou rovnakého typu. Skóre zostáva odhadom; teplota sa doň nezapočítava.
       </p>
       <p className="text-[12px] text-muted">85 a viac optimálna · 70–84 dobrá · 60–69 slabšia · pod 60 pozor</p>
       {note && value !== null && note !== "odhad" && <NoteLine>Poznámka: {note}</NoteLine>}
@@ -63,6 +63,7 @@ export function ReadinessPartsTile({ day, previous }: { day: Day; previous: Day 
   const score = day.scores?.readiness ?? null;
   const sleepTotal = isNumber(day.sleep_minutes) ? day.sleep_minutes + (day.nap_minutes ?? 0) : null;
   const facts: Record<string, string | null> = {
+    hrv_balance: isNumber(day.hrv_ms) ? `${formatDecimal(day.hrv_ms, 1)} ms · ${day.hrv_kind?.toUpperCase() ?? "HRV"}` : null,
     sleep: sleepTotal === null ? null : `${formatDuration(sleepTotal)} za 24 h`,
     resting_hr: isNumber(day.hr_resting) ? `${formatInt(day.hr_resting)} bpm` : null,
     previous_day_activity: isNumber(previous?.scores?.strain) ? `včera strain ${formatStrain(previous?.scores?.strain)}` : null,
@@ -72,9 +73,9 @@ export function ReadinessPartsTile({ day, previous }: { day: Day; previous: Day 
     <TileShell className="gap-5 p-6 sm:p-[30px]">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="eyebrow">Z čoho sa skladá</h2>
-        <p className="text-[12px] text-muted">každá časť 0–100, váha podľa Oura</p>
+        <p className="text-[12px] text-muted">každá časť 0–100, relatívne váhy vlastného modelu</p>
       </div>
-      <PartsList rows={partRows(score, READINESS_PARTS)} color="var(--heart)" facts={facts} columns={2} />
+      <PartsList rows={partRows(score, score?.components.hrv_balance == null ? READINESS_PARTS : [...READINESS_PARTS.map((part) => ({ ...part, weight: part.weight * 0.88 })), { key: "hrv_balance", max: 100, weight: 0.12, explain: "nočná variabilita tepu oproti vlastnej histórii rovnakého typu merania" }])} color="var(--heart)" facts={facts} columns={2} />
     </TileShell>
   );
 }
@@ -121,7 +122,7 @@ export function EnergyScoreTile({ day, isToday }: { day: Day; isToday: boolean }
         </Ring>
         <p className="min-w-0 flex-1 basis-[220px] text-[13px] text-ink2">
           Koľko energie má telo na deň, podobne ako v Samsung Health: spánok, jeho pravidelnosť a načasovanie, včerajšia
-          záťaž a nočný tep. HRV hodinky neposielajú, preto v odhade chýba.
+          záťaž a nočný tep. V tomto modeli Energy Score sa HRV nepoužíva.
         </p>
       </div>
       {learning ? (

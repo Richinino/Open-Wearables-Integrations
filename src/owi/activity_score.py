@@ -96,6 +96,8 @@ def activity_score(
     if not history:
         return Score(None, note="no data")
     today = history[-1]
+    if today.wear_minutes == 0:
+        return Score(None, dict.fromkeys(WEIGHTS), "no heart rate recorded")
     start = today.day - timedelta(days=WEEK_DAYS - 1)
     week = [d for d in history if start <= d.day <= today.day]
     components = {

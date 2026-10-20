@@ -10,7 +10,7 @@ export function capitalize(text: string): string {
 
 /** Where a score's method comes from; detail pages name it subtly, the overview never does. */
 export const VENDOR = {
-  readiness: "podľa Oura · bez HRV a teploty, odhad",
+  readiness: "podľa Oura · dostupné vstupy, odhad",
   sleepPerformance: "podľa WHOOP",
   appleSleep: "podľa Apple",
   activity: "podľa Oura",

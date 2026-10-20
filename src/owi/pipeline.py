@@ -17,6 +17,8 @@ from owi.models import (
     BODY_FAT,
     DISTANCE,
     HEART_RATE,
+    HRV_RMSSD,
+    HRV_SDNN,
     SAMSUNG_PROVIDER,
     SLEEP_CATEGORY,
     STEPS,
@@ -125,7 +127,9 @@ def fetch_day(
         complete=day < today(tz, now),
         elapsed_fraction=elapsed_fraction(day, tz, now),
         lead_in_samples=tuple(
-            s for s in samples if s.type == HEART_RATE and lead_in <= s.timestamp < start
+            s
+            for s in samples
+            if s.type in (HEART_RATE, HRV_RMSSD, HRV_SDNN) and lead_in <= s.timestamp < start
         ),
         tonight_sleeps=tuple(s for s in found_sleeps if start <= s.start < end <= s.end),
         samsung_sleep_scores=night_scores(scores, found_sleeps, start, end),
@@ -163,7 +167,8 @@ def compute(inputs: DayInputs, params: Params, timezone: str) -> DayResult:
     summary = sleep.summarize(inputs.sleeps)
     main = summary.main if summary else None
 
-    device = measured.measure(inputs.samples, main)
+    night_hrv = tuple(s for s in inputs.lead_in_samples if s.type in (HRV_RMSSD, HRV_SDNN))
+    device = measured.measure((*night_hrv, *inputs.samples), main)
     distance, distance_source = measured.pick(
         device.distance_m, estimates.distance_m(step_count, params)
     )
@@ -192,10 +197,10 @@ def compute(inputs: DayInputs, params: Params, timezone: str) -> DayResult:
         sleep_start=main.start if main else None,
         sleep_end=main.end if main else None,
         sleep_minutes=sleep.minutes_asleep(main) if main else None,
-        sleep_deep_min=main.deep_minutes if main else None,
-        sleep_rem_min=main.rem_minutes if main else None,
-        sleep_light_min=main.light_minutes if main else None,
-        sleep_awake_min=main.awake_minutes if main else None,
+        sleep_deep_min=sleep.stage_minutes(main, "deep") if main else None,
+        sleep_rem_min=sleep.stage_minutes(main, "rem") if main else None,
+        sleep_light_min=sleep.stage_minutes(main, "light") if main else None,
+        sleep_awake_min=sleep.stage_minutes(main, "awake") if main else None,
         nap_minutes=float(summary.nap_minutes) if summary else None,
         workouts=tuple(
             workouts.enrich(w, inputs.samples, inputs.day, resting, inputs.profile, params)

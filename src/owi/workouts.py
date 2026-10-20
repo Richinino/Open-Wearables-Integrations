@@ -15,6 +15,7 @@ from owi.models import (
     Sample,
     Workout,
     WorkoutResult,
+    source_order,
 )
 
 SAME_WORKOUT_SECONDS = 120
@@ -22,8 +23,8 @@ DISTANCE_MATCH_SECONDS = 60
 
 
 def dedupe(workouts: Iterable[Workout]) -> list[Workout]:
-    """Same type starting within two minutes is one workout; Health Connect's copy wins."""
-    ranked = sorted(workouts, key=lambda w: (0 if w.source.is_health_connect else 1, w.start))
+    """Same type starting within two minutes is one workout; the preferred source wins."""
+    ranked = sorted(workouts, key=lambda w: (source_order(w.source), w.start))
     kept: list[Workout] = []
     for item in ranked:
         duplicate = any(
@@ -38,6 +39,8 @@ def dedupe(workouts: Iterable[Workout]) -> list[Workout]:
 
 def _matched_distance(workout: Workout, samples: Sequence[Sample]) -> float | None:
     """Samsung Health writes a workout's distance as one sample stamped at its start."""
+    if not (workout.source.is_samsung_direct or workout.source.is_health_connect):
+        return None
     for item in samples:
         if (
             item.type == DISTANCE
@@ -53,6 +56,8 @@ def _phone_steps(workout: Workout, samples: Sequence[Sample]) -> int | None:
 
     Samsung's own counts are left out: they are what the stride is compared against.
     """
+    if not (workout.source.is_samsung_direct or workout.source.is_health_connect):
+        return None
     counts = [
         item.value
         for item in samples
@@ -79,7 +84,7 @@ def enrich(
     ]
     minute_hr = heart.minute_series(in_workout)
     stats = heart.stats(in_workout, minute_hr)
-    zones = heart.zone_minutes(minute_hr, profile.max_hr)
+    zones = heart.zone_minutes(minute_hr, profile.max_hr) if minute_hr else None
     kcal = None
     if minute_hr:
         kcal = estimates.activity_kcal(
@@ -100,9 +105,9 @@ def enrich(
         hr_avg=stats.avg,
         hr_max=stats.maximum,
         hr_min=stats.minimum,
-        zone_light_min=zones.light,
-        zone_moderate_min=zones.moderate,
-        zone_vigorous_min=zones.vigorous,
+        zone_light_min=zones.light if zones else None,
+        zone_moderate_min=zones.moderate if zones else None,
+        zone_vigorous_min=zones.vigorous if zones else None,
         distance_m=distance,
         kcal_est=kcal,
         phone_steps=_phone_steps(workout, samples),

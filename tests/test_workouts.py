@@ -62,7 +62,9 @@ def test_enrich_without_heart_rate_leaves_heart_fields_empty():
     result = enrich(workout("w1", START, 30), [], DAY, 50.0, PROFILE, Params())
 
     assert (result.hr_avg, result.hr_min, result.hr_max) == (None, None, None)
-    assert (result.zone_light_min, result.zone_moderate_min, result.zone_vigorous_min) == (0, 0, 0)
+    assert (result.zone_light_min, result.zone_moderate_min, result.zone_vigorous_min) == (
+        None,
+    ) * 3
     assert result.kcal_est is None
 
 

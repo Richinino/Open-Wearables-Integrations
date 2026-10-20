@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import sqlite3
 from contextlib import closing
@@ -13,6 +14,7 @@ from pathlib import Path
 USERS_DIR = "users"
 ENTRIES_DIR = "zapisy"
 ENTRIES_FILE = "zapisy.db"
+FOLDER_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}")
 
 
 @dataclass(frozen=True)

@@ -6,9 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PUT } from "@/app/api/entries/[date]/route";
 
-const mocks = vi.hoisted(() => ({ hasValidSession: vi.fn<() => Promise<boolean>>() }));
+const mocks = vi.hoisted(() => ({ currentSession: vi.fn() }));
 
-vi.mock("./auth", () => ({ hasValidSession: mocks.hasValidSession }));
+vi.mock("./auth", () => ({ currentSession: mocks.currentSession }));
 
 // .test is a reserved top-level domain that never resolves.
 const API_URL = "https://owi.example.test/owi";
@@ -63,8 +63,8 @@ async function expectJson(response: Response, status: number, body: unknown) {
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
-  mocks.hasValidSession.mockReset();
-  mocks.hasValidSession.mockResolvedValue(true);
+  mocks.currentSession.mockReset();
+  mocks.currentSession.mockResolvedValue({ account: { id: "account-a", status: "active", paired: true, has_samsung: true }, claims: { a: "account-a", x: null } });
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
   configure({ url: API_URL, token: WRITE_TOKEN, production: true });
@@ -78,8 +78,19 @@ afterEach(() => {
 });
 
 describe("PUT /api/entries/[date] before owi", () => {
+  it("denies view mode, pending accounts and accounts without Samsung", async () => {
+    for (const [account, claims, code] of [
+      [{ status: "active", paired: true, has_samsung: true }, { x: "account-b" }, "read_only"],
+      [{ status: "pending", paired: false, has_samsung: true }, { x: null }, "pending"],
+      [{ status: "active", paired: true, has_samsung: false }, { x: null }, "unsupported_source"],
+    ] as const) {
+      mocks.currentSession.mockResolvedValue({ account: { id: "account-a", ...account }, claims });
+      await expectJson(await put(), 403, { error: code });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it("answers 401 without a session and touches nothing", async () => {
-    mocks.hasValidSession.mockResolvedValue(false);
+    mocks.currentSession.mockResolvedValue(null);
     await expectJson(await put(), 401, { error: "unauthorized" });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -100,7 +111,7 @@ describe("PUT /api/entries/[date] before owi", () => {
   });
 
   it("checks the session before the origin", async () => {
-    mocks.hasValidSession.mockResolvedValue(false);
+    mocks.currentSession.mockResolvedValue(null);
     await expectJson(await put({ origin: null }), 401, { error: "unauthorized" });
   });
 
@@ -144,7 +155,7 @@ describe("PUT /api/entries/[date] with owi", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe(`https://owi.example.test/owi/v1/entries/${DAY}`);
+    expect(url).toBe(`https://owi.example.test/owi/v1/entries/${DAY}?account=account-a`);
     expect(init?.method).toBe("PUT");
     const headers = new Headers(init?.headers);
     expect(headers.get("authorization")).toBe(`Bearer ${WRITE_TOKEN}`);
@@ -172,7 +183,7 @@ describe("PUT /api/entries/[date] with owi", () => {
     configure({ url: `${API_URL}/`, token: WRITE_TOKEN, production: true });
     fetchMock.mockResolvedValue(Response.json(SAVED));
     await put();
-    expect(fetchMock.mock.calls[0][0]).toBe(`https://owi.example.test/owi/v1/entries/${DAY}`);
+    expect(fetchMock.mock.calls[0][0]).toBe(`https://owi.example.test/owi/v1/entries/${DAY}?account=account-a`);
   });
 
   it("returns owi's entry with the known keys only, also a deletion", async () => {
@@ -255,6 +266,7 @@ describe("PUT /api/entries/[date] with owi", () => {
 });
 
 describe("PUT /api/entries/[date] in demo mode", () => {
+  beforeEach(() => { vi.stubEnv("OWI_LOCAL_DEMO", "1"); mocks.currentSession.mockResolvedValue({ account: { id: "local-demo", status: "active", paired: true, has_samsung: true }, claims: { a: "local-demo", x: null } }); });
   beforeEach(() => configure({}));
 
   it("echoes a valid entry back as saved, without calling anything", async () => {
@@ -278,7 +290,7 @@ describe("PUT /api/entries/[date] in demo mode", () => {
 
   it("still wants a session and the same origin", async () => {
     await expectJson(await put({ origin: "https://evil.example.test" }), 403, { error: "forbidden" });
-    mocks.hasValidSession.mockResolvedValue(false);
+    mocks.currentSession.mockResolvedValue(null);
     await expectJson(await put(), 401, { error: "unauthorized" });
   });
 });

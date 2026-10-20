@@ -53,7 +53,7 @@ MAX_CLIENT_IP_CHARS = 64
 _ENTRY_PATH = re.compile(r"/v1/entries/([^/]+)")
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 # Open Wearables user ids name folders in data/users and data/zapisy: no dots, no slashes.
-_FOLDER_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}")
+_FOLDER_ID = users.FOLDER_ID
 _INBOX_ID = re.compile(r"[0-9]{1,18}")
 _WATCHDOG_LINE = re.compile(r"(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) (.*)")
 _ERROR_STATUS = {

@@ -1,70 +1,42 @@
-// Signed session tokens: "<expiresAtMs>.<base64url HMAC-SHA256(secret, expiresAtMs)>".
-// Web Crypto only, so the same code runs in the proxy and in route handlers.
-// The secret is always passed in; this module never reads the environment.
-
+import type { SessionClaims } from "./account-types";
 export const SESSION_COOKIE = "owi_session";
 export const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
-
-const HMAC = { name: "HMAC", hash: "SHA-256" } as const;
-const SIGNATURE_BYTES = 32;
+export const BROWSER_SESSION_LIFETIME_MS = 12 * 60 * 60 * 1000;
 const encoder = new TextEncoder();
-
-/** Changing the site password revokes sessions, even without rotating the signing secret. */
-export function sessionKey(secret: string | undefined, password: string | undefined): string | undefined {
-  if (!secret || secret.length < 32 || !password) return undefined;
-  return JSON.stringify(["owi-session-v2", secret, password]);
+const HMAC = { name: "HMAC", hash: "SHA-256" } as const;
+export function sessionKey(secret: string | undefined): string | undefined { return secret && secret.length >= 32 && secret.trim().length >= 32 && new Set(secret).size > 1 ? secret : undefined; }
+function encode(bytes: Uint8Array): string {
+  return btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join("")).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
-
-function importKey(secret: string, usage: "sign" | "verify"): Promise<CryptoKey> {
-  return crypto.subtle.importKey("raw", encoder.encode(secret), HMAC, false, [usage]);
-}
-
-function toBase64Url(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function fromBase64Url(text: string): Uint8Array<ArrayBuffer> | null {
+function decode(text: string): Uint8Array<ArrayBuffer> | null {
   if (!/^[A-Za-z0-9_-]+$/.test(text)) return null;
+  try { return Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/")), (char) => char.charCodeAt(0)); } catch { return null; }
+}
+function validClaims(value: unknown): value is SessionClaims {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const c = value as Record<string, unknown>;
+  const id = (x: unknown) => typeof x === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(x);
+  return Object.keys(c).sort().join(",") === "a,e,p,r,v,x" && id(c.a) && (c.r === "admin" || c.r === "user") &&
+    Number.isSafeInteger(c.v) && (c.v as number) >= 0 && (c.x === null || id(c.x)) && (c.x === null || c.r === "admin") &&
+    typeof c.p === "boolean" && Number.isSafeInteger(c.e) && (c.e as number) > 0;
+}
+export async function createSessionToken(secret: string, claims: SessionClaims): Promise<string> {
+  if (!sessionKey(secret) || !validClaims(claims)) throw new Error("Invalid session configuration or claims");
+  const payload = encode(encoder.encode(JSON.stringify(claims)));
+  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), HMAC, false, ["sign"]);
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(`owi-account-v1.${payload}`));
+  return `${payload}.${encode(new Uint8Array(signature))}`;
+}
+export async function verifySessionToken(secret: string | undefined, token: string | undefined, now: number): Promise<SessionClaims | null> {
+  if (!sessionKey(secret) || !token || token.length > 2048) return null;
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  const payload = decode(parts[0]), signature = decode(parts[1]);
+  if (!payload || !signature || signature.length !== 32) return null;
   try {
-    const binary = atob(text.replace(/-/g, "+").replace(/_/g, "/"));
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
-    return bytes;
-  } catch {
-    return null;
-  }
-}
-
-export async function createSessionToken(
-  secret: string,
-  now: number,
-  lifetimeMs: number = SESSION_LIFETIME_MS,
-): Promise<string> {
-  if (!secret) throw new Error("Cannot sign a session without a secret");
-  const expiresAt = String(Math.floor(now + lifetimeMs));
-  const key = await importKey(secret, "sign");
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(expiresAt));
-  return `${expiresAt}.${toBase64Url(new Uint8Array(signature))}`;
-}
-
-export async function verifySessionToken(
-  secret: string | undefined,
-  token: string | undefined,
-  now: number,
-): Promise<boolean> {
-  if (!secret || !token) return false;
-
-  const separator = token.indexOf(".");
-  if (separator < 1) return false;
-  const expiresAt = token.slice(0, separator);
-  if (!/^\d{1,15}$/.test(expiresAt)) return false;
-  const signature = fromBase64Url(token.slice(separator + 1));
-  if (!signature || signature.length !== SIGNATURE_BYTES) return false;
-
-  // The signature is checked before the expiry is trusted, and in constant time.
-  const key = await importKey(secret, "verify");
-  const authentic = await crypto.subtle.verify("HMAC", key, signature, encoder.encode(expiresAt));
-  return authentic && Number(expiresAt) > now;
+    const key = await crypto.subtle.importKey("raw", encoder.encode(secret), HMAC, false, ["verify"]);
+    if (!(await crypto.subtle.verify("HMAC", key, signature, encoder.encode(`owi-account-v1.${parts[0]}`)))) return null;
+    const claims: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(payload));
+    return validClaims(claims) && claims.e > now && claims.e <= now + (claims.p ? SESSION_LIFETIME_MS : BROWSER_SESSION_LIFETIME_MS) ? claims : null;
+  } catch { return null; }
 }

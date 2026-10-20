@@ -260,12 +260,15 @@ export function ZoneBar({
   height = 6,
   label,
 }: {
-  light: number;
-  moderate: number;
-  vigorous: number;
+  light: number | null;
+  moderate: number | null;
+  vigorous: number | null;
   height?: number;
   label: string;
 }) {
+  if (light === null || moderate === null || vigorous === null) {
+    return <span className="text-[12px] text-muted">bez údajov o zónach</span>;
+  }
   const parts = [
     { value: light, color: mix("var(--accent)", 38) },
     { value: moderate, color: mix("var(--accent)", 68) },

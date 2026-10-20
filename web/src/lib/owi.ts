@@ -31,18 +31,19 @@ function demo(): Dataset {
 
 // Error messages below name the kind of failure only. The token, the URL and the response
 // body must never reach a log, so none of them is ever put into a message.
-export async function loadDataset(): Promise<Dataset> {
+export async function loadDataset(accountId: string): Promise<Dataset> {
   const baseUrl = process.env.OWI_API_URL;
   const token = process.env.OWI_API_TOKEN;
 
-  if (!baseUrl && process.env.NODE_ENV !== "production") return demo();
+  if (!accountId || !/^[a-zA-Z0-9_-]{1,128}$/.test(accountId)) throw new DatasetUnavailableError("account is required");
+  if (!baseUrl && process.env.NODE_ENV !== "production" && process.env.OWI_LOCAL_DEMO === "1" && accountId === "local-demo") return demo();
   if (!baseUrl || !token) {
     throw new DatasetUnavailableError("OWI_API_URL or OWI_API_TOKEN is not set");
   }
 
   let response: Response;
   try {
-    response = await fetch(`${baseUrl.replace(/\/+$/, "")}/v1/days`, {
+    response = await fetch(`${baseUrl.replace(/\/+$/, "")}/v1/days?account=${encodeURIComponent(accountId)}`, {
       headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
       // Fresh on every request: a cached copy made a reload show the previous data. owi serves
       // the whole history gzipped in well under a second, so there is little to save.

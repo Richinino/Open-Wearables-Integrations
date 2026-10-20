@@ -1,119 +1,49 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import { checkPassword, endSession, hasValidSession, startSession } from "./auth";
-import { SESSION_COOKIE, createSessionToken } from "./session";
-
-// A stand-in for the request's cookie store.
-const jar = vi.hoisted(() => new Map<string, { value: string; options?: Record<string, unknown> }>());
-
-vi.mock("next/headers", () => ({
-  cookies: async () => ({
-    get: (name: string) => {
-      const entry = jar.get(name);
-      return entry ? { name, value: entry.value } : undefined;
-    },
-    set: (name: string, value: string, options?: Record<string, unknown>) => {
-      jar.set(name, { value, options });
-    },
-    delete: (name: string) => {
-      jar.delete(name);
-    },
-  }),
-}));
-
-const PASSWORD = "unit-test-heslo-ľščťž";
-const SECRET = "unit-test-secret-0123456789-abcdefghij";
-
-beforeEach(() => {
-  jar.clear();
-  vi.stubEnv("SITE_PASSWORD", PASSWORD);
-  vi.stubEnv("SESSION_SECRET", SECRET);
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import { currentSession, requireAdmin, requireSession, startSession, setViewedAccount, assertWritable, endSession } from "./auth";
+import { OwiAccountError } from "./owi-accounts";
+import { createSessionToken } from "./session";
+import { TEST_ACCOUNT as ACCOUNT, TEST_CLAIMS as CLAIMS, TEST_SECRET as SECRET, TEST_NOW as NOW, testSession } from "./account-test-fixtures";
+const mocks = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn(), delete: vi.fn(), getAccount: vi.fn() }));
+vi.mock("next/headers", () => ({ cookies: async () => ({ get: mocks.get, set: mocks.set, delete: mocks.delete }) }));
+vi.mock("./owi-accounts", async (original) => ({ ...await original<typeof import("./owi-accounts")>(), accountsApi: { getAccount: mocks.getAccount } }));
+vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`redirect:${path}`); } }));
+beforeEach(async () => { vi.resetAllMocks(); vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(NOW); vi.stubEnv("SESSION_SECRET", SECRET); mocks.get.mockReturnValue({ value: await createSessionToken(SECRET, CLAIMS) }); mocks.getAccount.mockResolvedValue(ACCOUNT); });
+afterEach(() => { vi.unstubAllEnvs(); vi.useRealTimers(); });
+describe("fresh account authority", () => {
+  it("fetches current account on each request without mutating cookies", async () => {
+    expect(await currentSession()).toEqual(testSession()); await currentSession();
+    expect(mocks.getAccount).toHaveBeenCalledTimes(2); expect(mocks.set).not.toHaveBeenCalled(); expect(mocks.delete).not.toHaveBeenCalled();
+  });
+  it.each([{ status: "suspended" }, { session_version: 1 }, { id: "other" }, { status: "invalid" }, { role: "invalid" }])("rejects revoked or malformed account %o", async (patch) => { mocks.getAccount.mockResolvedValue({ ...ACCOUNT, ...patch }); expect(await currentSession()).toBeNull(); });
+  it("returns null for deleted account and fails closed on outage", async () => {
+    mocks.getAccount.mockRejectedValue(new OwiAccountError("not_found", 404)); expect(await currentSession()).toBeNull();
+    mocks.getAccount.mockRejectedValue(new OwiAccountError("unavailable", 503)); await expect(currentSession()).rejects.toMatchObject({ code: "unavailable" });
+    expect(mocks.delete).not.toHaveBeenCalled();
+  });
+  it("does not grant stale signed admin role", async () => {
+    mocks.get.mockReturnValue({ value: await createSessionToken(SECRET, { ...CLAIMS, r: "admin" }) });
+    expect((await currentSession())?.claims.r).toBe("user"); await expect(requireAdmin()).rejects.toMatchObject({ status: 403 });
+  });
+  it("permits pending profile sessions but denies admin", async () => { mocks.getAccount.mockResolvedValue({ ...ACCOUNT, status: "pending" }); expect((await requireSession()).account.status).toBe("pending"); await expect(requireAdmin()).rejects.toMatchObject({ status: 403 }); });
+  it("redirects unauthenticated sessions", async () => { mocks.get.mockReturnValue(undefined); await expect(requireSession()).rejects.toThrow("redirect:/login"); });
 });
-
-afterEach(() => {
-  vi.unstubAllEnvs();
-  vi.restoreAllMocks();
-});
-
-describe("checkPassword", () => {
-  it("accepts only the exact password", async () => {
-    expect(await checkPassword(PASSWORD)).toBe(true);
-    for (const wrong of ["", "x", PASSWORD.slice(0, -1), `${PASSWORD} `, PASSWORD.toUpperCase()]) {
-      expect(await checkPassword(wrong), JSON.stringify(wrong)).toBe(false);
-    }
+describe("cookies and viewing", () => {
+  it("omits maxAge for browser session and persists remembered sessions", async () => {
+    await startSession(ACCOUNT, false); expect(mocks.set.mock.calls[0][2].maxAge).toBeUndefined();
+    await startSession(ACCOUNT, true); expect(mocks.set.mock.calls[1][2].maxAge).toBe(30 * 24 * 3600);
   });
-
-  it.each(["SITE_PASSWORD", "SESSION_SECRET"])(
-    "refuses everything and logs one line without values when %s is unset",
-    async (name) => {
-      vi.stubEnv(name, "");
-      const log = vi.spyOn(console, "error").mockImplementation(() => {});
-
-      expect(await checkPassword(PASSWORD)).toBe(false);
-      expect(await checkPassword("")).toBe(false);
-
-      expect(log).toHaveBeenCalledTimes(2);
-      for (const call of log.mock.calls) {
-        expect(call).toHaveLength(1);
-        expect(String(call[0])).not.toContain(PASSWORD);
-        expect(String(call[0])).not.toContain(SECRET);
-      }
-    },
-  );
-});
-
-describe("session cookie", () => {
-  it("is set with the agreed attributes and then recognised", async () => {
-    expect(await hasValidSession()).toBe(false);
-    await startSession();
-
-    const cookie = jar.get(SESSION_COOKIE);
-    expect(cookie?.value).toMatch(/^\d+\.[A-Za-z0-9_-]{43}$/);
-    expect(cookie?.options).toEqual({
-      httpOnly: true,
-      secure: false,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 30 * 24 * 60 * 60,
-    });
-    expect(await hasValidSession()).toBe(true);
+  it("checks current admin and target and rejects writes while viewing", async () => {
+    expect(() => assertWritable({ ...CLAIMS, x: "target" })).toThrow("read_only");
+    await expect(startSession(ACCOUNT, false, "target")).rejects.toMatchObject({ code: "forbidden" });
+    const admin = { ...ACCOUNT, role: "admin" as const };
+    mocks.getAccount.mockImplementation(async (id: string) => id === admin.id ? admin : { ...ACCOUNT, id: "target", status: "pending" }); await expect(startSession(admin, false, "target")).rejects.toMatchObject({ code: "invalid_target" });
+    mocks.getAccount.mockImplementation(async (id: string) => id === admin.id ? admin : { ...ACCOUNT, id: "target" }); await startSession(admin, false, "target"); expect(mocks.set).toHaveBeenCalledTimes(1);
   });
-
-  it("is Secure in production", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    await startSession();
-    expect(jar.get(SESSION_COOKIE)?.options?.secure).toBe(true);
-  });
-
-  it("is gone after endSession", async () => {
-    await startSession();
-    await endSession();
-    expect(jar.has(SESSION_COOKIE)).toBe(false);
-    expect(await hasValidSession()).toBe(false);
-  });
-
-  it("is not accepted when forged, expired or signed with an old secret", async () => {
-    jar.set(SESSION_COOKIE, { value: "garbage" });
-    expect(await hasValidSession()).toBe(false);
-
-    jar.set(SESSION_COOKIE, { value: await createSessionToken(SECRET, Date.now(), -1000) });
-    expect(await hasValidSession()).toBe(false);
-
-    await startSession();
-    vi.stubEnv("SESSION_SECRET", "a-rotated-secret-0123456789-abcdefghij");
-    expect(await hasValidSession()).toBe(false);
-  });
-
-  it("cannot be started without a secret", async () => {
-    vi.stubEnv("SESSION_SECRET", "");
-    await expect(startSession()).rejects.toThrow();
-    expect(jar.has(SESSION_COOKIE)).toBe(false);
-  });
-
-  it("revokes existing sessions when only the site password changes", async () => {
-    await startSession();
-    expect(await hasValidSession()).toBe(true);
-    vi.stubEnv("SITE_PASSWORD", "a-new-site-password");
-    expect(await hasValidSession()).toBe(false);
+  it("allows exiting view mode without loading the old target", async () => {
+    const admin = { ...ACCOUNT, role: "admin" as const };
+    mocks.get.mockReturnValue({ value: await createSessionToken(SECRET, { ...CLAIMS, r: "admin", x: "gone-target" }) }); mocks.getAccount.mockResolvedValue(admin);
+    await setViewedAccount(testSession(admin, { r: "admin", x: "gone-target" }), null);
+    expect(mocks.getAccount).toHaveBeenCalledWith(ACCOUNT.id); expect(mocks.getAccount).not.toHaveBeenCalledWith("gone-target"); expect(mocks.set).toHaveBeenCalled();
+    await endSession(); expect(mocks.delete).toHaveBeenCalledWith("owi_session");
   });
 });

@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from owi import entries, health, inbox, samsung_scores, scoring, tuning, users
-from owi.accounts import Account, Accounts, OwUser
+from owi.accounts import Account, AccountError, Accounts, OwUser
 from owi.calibration import (
     FIT_WINDOW_DAYS,
     RefDay,
@@ -40,6 +40,7 @@ from owi.models import (
     Params,
     Profile,
     Sample,
+    SourceRef,
 )
 from owi.pipeline import (
     DAY_TYPES,
@@ -89,10 +90,12 @@ class Seen:
             self.note(item, since)
 
     def note(self, item: Sample, since: datetime) -> None:
-        source = item.source
-        self.samsung = self.samsung or source.is_samsung_direct or source.is_samsung_health_app
+        self.note_source(item.source)
         if item.timestamp >= since:
-            self.arriving.add((source.provider, item.type))
+            self.arriving.add((item.source.provider, item.type))
+
+    def note_source(self, source: SourceRef) -> None:
+        self.samsung = self.samsung or source.is_samsung_direct or source.is_samsung_health_app
 
 
 def _max_hr(
@@ -180,6 +183,16 @@ def _sync_batch(
         if seen is not None:
             for item in inputs.values():
                 seen.observe(item.samples, now - timedelta(days=ARRIVING_DAYS))
+                for record in (
+                    *item.sleeps,
+                    *item.tonight_sleeps,
+                    *item.workouts,
+                    *item.lead_in_samples,
+                ):
+                    seen.note_source(record.source)
+                seen.samsung = seen.samsung or any(
+                    score.provider == SAMSUNG_PROVIDER for score in item.samsung_sleep_scores
+                )
         # Publish days, features and dependent scores together, including on failure.
         with store.transaction():
             for day in sorted(inputs):
@@ -824,6 +837,24 @@ def _cmd_serve(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _cmd_accounts_create_admin(args: argparse.Namespace, settings: Settings) -> int:
+    if not users.FOLDER_ID.fullmatch(args.ow_user):
+        raise AccountError("invalid", fields={"ow_user_id": "neplatné ID"})
+    with Accounts(settings.accounts_path) as accounts:
+        token = accounts.create_admin(args.email, args.first_name, args.ow_user, _now())
+    print(token)
+    return 0
+
+
+def _cmd_accounts_list(args: argparse.Namespace, settings: Settings) -> int:
+    with Accounts(settings.accounts_path) as accounts:
+        found = accounts.all()
+    print("email\trole\tstatus\tow_user")
+    for account in found:
+        print(f"{account.email}\t{account.role}\t{account.status}\t{account.ow_user_id or '-'}")
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="owi", description="Denné metriky z Open Wearables")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -869,6 +900,16 @@ def _parser() -> argparse.ArgumentParser:
     )
     migrate.set_defaults(run=_cmd_users_migrate)
 
+    account_commands = commands.add_parser("accounts", help="správa účtov")
+    account_actions = account_commands.add_subparsers(dest="action", required=True)
+    create_admin = account_actions.add_parser("create-admin", help="vytvorí spárovaného admina")
+    create_admin.add_argument("--email", required=True)
+    create_admin.add_argument("--first-name", required=True)
+    create_admin.add_argument("--ow-user", required=True)
+    create_admin.set_defaults(run=_cmd_accounts_create_admin)
+    list_accounts = account_actions.add_parser("list", help="vypíše účty bez prihlasovacích údajov")
+    list_accounts.set_defaults(run=_cmd_accounts_list)
+
     serve = commands.add_parser(
         "serve", help="sprístupní uložené dni cez HTTP a prijíma zápisy zo Samsung Health"
     )
@@ -884,6 +925,9 @@ def main(argv: list[str] | None = None) -> int:
         return args.run(args, load_settings())
     except OWError as exc:
         print(f"chyba: {exc}", file=sys.stderr)
+        return 1
+    except AccountError as exc:
+        print(f"chyba: {exc.code}", file=sys.stderr)
         return 1
 
 

@@ -2,19 +2,24 @@ import "server-only";
 
 import { createHmac } from "node:crypto";
 import { headers } from "next/headers";
+import { sessionKey } from "./session";
 
-export async function reserveLoginAttempt(): Promise<"allowed" | "limited" | "unavailable"> {
-  const base = process.env.OWI_API_URL;
-  if (!base && process.env.NODE_ENV !== "production") return "allowed";
-  const token = process.env.OWI_WRITE_TOKEN;
-  const secret = process.env.SESSION_SECRET;
-  if (!base || !token || !secret) return "unavailable";
-  // Vercel supplies and overwrites this header. Arbitrary forwarded headers are not trusted.
+export async function trustedClientKey(): Promise<string | null> {
+  const secret = sessionKey(process.env.SESSION_SECRET);
+  if (!secret) return null;
   const incoming = await headers();
   const address = process.env.VERCEL === "1"
     ? incoming.get("x-vercel-forwarded-for")?.split(",")[0]?.trim() || "unknown"
     : "single-site";
-  const clientKey = createHmac("sha256", secret).update(address).digest("hex");
+  return createHmac("sha256", secret).update(address).digest("hex");
+}
+
+export async function reserveLoginAttempt(): Promise<"allowed" | "limited" | "unavailable"> {
+  const base = process.env.OWI_API_URL;
+  const token = process.env.OWI_WRITE_TOKEN;
+  const clientKey = await trustedClientKey();
+  if (!base || !token || !clientKey) return "unavailable";
+  // Vercel supplies and overwrites this header. Arbitrary forwarded headers are not trusted.
   try {
     const response = await fetch(base.replace(/\/+$/, "") + "/v1/auth/attempt", {
       method: "POST",

@@ -8,22 +8,23 @@ const PUBLIC_FILES = new Set(["/robots.txt", "/favicon.ico", "/icon.svg"]);
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (PUBLIC_FILES.has(pathname)) return NextResponse.next();
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-account-pathname", pathname);
+  const next = () => NextResponse.next({ request: { headers: requestHeaders } });
+  if (PUBLIC_FILES.has(pathname)) return next();
 
   const authenticated = await verifySessionToken(
-    sessionKey(process.env.SESSION_SECRET, process.env.SITE_PASSWORD),
+    sessionKey(process.env.SESSION_SECRET),
     request.cookies.get(SESSION_COOKIE)?.value,
     Date.now(),
   );
 
-  if (pathname === "/login") {
-    // Only navigations are bounced: the login form's Server Action is a POST to this same path.
-    const isNavigation = request.method === "GET" || request.method === "HEAD";
-    if (authenticated && isNavigation) return NextResponse.redirect(new URL("/", request.url));
-    return NextResponse.next();
+  if (["/login", "/registracia", "/zabudnute-heslo"].includes(pathname) || /^\/nove-heslo\/[^/]+$/.test(pathname)) {
+    // Public login also accepts revoked cookies, so final backend validation cannot create a redirect loop.
+    return next();
   }
 
-  if (authenticated) return NextResponse.next();
+  if (authenticated) return next();
 
   if (pathname === "/api" || pathname.startsWith("/api/")) {
     return NextResponse.json(

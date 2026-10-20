@@ -5,7 +5,7 @@ from datetime import date, timedelta
 import pytest
 
 from owi import cli, entries, tuning
-from owi.accounts import Accounts, accounts_path
+from owi.accounts import AccountError, Accounts, accounts_path
 from owi.calibration import day_weight, load_params, save_params
 from owi.client import OWError
 from owi.models import ACTIVE_ENERGY, STEPS, Params, SourceRef
@@ -13,6 +13,7 @@ from owi.store import Store
 from owi.users import user_paths
 from tests.factories import (
     HC_SHEALTH,
+    SAMSUNG_PHONE,
     SAMSUNG_WATCH,
     hr_minutes,
     make_features,
@@ -109,6 +110,113 @@ def save_entry(env, day: date, saved_at=NOW, **values) -> None:
 def stride_after_one_entry(stride: float, day: date = DAY, now=NOW) -> float:
     weight = day_weight(day, now.date())
     return 0.74 + weight / (weight + 7) * (stride - 0.74)
+
+
+def admin_args(email="synthetic-admin@example.test", ow_user="synthetic-user"):
+    return [
+        "accounts",
+        "create-admin",
+        "--email",
+        email,
+        "--first-name",
+        "Synthetic",
+        f"--ow-user={ow_user}",
+    ]
+
+
+def test_admin_bootstrap_returns_only_one_use_reset_token_and_list_has_no_secrets(
+    env, monkeypatch, capsys
+):
+    import hashlib
+
+    from owi import accounts as module
+    from owi.passwords import verify_password
+
+    generated = []
+    real_random = module.secrets.token_urlsafe
+
+    def capture_random(length):
+        value = real_random(length)
+        generated.append(value)
+        return value
+
+    monkeypatch.setattr(module.secrets, "token_urlsafe", capture_random)
+    at(monkeypatch, NOW)
+    assert cli.main(admin_args()) == 0
+    output = capsys.readouterr()
+    token = output.out.strip()
+    assert token and output.out == token + "\n" and not output.err
+    assert token == generated[1]
+    path = accounts_path(env / "data")
+    with Accounts(path) as accounts:
+        (admin,) = accounts.all()
+        assert (admin.role, admin.status, admin.ow_user_id) == ("admin", "active", "synthetic-user")
+        assert verify_password(generated[0], admin.password_hash)
+        assert generated[0] not in output.out
+        with sqlite3.connect(path) as db:
+            assert db.execute("SELECT token_hash FROM reset_tokens").fetchone()[0] == (
+                hashlib.sha256(token.encode()).hexdigest()
+            )
+        reset = accounts.confirm_reset(token, "a-new-synthetic-password", NOW)
+        assert accounts.login(admin.email, "a-new-synthetic-password", NOW).id == reset.id
+        with pytest.raises(AccountError, match="invalid_token"):
+            accounts.confirm_reset(token, "another-synthetic-password", NOW)
+    assert cli.main(["accounts", "list"]) == 0
+    listing = capsys.readouterr().out
+    assert "synthetic-admin@example.test\tadmin\tactive\tsynthetic-user" in listing
+    assert (
+        token not in listing and generated[0] not in listing and admin.password_hash not in listing
+    )
+    assert "password" not in listing and "token" not in listing
+
+
+@pytest.mark.parametrize(
+    "email,ow_user,code",
+    [
+        ("SYNTHETIC-ADMIN@example.test", "different-user", "email_taken"),
+        ("other@example.test", "synthetic-user", "ow_user_taken"),
+    ],
+)
+def test_admin_bootstrap_refuses_duplicate_email_and_ow_user_atomically(
+    env, monkeypatch, capsys, email, ow_user, code
+):
+    at(monkeypatch, NOW)
+    assert cli.main(admin_args()) == 0
+    capsys.readouterr()
+    assert cli.main(admin_args(email, ow_user)) == 1
+    output = capsys.readouterr()
+    assert output.out == "" and code in output.err
+    with Accounts(accounts_path(env / "data")) as accounts:
+        assert len(accounts.all()) == 1
+    with sqlite3.connect(accounts_path(env / "data")) as db:
+        assert db.execute("SELECT COUNT(*) FROM reset_tokens").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("ow_user", ["../escape", "a/b", "a\\b", "-bad", ".", "", "a" * 129])
+def test_admin_bootstrap_validates_ow_folder_id_without_creating_database(
+    env, monkeypatch, capsys, ow_user
+):
+    at(monkeypatch, NOW)
+    assert cli.main(admin_args(ow_user=ow_user)) == 1
+    output = capsys.readouterr()
+    assert output.out == "" and "invalid" in output.err
+    assert not accounts_path(env / "data").exists()
+
+
+def test_admin_bootstrap_rolls_back_account_when_reset_token_insert_fails(env):
+    path = accounts_path(env / "data")
+    # Fail the final write synthetically: account creation and pairing must roll back too.
+    with Accounts(path) as accounts:
+        accounts.all()
+    with sqlite3.connect(path) as db:
+        db.execute(
+            "CREATE TRIGGER fail_reset BEFORE INSERT ON reset_tokens"
+            " BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END"
+        )
+    with Accounts(path) as accounts:
+        with pytest.raises(sqlite3.IntegrityError):
+            accounts.create_admin("synthetic@example.test", "Synthetic", "synthetic-user", NOW)
+        assert accounts.all() == []
 
 
 def test_sync_stores_the_requested_days(env, monkeypatch, capsys):
@@ -815,7 +923,7 @@ def test_sync_stores_ow_users_sources_and_last_data_in_accounts(env, monkeypatch
     assert sorted(client.head_calls) == [("heart_rate", "garmin"), ("spo2", "garmin")]
 
 
-@pytest.mark.parametrize("source", [SAMSUNG_WATCH, HC_SHEALTH])
+@pytest.mark.parametrize("source", [SAMSUNG_WATCH, SAMSUNG_PHONE, HC_SHEALTH])
 def test_samsung_health_flag_is_set_for_samsung_samples(env, monkeypatch, source):
     at(monkeypatch, NOW)
     add_account(env, "ow-a", "a@example.test")
@@ -823,6 +931,16 @@ def test_samsung_health_flag_is_set_for_samsung_samples(env, monkeypatch, source
 
     assert sync("2026-10-12") == 0
 
+    with open_accounts(env) as store:
+        assert store.sources("ow-a")["samsung_health"] is True
+
+
+def test_samsung_health_flag_includes_phone_only_sleep_without_samples(env, monkeypatch):
+    at(monkeypatch, NOW)
+    add_account(env, "ow-a", "a@example.test")
+    night = sleep_session("phone-night", START, START + timedelta(hours=8), SAMSUNG_PHONE)
+    use_client(monkeypatch, FakeClient(sleeps=[night]))
+    assert sync("2026-10-12") == 0
     with open_accounts(env) as store:
         assert store.sources("ow-a")["samsung_health"] is True
 

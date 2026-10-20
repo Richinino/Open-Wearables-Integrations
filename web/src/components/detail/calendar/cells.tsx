@@ -1,6 +1,7 @@
 // The day cells of the calendar: compact month cells and tall week cards. Each day with data
 // is a real button; the selected one is outlined in the accent and announced as pressed.
 
+import { dayFigure } from "@/lib/day-values";
 import { Ring } from "@/components/ui/tile";
 import { WEEKDAY_LETTERS } from "@/lib/overview";
 import { type CalendarCell } from "@/lib/calendar";
@@ -222,7 +223,7 @@ export function WeekCard({
       </span>
       <span className="flex flex-col gap-1.5">
         <Pair k="Aktívny čas" v={approx(formatDuration(data.active_minutes_est))} />
-        <Pair k="Kalórie" v={approx(formatInt(data.total_kcal_est))} />
+        <Pair k="Kalórie" v={dayFigure(data, "totalEnergy", formatInt)} />
         <Pair k="Pokojový tep" v={formatBpm(data.hr_resting)} />
         <Pair k="Strain" v={formatStrain(data.scores?.strain)} />
       </span>

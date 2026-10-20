@@ -16,7 +16,7 @@ export default function LoginPage() {
         <Mark size={34} />
         <p className="eyebrow mt-8">Súkromný prehľad</p>
         <h1 className="figure mt-3 text-[64px]">Zdravie</h1>
-        <p className="mt-3 text-[15px] text-ink2">Kroky, spánok, skóre a tréningy na jednom mieste. Pokračuj heslom.</p>
+        <p className="mt-3 text-[15px] text-ink2">Kroky, spánok, skóre a tréningy na jednom mieste. Prihlás sa svojím účtom.</p>
         <LoginForm />
       </div>
     </main>

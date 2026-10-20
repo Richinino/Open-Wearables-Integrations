@@ -49,7 +49,7 @@ function Readiness({ dataset, now }: { dataset: Dataset; now: Date }) {
   return (
     <>
       <DetailHead section="Pripravenosť" title="Readiness">
-        Ako je telo pripravené na deň · {isToday ? "dnes" : formatDay(day.day)} · odhad bez HRV a teploty
+        Ako je telo pripravené na deň · {isToday ? "dnes" : formatDay(day.day)} · odhad z dostupných údajov
       </DetailHead>
 
       <div className="grid gap-[18px] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">

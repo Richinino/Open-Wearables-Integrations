@@ -1,4 +1,5 @@
-import { hasValidSession } from "@/lib/auth";
+import { currentSession } from "@/lib/auth";
+import { OwiAccountError } from "@/lib/owi-accounts";
 import { checkBody, checkDay, type FieldErrors } from "@/lib/entries";
 import { entryDayBounds, saveEntry } from "@/lib/owi-entries";
 
@@ -52,7 +53,13 @@ async function readBody(request: Request): Promise<unknown> {
 
 export async function PUT(request: Request, context: { params: Promise<{ date: string }> }): Promise<Response> {
   // The proxy checks the session too; this is the check next to the write.
-  if (!(await hasValidSession())) return json({ error: "unauthorized" }, 401);
+  let session;
+  try { session = await currentSession(); }
+  catch (error) { if (error instanceof OwiAccountError) return json({ error: "unavailable" }, 503); throw error; }
+  if (!session) return json({ error: "unauthorized" }, 401);
+  if (session.claims.x) return json({ error: "read_only" }, 403);
+  if (session.account.status !== "active" || !session.account.paired) return json({ error: "pending" }, 403);
+  if (!session.account.has_samsung) return json({ error: "unsupported_source" }, 403);
   if (!isSameOrigin(request)) return json({ error: "forbidden" }, 403);
 
   const { date } = await context.params;
@@ -63,7 +70,7 @@ export async function PUT(request: Request, context: { params: Promise<{ date: s
   if (!checked.ok) Object.assign(fields, checked.fields);
   if (!checked.ok || dayProblem) return json({ error: "invalid", fields }, 400);
 
-  const outcome = await saveEntry(date, checked.values);
+  const outcome = await saveEntry(session.account.id, date, checked.values);
   switch (outcome.kind) {
     case "saved":
       return json(outcome.entry, 200);

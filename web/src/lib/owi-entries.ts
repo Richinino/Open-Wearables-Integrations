@@ -21,9 +21,9 @@ export type SaveOutcome =
   | { kind: "invalid"; fields: FieldErrors }
   | { kind: "unavailable"; reason: string };
 
-/** Demo mode: no owi configured outside production. Saves are then echoed back, not stored. */
+/** Explicit local synthetic mode; saves for its fixture identity are echoed, never stored. */
 function isDemo(): boolean {
-  return !process.env.OWI_API_URL && process.env.NODE_ENV !== "production";
+  return !process.env.OWI_API_URL && process.env.NODE_ENV !== "production" && process.env.OWI_LOCAL_DEMO === "1";
 }
 
 function isoNow(now: Date): string {
@@ -80,11 +80,12 @@ async function readJson(response: Response): Promise<unknown> {
 }
 
 /** Saves already checked values for `day`. All values null deletes the day's entry in owi. */
-export async function saveEntry(day: string, values: EntryValues, now: Date = new Date()): Promise<SaveOutcome> {
+export async function saveEntry(accountId: string, day: string, values: EntryValues, now: Date = new Date()): Promise<SaveOutcome> {
   const baseUrl = process.env.OWI_API_URL;
   const token = process.env.OWI_WRITE_TOKEN;
 
-  if (isDemo()) {
+  if (!accountId || !/^[a-zA-Z0-9_-]{1,128}$/.test(accountId)) return { kind: "unavailable", reason: "account is required" };
+  if (isDemo() && accountId === "local-demo") {
     // Nothing is stored: the page can be tried, and the next load shows the demo data again.
     const entry: Entry = { day, ...values, saved_at: null };
     return { kind: "saved", entry: hasEntry(entry) ? { ...entry, saved_at: isoNow(now) } : entry };
@@ -93,7 +94,7 @@ export async function saveEntry(day: string, values: EntryValues, now: Date = ne
 
   let response: Response;
   try {
-    response = await fetch(`${baseUrl.replace(/\/+$/, "")}/v1/entries/${encodeURIComponent(day)}`, {
+    response = await fetch(`${baseUrl.replace(/\/+$/, "")}/v1/entries/${encodeURIComponent(day)}?account=${encodeURIComponent(accountId)}`, {
       method: "PUT",
       headers: {
         Authorization: `Bearer ${token}`,

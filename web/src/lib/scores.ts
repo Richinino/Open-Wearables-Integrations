@@ -56,6 +56,7 @@ export const COMPONENT_LABELS: Readonly<Record<string, string>> = {
   previous_day_activity: "včerajšia aktivita",
   recovery_index: "zotavenie v noci",
   sleep_regularity: "pravidelnosť spánku",
+  hrv_balance: "variabilita tepu oproti vlastnému priemeru",
   // Sleep Performance
   hours_vs_needed: "spánok oproti potrebe",
   consistency: "pravidelnosť",

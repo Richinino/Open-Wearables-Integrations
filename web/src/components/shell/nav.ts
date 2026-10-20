@@ -42,6 +42,10 @@ export const TILE_ONLY_NAV: NavItem[] = [
   { href: ROUTES.heart, label: "Pokojový tep" },
 ];
 
+export function visibleDetailNav(hasSamsung: boolean, viewOnly: boolean): NavItem[] {
+  return DETAIL_NAV.filter((item) => item.href !== ROUTES.entries || (hasSamsung && !viewOnly));
+}
+
 export function isActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
   // A day page sits under the calendar: its breadcrumb leads back there.

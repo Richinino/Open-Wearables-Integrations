@@ -82,8 +82,8 @@ function Vo2Tile({ dataset, today }: { dataset: Dataset; today: string }) {
           kilogram váhy za minútu. Čím vyššie, tým lepšia vytrvalostná kondícia; patrí k najsilnejším ukazovateľom dlhovekosti.
         </p>
         <p>
-          <strong className="font-semibold text-ink">Pre 17-ročného chalana</strong> je bežné okolo 45–50, nad 55 je výborné. Hodinky ho
-          odhadujú z behu a tepu; odhad z tepu je vzorec Uth–Sørensen (15,3 × max. tep ÷ pokojový tep), slúži len na kontrolu.
+          Hodnota sa posudzuje podľa veku, pohlavia a spôsobu merania. Zariadenie ju môže
+          odhadovať z behu a tepu; odhad z tepu je vzorec Uth–Sørensen (15,3 × max. tep ÷ pokojový tep), slúži len na kontrolu.
         </p>
       </div>
       <VendorLine>hodinky: Samsung · odhad: {VENDOR.vo2Uth} · týždenné priemery</VendorLine>

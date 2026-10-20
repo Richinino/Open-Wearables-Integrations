@@ -3,6 +3,7 @@
 // Tiles of the activity page: Activity and its six parts, the strain of the day with its
 // workouts, the cardio load status with its 12-week trend, and active time and calories.
 
+import { dayFigure, periodFigure } from "@/lib/day-values";
 import { useRouter } from "next/navigation";
 import { ColumnChart, durationTicks } from "@/components/charts/charts";
 import { dayPoints, tickDuration, tickPlain } from "@/components/charts/points";
@@ -320,12 +321,12 @@ export function EstimatesTile({ dataset, day, isToday, length = 30 }: { dataset:
   const slots = windowEnding(dataset.days, day.day, length);
   const points = dayPoints(slots, (item) => item.active_minutes_est);
   const active = periodSummary(dataset.days, day.day, length, "active_minutes_est");
-  const total = periodSummary(dataset.days, day.day, length, "total_kcal_est");
+  const total = periodSummary(dataset.days, day.day, length, "total_kcal");
   const running = day.complete === false;
   return (
     <ChartTile
       label={`Aktívny čas a kalórie · ${length} dní`}
-      note="Oba údaje sú odhad: Samsung Health ich počíta sám a neposiela ich, owi ich približuje z tepu, krokov a tréningov."
+      note="Aktívny čas je odhad. Kalórie majú prednosť zo zariadenia; ≈ označuje náhradný odhad owi."
       table={{
         columns: ["Deň", "Aktívny čas", "Kalórie spolu", "Z aktivity"],
         rows: dateRange(addDays(day.day, -(length - 1)), day.day)
@@ -337,8 +338,8 @@ export function EstimatesTile({ dataset, day, isToday, length = 30 }: { dataset:
               [
                 formatDay(key),
                 `${approx(formatDuration(item.active_minutes_est))}${partial}`,
-                `${approx(formatInt(item.total_kcal_est))}${partial}`,
-                approx(formatInt(item.activity_kcal_est)),
+                `${dayFigure(item, "totalEnergy", formatInt)}${partial}`,
+                dayFigure(item, "activeEnergy", formatInt),
               ],
             ];
           })
@@ -351,8 +352,8 @@ export function EstimatesTile({ dataset, day, isToday, length = 30 }: { dataset:
       </div>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Figure label="Aktívny čas" value={approx(formatDuration(day.active_minutes_est))} note={`bežne ${approx(formatDuration(active.average))}`} />
-        <Figure label="Kalórie spolu" value={approx(formatInt(day.total_kcal_est))} unit="kcal" note={`bežne ${approx(formatInt(total.average))}`} />
-        <Figure label="Z aktivity" value={approx(formatInt(day.activity_kcal_est))} unit="kcal" />
+        <Figure label="Kalórie spolu" value={dayFigure(day, "totalEnergy", formatInt)} unit="kcal" note={`bežne ${periodFigure(dataset.days, day.day, length, "totalEnergy", total.average, formatInt)}`} />
+        <Figure label="Z aktivity" value={dayFigure(day, "activeEnergy", formatInt)} unit="kcal" />
         <Figure label="Bazálny výdaj" value={formatInt(day.basal_kcal)} unit="kcal" note={running ? "zatiaľ za časť dňa" : "za celý deň"} />
       </div>
       <CalibrationNote calibration={dataset.calibration} targets={ACTIVITY_TARGETS} />

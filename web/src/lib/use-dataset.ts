@@ -2,6 +2,7 @@
 
 import { useCallback } from "react";
 import useSWR from "swr";
+import { useAccount } from "./account-context";
 
 import type { Dataset } from "./types";
 
@@ -32,10 +33,13 @@ export function useDataset(): {
   /** Changes the loaded dataset in place, e.g. after a save, without asking owi again. */
   update: (change: (dataset: Dataset) => Dataset) => void;
 } {
-  const { data, error, isLoading, isValidating, mutate } = useSWR<Dataset, Error>(DATA_URL, fetchDataset, {
+  const account = useAccount();
+  const key = account ? [DATA_URL, account.dataAccount.id] as const : DATA_URL;
+  const { data, error, isLoading, isValidating, mutate } = useSWR<Dataset, Error>(key,
+    (value: string | readonly [string, string]) => fetchDataset(typeof value === "string" ? value : value[0]), {
     refreshInterval: REFRESH_INTERVAL_MS,
     revalidateOnFocus: true,
-    keepPreviousData: true,
+    keepPreviousData: false,
   });
   const update = useCallback(
     (change: (dataset: Dataset) => Dataset) => {

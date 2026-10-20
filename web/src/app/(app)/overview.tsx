@@ -25,6 +25,7 @@ import {
   typicalWake,
 } from "@/lib/scores";
 import type { Dataset } from "@/lib/types";
+import { useAccount } from "@/lib/account-context";
 
 /**
  * The overview. Before 15:00 local time it leads with the day score (Readiness, Sleep
@@ -32,9 +33,11 @@ import type { Dataset } from "@/lib/types";
  * sleep need for tonight. `?rezim=rano` or `?rezim=vecer` forces either layout.
  */
 function Overview({ dataset, now, override }: { dataset: Dataset; now: Date; override: string | null }) {
+  const account = useAccount();
   const byDay = useMemo(() => indexByDay(dataset.days), [dataset.days]);
   const tz = dataset.timezone;
-  const { mode, day: focus } = resolveMode(now, tz, override);
+  const preferredMode = account?.dataAccount.settings.overview_mode === "morning" ? "rano" : null;
+  const { mode, day: focus } = resolveMode(now, tz, override ?? preferredMode);
   const today = todayIn(tz, now);
 
   // The focus day, or the last day with data before it when the source is behind.
@@ -80,7 +83,7 @@ function Overview({ dataset, now, override }: { dataset: Dataset; now: Date; ove
         </div>
       </div>
 
-      {missing > 0 && (
+      {missing > 0 && !account?.viewOnly && (account?.dataAccount.has_samsung ?? true) && (
         <div className="-my-1.5 flex justify-end px-1">
           <Link
             href={ROUTES.entries}

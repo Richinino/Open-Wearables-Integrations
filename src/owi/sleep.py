@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from owi.models import SleepSession
+from owi.models import SleepSession, source_order
 
 
 @dataclass(frozen=True)
@@ -17,7 +17,23 @@ class SleepSummary:
 def minutes_asleep(session: SleepSession) -> float:
     if session.sleep_minutes is not None:
         return session.sleep_minutes
+    if session.intervals:
+        return sum(
+            (i.end - i.start).total_seconds() / 60 for i in session.intervals if i.stage != "awake"
+        )
     return (session.end - session.start).total_seconds() / 60
+
+
+def stage_minutes(session: SleepSession, stage: str) -> float | None:
+    """Reported stage duration, else the normalized stage intervals; unknown stays missing."""
+    reported = getattr(session, f"{stage}_minutes")
+    if reported is not None:
+        return reported
+    if not any(i.stage in ("deep", "rem", "light") for i in session.intervals):
+        return None
+    return sum(
+        (i.end - i.start).total_seconds() / 60 for i in session.intervals if i.stage == stage
+    )
 
 
 def _overlap(a: SleepSession, b: SleepSession) -> bool:
@@ -25,10 +41,8 @@ def _overlap(a: SleepSession, b: SleepSession) -> bool:
 
 
 def dedupe(sessions: Iterable[SleepSession]) -> list[SleepSession]:
-    """Of overlapping sessions keep Health Connect's, then the longer one."""
-    ranked = sorted(
-        sessions, key=lambda s: (0 if s.source.is_health_connect else 1, -minutes_asleep(s))
-    )
+    """Of overlapping sessions keep the preferred provider/device, then the longer one."""
+    ranked = sorted(sessions, key=lambda s: (source_order(s.source), -minutes_asleep(s), s.id))
     kept: list[SleepSession] = []
     for session in ranked:
         if not any(_overlap(session, other) for other in kept):

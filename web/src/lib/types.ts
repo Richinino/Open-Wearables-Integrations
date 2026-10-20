@@ -2,6 +2,8 @@
 
 export type StepsSource = "samsung_health_total" | "samsung_hourly" | "phone";
 
+export type ValueSource = "measured" | "derived" | "estimated";
+
 export interface Workout {
   id: string;
   /** Local date the workout belongs to, YYYY-MM-DD. */
@@ -15,9 +17,9 @@ export interface Workout {
   hr_avg: number | null;
   hr_max: number | null;
   hr_min: number | null;
-  zone_light_min: number;
-  zone_moderate_min: number;
-  zone_vigorous_min: number;
+  zone_light_min: number | null;
+  zone_moderate_min: number | null;
+  zone_vigorous_min: number | null;
   distance_m: number | null;
   kcal_est: number | null;
   /** WHOOP-style strain of this workout, 0-21; absent until owi has scored it. */
@@ -46,6 +48,18 @@ export interface Day {
   activity_kcal_est: number | null;
   basal_kcal: number | null;
   total_kcal_est: number | null;
+  /** Selected device value, or fallback estimate, with explicit provenance. */
+  distance_m?: number | null;
+  distance_m_source?: ValueSource | null;
+  active_kcal?: number | null;
+  active_kcal_source?: ValueSource | null;
+  total_kcal?: number | null;
+  total_kcal_source?: ValueSource | null;
+  resting_hr?: number | null;
+  resting_hr_source?: ValueSource | null;
+  hrv_ms?: number | null;
+  hrv_kind?: "rmssd" | "sdnn" | null;
+  hrv_ms_source?: ValueSource | null;
   hr_resting: number | null;
   hr_avg: number | null;
   hr_max: number | null;
@@ -143,7 +157,7 @@ export interface DayScores {
   apple_sleep: Score;
   /** Sleep Regularity Index over 14 days, -100..100. */
   sleep_regularity: number | null;
-  /** Oura-style readiness without HRV and temperature, 0-100. */
+  /** Approximate Oura-style readiness; includes HRV only when comparable history exists. */
   readiness: Score;
   /** Oura-style activity, 0-100. */
   activity: Score;
