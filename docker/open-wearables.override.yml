@@ -1,0 +1,76 @@
+# Copy to the Open Wearables checkout as docker-compose.override.yml.
+# Requires Docker Compose with !override/!reset support and the local .env credentials.
+x-owi-runtime: &runtime
+  restart: unless-stopped
+  logging:
+    driver: local
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  db:
+    <<: *runtime
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in the local .env}
+    ports: !reset []
+  redis:
+    <<: *runtime
+    ports: !reset []
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in the local .env}
+    entrypoint:
+      - sh
+      - -ec
+      - |
+        umask 077
+        printf 'requirepass %s\nprotected-mode yes\n' "$$REDIS_PASSWORD" > /tmp/owi-redis.conf
+        export REDISCLI_AUTH="$$REDIS_PASSWORD"
+        if [ ! -d /data/appendonlydir ] && [ -f /data/dump.rdb ]; then
+          redis-server /tmp/owi-redis.conf --daemonize no &
+          RPID=$$!
+          until redis-cli ping >/dev/null 2>&1; do sleep 0.2; done
+          redis-cli CONFIG SET appendonly yes
+          until redis-cli INFO persistence | grep -q 'aof_rewrite_in_progress:0'; do sleep 0.2; done
+          redis-cli SHUTDOWN NOSAVE
+          wait "$$RPID" 2>/dev/null || true
+        fi
+        exec redis-server /tmp/owi-redis.conf --appendonly yes --appendfsync everysec
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  app:
+    <<: *runtime
+    ports: !override ["127.0.0.1:8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=5)"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 120s
+  celery-worker:
+    <<: *runtime
+    healthcheck:
+      test: ["CMD-SHELL", "uv run celery -A app.main:celery_app inspect ping --timeout 8 --json --destination io@$$HOSTNAME,cpu@$$HOSTNAME | python -c \"import json,sys; r=json.load(sys.stdin); sys.exit(0 if len(r)==2 and all(v.get('ok')=='pong' for v in r.values()) else 1)\""]
+      interval: 120s
+      timeout: 20s
+      retries: 3
+      start_period: 120s
+  celery-beat:
+    <<: *runtime
+  flower:
+    <<: *runtime
+    ports: !override ["127.0.0.1:5555:5555"]
+    environment:
+      FLOWER_BASIC_AUTH: ${FLOWER_BASIC_AUTH:?FLOWER_BASIC_AUTH must be set in the local .env}
+  frontend:
+    <<: *runtime
+    ports: !override ["127.0.0.1:3000:3000"]
+  svix-server:
+    <<: *runtime
+    ports: !override ["127.0.0.1:8071:8071"]
+    environment:
+      SVIX_DB_DSN: "postgresql://open-wearables:${DB_PASSWORD}@db:5432/svix"
+      SVIX_REDIS_DSN: "redis://:${REDIS_PASSWORD}@redis:6379/1"

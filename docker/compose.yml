@@ -3,13 +3,27 @@
 #   docker compose --env-file .env -f docker/compose.yml up -d --build
 name: owi
 
+x-runtime: &runtime
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  logging:
+    driver: local
+    options:
+      max-size: "10m"
+      max-file: "3"
+
 services:
   # Recomputes the last 14 days every 10 minutes and tunes the estimates on the entries.
   owi:
-    image: owi:local
+    <<: *runtime
+    image: owi:${OWI_IMAGE_TAG:-local}
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        OWI_BUILD_REVISION: ${OWI_BUILD_REVISION:-development}
     init: true
     env_file:
       - ../.env
@@ -21,14 +35,20 @@ services:
       - ../data:/data
     networks:
       - openwearables
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-m", "owi.health", "sync"]
+      interval: 60s
+      timeout: 8s
+      retries: 3
+      start_period: 300s
 
   # HTTP API for the web. It gets the results, its two tokens and nothing else: no Open
   # Wearables key and no access to that stack's network. It reads the results and writes
   # only the accounts (data/accounts) and the Samsung Health entries (data/zapisy); both
   # folders are created by owi sync and owi serve.
   api:
-    image: owi:local
+    <<: *runtime
+    image: owi:${OWI_IMAGE_TAG:-local}
     command: ["owi", "serve", "--host", "0.0.0.0", "--port", "8787"]
     init: true
     environment:
@@ -46,7 +66,12 @@ services:
       - "127.0.0.1:${OWI_SERVE_PORT:-8787}:8787"
     depends_on:
       - owi
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-m", "owi.health", "api"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 30s
 
 networks:
   openwearables:

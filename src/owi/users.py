@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import shutil
+import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -81,5 +83,30 @@ def backup_data(data_dir: Path, now: datetime, backup_dir: Path | None = None) -
         raise OSError(f"{parent} je vnútri {data}, zadaj iný --backup-dir")
     parent.mkdir(parents=True, exist_ok=True)
     target = parent / f"data-backup-{now:%Y%m%d-%H%M%S}"
-    shutil.copytree(data, target)
+    snapshot_data(data, target)
     return target
+
+
+def snapshot_data(data: Path, target: Path) -> None:
+    """Copy data, taking consistent online snapshots of SQLite files."""
+
+    def copy_file(source: str, destination: str) -> str:
+        path = Path(source)
+        with path.open("rb") as stream:
+            sqlite = stream.read(16) == b"SQLite format 3\0"
+        if not sqlite:
+            return shutil.copy2(source, destination)
+        with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)) as reader:
+            with closing(sqlite3.connect(destination)) as writer:
+                reader.backup(writer, pages=256, sleep=0.05)
+                writer.execute("PRAGMA journal_mode=DELETE")
+                if writer.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                    raise OSError("SQLite backup failed integrity_check")
+        return destination
+
+    shutil.copytree(
+        data,
+        target,
+        copy_function=copy_file,
+        ignore=shutil.ignore_patterns("*-journal", "*-wal", "*-shm", "*.tmp"),
+    )

@@ -222,7 +222,7 @@ def _total_kcal(
     if device.total_kcal is not None:
         return device.total_kcal, measured.MEASURED
     if device.active_kcal is not None and basal is not None:
-        return device.active_kcal + basal, measured.MEASURED
+        return device.active_kcal + basal, measured.DERIVED
     return measured.pick(None, estimate)
 
 

@@ -2,7 +2,7 @@ import "server-only";
 
 import { NextResponse, type NextRequest } from "next/server";
 
-import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
+import { SESSION_COOKIE, sessionKey, verifySessionToken } from "@/lib/session";
 
 const PUBLIC_FILES = new Set(["/robots.txt", "/favicon.ico", "/icon.svg"]);
 
@@ -11,7 +11,7 @@ export async function proxy(request: NextRequest) {
   if (PUBLIC_FILES.has(pathname)) return NextResponse.next();
 
   const authenticated = await verifySessionToken(
-    process.env.SESSION_SECRET,
+    sessionKey(process.env.SESSION_SECRET, process.env.SITE_PASSWORD),
     request.cookies.get(SESSION_COOKIE)?.value,
     Date.now(),
   );

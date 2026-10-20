@@ -15,8 +15,10 @@ const mocks = vi.hoisted(() => ({
   endSession: vi.fn<() => Promise<void>>(),
   hasValidSession: vi.fn<() => Promise<boolean>>(),
   loadDataset: vi.fn<() => Promise<Dataset>>(),
+  reserveLoginAttempt: vi.fn<() => Promise<"allowed" | "limited" | "unavailable">>(),
 }));
 
+vi.mock("./login-limit", () => ({ reserveLoginAttempt: mocks.reserveLoginAttempt }));
 vi.mock("./auth", () => ({
   checkPassword: mocks.checkPassword,
   startSession: mocks.startSession,
@@ -61,6 +63,7 @@ beforeEach(() => {
   for (const mock of Object.values(mocks)) mock.mockReset();
   mocks.startSession.mockResolvedValue();
   mocks.endSession.mockResolvedValue();
+  mocks.reserveLoginAttempt.mockResolvedValue("allowed");
 });
 
 afterEach(() => {
@@ -69,6 +72,14 @@ afterEach(() => {
 });
 
 describe("login", () => {
+  it("checks the shared quota before evaluating a password", async () => {
+    mocks.reserveLoginAttempt.mockResolvedValue("limited");
+    const result = await login({ error: null }, form("correct"));
+    expect(result.error).toContain("Priveľa pokusov");
+    expect(mocks.checkPassword).not.toHaveBeenCalled();
+    expect(mocks.startSession).not.toHaveBeenCalled();
+  });
+
   /** Runs the action and reports whether it had settled before the delay was over. */
   async function attempt(data: FormData) {
     let settled = false;

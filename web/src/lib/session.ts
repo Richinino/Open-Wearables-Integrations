@@ -9,6 +9,12 @@ const HMAC = { name: "HMAC", hash: "SHA-256" } as const;
 const SIGNATURE_BYTES = 32;
 const encoder = new TextEncoder();
 
+/** Changing the site password revokes sessions, even without rotating the signing secret. */
+export function sessionKey(secret: string | undefined, password: string | undefined): string | undefined {
+  if (!secret || secret.length < 32 || !password) return undefined;
+  return JSON.stringify(["owi-session-v2", secret, password]);
+}
+
 function importKey(secret: string, usage: "sign" | "verify"): Promise<CryptoKey> {
   return crypto.subtle.importKey("raw", encoder.encode(secret), HMAC, false, [usage]);
 }

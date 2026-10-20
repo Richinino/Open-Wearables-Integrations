@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import sqlite3
 import types
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, fields, is_dataclass
 from datetime import UTC, date, datetime, timedelta
 from functools import cache
@@ -193,12 +195,16 @@ def _insert(table: str, columns: tuple[str, ...]) -> str:
 class Store:
     def __init__(self, path: Path, readonly: bool = False) -> None:
         """`readonly` opens an existing database without creating or changing anything."""
+        self._savepoint = 0
         if readonly:
             self._db = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
             self._db = sqlite3.connect(path)
             self._db.executescript(_SCHEMA)
+            self._db.execute(
+                "CREATE TABLE IF NOT EXISTS sync_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+            )
             self._add_missing_columns()
         self._db.row_factory = sqlite3.Row
 
@@ -206,7 +212,7 @@ class Store:
         for table, column, kind in _ADDED_COLUMNS:
             present = {row[1] for row in self._db.execute(f"PRAGMA table_info({table})")}
             if column not in present:
-                with self._db:
+                with self.transaction():
                     self._db.execute(f'ALTER TABLE {table} ADD COLUMN "{column}" {kind}')
 
     def __enter__(self) -> Store:
@@ -218,11 +224,52 @@ class Store:
     def close(self) -> None:
         self._db.close()
 
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """A nested transaction; also a consistent snapshot for multiple read queries."""
+        self._savepoint += 1
+        name = f"owi_{self._savepoint}"
+        self._db.execute(f"SAVEPOINT {name}")
+        try:
+            yield
+        except BaseException:
+            self._db.execute(f"ROLLBACK TO {name}")
+            self._db.execute(f"RELEASE {name}")
+            raise
+        else:
+            self._db.execute(f"RELEASE {name}")
+
+    def record_sync(self, latest_measurement: datetime | None, completed: datetime) -> None:
+        """Record successful publication separately from the age of its input data."""
+        with self.transaction():
+            values = {"last_compute_success_at": completed.astimezone(UTC).isoformat()}
+            known = self.freshness()["latest_measurement_at"]
+            if latest_measurement is not None and (
+                known is None or latest_measurement > datetime.fromisoformat(known)
+            ):
+                values["latest_measurement_at"] = latest_measurement.astimezone(UTC).isoformat()
+            self._db.executemany(
+                "INSERT OR REPLACE INTO sync_state (key, value) VALUES (?, ?)", values.items()
+            )
+
+    def freshness(self) -> dict[str, str | None]:
+        result: dict[str, str | None] = {
+            "latest_measurement_at": None,
+            "last_compute_success_at": None,
+        }
+        if self._has_table("sync_state"):
+            result.update(
+                (row["key"], row["value"])
+                for row in self._db.execute("SELECT key, value FROM sync_state")
+                if row["key"] in result
+            )
+        return result
+
     def save_day(self, result: DayResult, computed_at: datetime | None = None) -> None:
         """Replace the day's row and all of its workouts in one transaction."""
         row = {name: _encode(getattr(result, name)) for name in _DAY_FIELDS}
         row["computed_at"] = (computed_at or datetime.now(UTC)).isoformat()
-        with self._db:
+        with self.transaction():
             self._db.execute(_insert("daily", (*_DAY_FIELDS, "computed_at")), row)
             self._db.execute('DELETE FROM workouts WHERE "day" = ?', (result.day.isoformat(),))
             for workout in result.workouts:
@@ -310,7 +357,7 @@ class Store:
             "data": json.dumps(jsonable(value)),
             "computed_at": (computed_at or datetime.now(UTC)).isoformat(),
         }
-        with self._db:
+        with self.transaction():
             self._db.execute(_insert(table, ("day", "data", "computed_at")), row)
 
     def _load_json(self, table: str, cls: type[T], first: date, last: date) -> list[T]:
@@ -338,7 +385,7 @@ class Store:
             "quality": json.dumps(record.quality),
             "signature": record.signature,
         }
-        with self._db:
+        with self.transaction():
             self._db.execute(_insert(HISTORY_TABLE, tuple(row)), row)
 
     def latest_fit(self) -> FitRecord | None:
@@ -366,7 +413,7 @@ class Store:
             "params": json.dumps(params),
             "recomputed_at": None if recomputed_at is None else recomputed_at.isoformat(),
         }
-        with self._db:
+        with self.transaction():
             self._db.execute(_insert(RECOMPUTE_TABLE, tuple(row)), row)
 
     def recompute_state(self) -> tuple[dict[str, Any], datetime | None] | None:

@@ -28,6 +28,7 @@ from owi.models import (
 
 MEASURED = "measured"
 ESTIMATED = "estimated"
+DERIVED = "derived"
 RMSSD = "rmssd"
 SDNN = "sdnn"
 

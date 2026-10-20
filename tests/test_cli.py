@@ -856,14 +856,14 @@ def test_sync_deletes_queued_folders_of_unpaired_users(env, monkeypatch):
             store.deletions_add(name, NOW)
     use_client(monkeypatch, FakeClient())
 
-    assert sync("2026-10-12") == 0
+    assert sync("2026-10-12") == 1  # unsafe queued paths remain visible for the operator
 
     assert not (data / "users" / "gone").exists()
     assert (data / "users" / "other").exists()
     assert (data / "users" / "ow-a").exists()
     assert (data / "victim").exists()
     with open_accounts(env) as store:
-        assert store.deletions_pending() == ["ow-a"]
+        assert set(store.deletions_pending()) == {"ow-a", "../victim"}
 
 
 def test_one_failing_user_does_not_stop_the_others(env, monkeypatch, capsys):

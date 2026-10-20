@@ -1,5 +1,8 @@
 # Open Wearables – vlastná inštancia
 
+Prevádzka po úpravách z 19. 10. 2026: [spúšťanie, záloha, nasadenie a presun na iný PC](docs/prevadzka.md).
+Aktuálne opravy a otvorené body sú v [aktualizovanom audite](docs/audit-2026-10-19.md).
+
 Moja inštancia [Open Wearables](https://github.com/the-momentum/open-wearables): dáta zo Samsung Health (telefón a hodinky) sa zbierajú v Dockeri a Claude sa k nim dostane cez MCP.
 
 | Časť | Kde | Stav |

@@ -16,6 +16,7 @@ from __future__ import annotations
 import gzip
 import hmac
 import json
+import os
 import re
 import shutil
 import sqlite3
@@ -23,18 +24,19 @@ import sys
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 from zoneinfo import ZoneInfo
 
-from owi import entries, tuning, users
+from owi import entries, security, tuning, users
 from owi.accounts import DEFAULT_SETTINGS, Account, AccountError, Accounts, InboxItem
 from owi.accounts import accounts_path as default_accounts_path
 from owi.calibration import load_params
 from owi.days import today
 from owi.entries import Entry
+from owi.http_server import ApiServer
 from owi.models import DayResult, Params
 from owi.score_models import DayFeatures, DayScores
 from owi.store import Store, jsonable
@@ -163,7 +165,7 @@ def _days(
     except ValueError:
         return _error(400, "dates must be YYYY-MM-DD")
     try:
-        with Store(db_path, readonly=True) as store:
+        with Store(db_path, readonly=True) as store, store.transaction():
             span = store.span()
             found: list[DayResult] = []
             features: dict[date, DayFeatures] = {}
@@ -181,6 +183,7 @@ def _days(
                 scores = {s.day: s for s in store.scores(first, last)}
                 samsung = _entries(entries_path, first, last)
             last_fit = store.latest_fit()
+            freshness = store.freshness()
     except sqlite3.OperationalError:
         # No database yet, or the sync is writing to it right now.
         return _error(503, "no data yet")
@@ -193,6 +196,7 @@ def _days(
             "first_day": _iso(first_day),
             "last_day": _iso(last_day),
             "synced_at": _iso(synced_at),
+            **freshness,
             "days": [
                 _day(
                     result,
@@ -735,6 +739,26 @@ def respond(
     now = now or datetime.now(UTC)
     data_dir = data_dir or db_path.parent
     accounts_path = accounts_path or default_accounts_path(data_dir)
+    if url.path == "/v1/auth/attempt":
+        if method != "POST":
+            return _error(405, "method not allowed")
+        if not write_token:
+            return _error(503, "writes are disabled")
+        if not _authorized(authorization, write_token):
+            return _error(401, "unauthorized")
+        if len(body) > MAX_BODY_BYTES:
+            return _error(413, "body too large")
+        payload = _object(body)
+        key = payload.get("client_key") if payload else None
+        if not isinstance(key, str) or re.fullmatch(r"[a-f0-9]{64}", key) is None:
+            return _error(400, "invalid client key")
+        try:
+            wait = security.reserve_login(data_dir / "zapisy" / "security.db", key, now)
+        except (sqlite3.Error, OSError):
+            return _error(503, "login protection is unavailable")
+        if wait:
+            return Response(429, {"error": "too_many_attempts", "retry_after_s": wait})
+        return Response(200, {"allowed": True})
     legacy = _DataPaths(
         db_path,
         entries_path or entries.path_in(db_path.parent),
@@ -788,6 +812,19 @@ def respond(
         return _error(405, "method not allowed")
     if url.path == "/health":
         return Response(200, {"status": "ok"})
+    if url.path == "/version":
+        return Response(200, {"revision": os.environ.get("OWI_BUILD_REVISION", "development")})
+    if url.path == "/ready":
+        try:
+            if accounts_path.is_file():
+                Accounts(accounts_path).all()
+            else:
+                with Store(db_path, readonly=True) as store:
+                    if store.span() is None:
+                        return _error(503, "no data yet")
+        except (sqlite3.Error, OSError):
+            return _error(503, "data are unavailable")
+        return Response(200, {"status": "ok"})
     if url.path != "/v1/days":
         return _error(404, "not found")
     if not _authorized(authorization, token):
@@ -798,55 +835,53 @@ def respond(
     return _days(query, paths.db_path, timezone, paths.entries_path, paths.params_path)
 
 
-class _Handler(BaseHTTPRequestHandler):
-    server_version = "owi"
-    sys_version = ""
-    timeout = REQUEST_TIMEOUT_S
-
-    def _body(self) -> bytes:
-        """The request body, cut one byte past the limit so an oversized one is noticed."""
-        if self.command not in BODY_METHODS:
-            return b""
+def _application(context: dict[str, Any]) -> Callable:
+    def application(environ: dict[str, Any], start_response: Callable) -> list[bytes]:
+        method = environ["REQUEST_METHOD"]
+        body = b""
+        if method in BODY_METHODS:
+            length = int(environ.get("CONTENT_LENGTH") or 0)
+            body = environ["wsgi.input"].read(min(length, MAX_BODY_BYTES + 1))
+        target = environ.get("PATH_INFO", "/")
+        if environ.get("QUERY_STRING"):
+            target += "?" + environ["QUERY_STRING"]
         try:
-            length = int(self.headers.get("Content-Length") or 0)
-        except ValueError:
-            length = 0
-        return self.rfile.read(min(max(length, 0), MAX_BODY_BYTES + 1))
-
-    def _answer(self) -> None:
-        response = respond(
-            self.command,
-            self.path,
-            self.headers.get("Authorization"),
-            body=self._body(),
-            acting=self.headers.get("X-Owi-Acting"),
-            client_ip=self.headers.get("X-Owi-Client-Ip"),
-            **self.server.context,
-        )
-        self.send_response(response.status)
-        self.send_header("Cache-Control", "no-store")
+            response = respond(
+                method,
+                target,
+                environ.get("HTTP_AUTHORIZATION"),
+                body=body,
+                acting=environ.get("HTTP_X_OWI_ACTING"),
+                client_ip=environ.get("HTTP_X_OWI_CLIENT_IP"),
+                **context,
+            )
+        except Exception as error:
+            print(f"api request failed: {type(error).__name__}", file=sys.stderr)
+            response = _error(500, "internal error")
+        headers = [("Cache-Control", "no-store")]
         if response.status == 401:
-            self.send_header("WWW-Authenticate", "Bearer")
+            headers.append(("WWW-Authenticate", "Bearer"))
         if response.status == 429 and isinstance(response.body, dict):
             retry = response.body.get("retry_after_s")
             if retry is not None:
-                self.send_header("Retry-After", str(retry))
-        if response.status == 204:
-            self.end_headers()  # No Content: no body and no length
-            return
-        payload = json.dumps(response.body).encode()
-        gzipped = _accepts_gzip(self.headers.get("Accept-Encoding"))
-        if gzipped:
-            payload = gzip.compress(payload, compresslevel=GZIP_LEVEL)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(payload)))
-        if gzipped:
-            self.send_header("Content-Encoding", "gzip")
-        self.send_header("Vary", "Accept-Encoding")
-        self.end_headers()
-        self.wfile.write(payload)
+                headers.append(("Retry-After", str(retry)))
+        payload = b""
+        if response.status != 204:
+            payload = json.dumps(response.body).encode()
+            if _accepts_gzip(environ.get("HTTP_ACCEPT_ENCODING")):
+                payload = gzip.compress(payload, compresslevel=GZIP_LEVEL)
+                headers.append(("Content-Encoding", "gzip"))
+            headers.extend(
+                [
+                    ("Content-Type", "application/json; charset=utf-8"),
+                    ("Content-Length", str(len(payload))),
+                    ("Vary", "Accept-Encoding"),
+                ]
+            )
+        start_response(f"{response.status} {HTTPStatus(response.status).phrase}", headers)
+        return [payload]
 
-    do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = _answer
+    return application
 
 
 def make_server(
@@ -861,7 +896,7 @@ def make_server(
     params_path: Path | None = None,
     accounts_path: Path | None = None,
     data_dir: Path | None = None,
-) -> ThreadingHTTPServer:
+) -> ApiServer:
     """Without `write_token` the API stays read-only: entries and accounts answer 503."""
     if len(token) < MIN_TOKEN_LENGTH:
         raise ValueError(f"token must have at least {MIN_TOKEN_LENGTH} characters")
@@ -869,9 +904,7 @@ def make_server(
         raise ValueError(f"write token must have at least {MIN_TOKEN_LENGTH} characters")
     if write_token and hmac.compare_digest(write_token.encode(), token.encode()):
         raise ValueError("write token must differ from the read token")
-    server = ThreadingHTTPServer((host, port), _Handler)
-    server.daemon_threads = True
-    server.context = {
+    context = {
         "db_path": db_path,
         "token": token,
         "timezone": timezone,
@@ -881,4 +914,5 @@ def make_server(
         "accounts_path": accounts_path,
         "data_dir": data_dir,
     }
-    return server
+    # The app rejects bodies past 4 KiB with JSON; the transport also caps buffering.
+    return ApiServer(_application(context), host, port, 64 * 1024)

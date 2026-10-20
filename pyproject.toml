@@ -3,7 +3,11 @@ name = "owi"
 version = "0.1.0"
 description = "Daily health metrics computed from Open Wearables raw data"
 requires-python = ">=3.12"
-dependencies = ["httpx>=0.27", "tzdata>=2024.1"]
+dependencies = [
+    "httpx>=0.27",
+    "tzdata>=2024.1",
+    "waitress==3.0.2",
+]
 
 [project.scripts]
 owi = "owi.cli:main"

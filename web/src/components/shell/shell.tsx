@@ -8,7 +8,7 @@ import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { EmptyState } from "@/components/ui/parts";
 import { todayIn } from "@/lib/dates";
 import { formatDayLong, formatRelative } from "@/lib/format";
-import { isStale } from "@/lib/metrics";
+import { dataStatus } from "@/lib/data-status";
 import type { Dataset } from "@/lib/types";
 import { useDataset } from "@/lib/use-dataset";
 import { DETAIL_NAV, isActive, PRIMARY_NAV, ROUTES, TILE_ONLY_NAV } from "./nav";
@@ -149,16 +149,17 @@ function DetailMenu({ pathname }: { pathname: string }) {
   );
 }
 
-function SyncStatus({ dataset, now }: { dataset: Dataset; now: Date }) {
-  const stale = isStale(dataset.synced_at, now);
+function SyncStatus({ dataset, now, failed }: { dataset: Dataset; now: Date; failed: boolean }) {
+  const status = dataStatus(dataset, now, failed);
+  const stale = status.warning;
   return (
     <div
       className="flex items-center gap-2"
-      title={stale ? "Zdroj dát sa dlhšie neozval" : "Dáta sa obnovujú každých pár minút"}
+      title={status.title}
     >
       <span aria-hidden="true" className="size-1.5 rounded-full" style={{ background: stale ? "var(--warn)" : "var(--good)" }} />
       <span>
-        {stale ? "offline · " : <span className="sr-only">Aktualizované </span>}
+        {stale ? "pozor · " : <span className="sr-only">Prepočítané </span>}
         {formatRelative(dataset.synced_at, now)}
       </span>
     </div>
@@ -257,7 +258,7 @@ function TabBar({ pathname }: { pathname: string }) {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { dataset } = useDataset();
+  const { dataset, error } = useDataset();
   const now = useNow();
   const today = dataset ? todayIn(dataset.timezone, now) : null;
 
@@ -283,7 +284,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
             <div className="mono flex items-center gap-5 text-[12px] tracking-[0.04em] text-ink2 uppercase">
               {today && <div className="hidden md:block">{capitalize(formatDayLong(today).replace(/\s\d{4}$/, ""))}</div>}
-              {dataset && <SyncStatus dataset={dataset} now={now} />}
+              {dataset && <SyncStatus dataset={dataset} now={now} failed={Boolean(error)} />}
             </div>
             <div className="hidden sm:block">
               <ThemeToggle />
@@ -337,7 +338,8 @@ export function WithData({ children }: { children: (dataset: Dataset, now: Date)
     );
   }
 
-  const stale = isStale(dataset.synced_at, now);
+  const status = dataStatus(dataset, now, Boolean(error));
+  const stale = status.warning;
   return (
     <div className="flex flex-col gap-[18px] transition-opacity duration-300" style={{ opacity: isValidating && stale ? 0.7 : 1 }}>
       {stale && (
@@ -351,8 +353,8 @@ export function WithData({ children }: { children: (dataset: Dataset, now: Date)
             <path d="M8 6v4m0 2v.5" stroke="var(--bg)" strokeWidth="1.6" strokeLinecap="round" />
           </svg>
           <span>
-            <strong className="font-semibold">Zdroj dát je offline.</strong> Vidíš posledné načítané hodnoty,
-            aktualizované {formatRelative(dataset.synced_at, now)}.
+            <strong className="font-semibold">{status.title}</strong> {status.detail} Posledný prepočet{" "}
+            {formatRelative(dataset.synced_at, now)}.
           </span>
         </p>
       )}

@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+// Explicit ESM configuration for Vite's native config loader.
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({

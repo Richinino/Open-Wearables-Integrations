@@ -209,6 +209,9 @@ export interface Dataset {
   last_day: string | null;
   /** When the results were last recomputed. ISO 8601, UTC. */
   synced_at: string | null;
+  /** Timestamp of the newest input measurement; independent of recomputation. */
+  latest_measurement_at?: string | null;
+  last_compute_success_at?: string | null;
   /** Oldest first. Days without any data are absent. */
   days: Day[];
   /** How owi's estimates are tuned on the entries; absent in older responses. */

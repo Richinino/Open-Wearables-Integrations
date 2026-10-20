@@ -8,6 +8,7 @@ import {
   SESSION_LIFETIME_MS,
   createSessionToken,
   verifySessionToken,
+  sessionKey,
 } from "./session";
 
 function digest(text: string): Buffer {
@@ -16,7 +17,7 @@ function digest(text: string): Buffer {
 
 export async function checkPassword(submitted: string): Promise<boolean> {
   const password = process.env.SITE_PASSWORD;
-  const secret = process.env.SESSION_SECRET;
+  const secret = sessionKey(process.env.SESSION_SECRET, process.env.SITE_PASSWORD);
   if (!password || !secret) {
     console.error("Login is disabled: SITE_PASSWORD or SESSION_SECRET is not set.");
     return false;
@@ -26,7 +27,7 @@ export async function checkPassword(submitted: string): Promise<boolean> {
 }
 
 export async function startSession(): Promise<void> {
-  const secret = process.env.SESSION_SECRET;
+  const secret = sessionKey(process.env.SESSION_SECRET, process.env.SITE_PASSWORD);
   if (!secret) throw new Error("SESSION_SECRET is not set");
 
   const token = await createSessionToken(secret, Date.now());
@@ -48,7 +49,7 @@ export async function endSession(): Promise<void> {
 export async function hasValidSession(): Promise<boolean> {
   const store = await cookies();
   return verifySessionToken(
-    process.env.SESSION_SECRET,
+    sessionKey(process.env.SESSION_SECRET, process.env.SITE_PASSWORD),
     store.get(SESSION_COOKIE)?.value,
     Date.now(),
   );

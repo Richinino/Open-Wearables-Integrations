@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { config, proxy } from "@/proxy";
 
-import { SESSION_COOKIE, createSessionToken } from "./session";
+import { SESSION_COOKIE, createSessionToken, sessionKey } from "./session";
 
 const SECRET = "unit-test-secret-0123456789-abcdefghij";
 const ORIGIN = "http://localhost:3100";
@@ -28,7 +28,8 @@ let valid: string;
 
 beforeEach(async () => {
   vi.stubEnv("SESSION_SECRET", SECRET);
-  valid = await createSessionToken(SECRET, Date.now());
+  vi.stubEnv("SITE_PASSWORD", "test-site-password");
+  valid = await createSessionToken(sessionKey(SECRET, "test-site-password")!, Date.now());
 });
 
 afterEach(() => {

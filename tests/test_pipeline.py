@@ -364,7 +364,7 @@ def test_device_active_energy_wins_and_total_adds_basal():
     )
 
     assert (result.active_kcal, result.active_kcal_source) == (500.0, "measured")
-    assert (result.total_kcal, result.total_kcal_source) == (2150.0, "measured")
+    assert (result.total_kcal, result.total_kcal_source) == (2150.0, "derived")
     assert result.activity_kcal_est is not None  # the estimate is still computed
 
 

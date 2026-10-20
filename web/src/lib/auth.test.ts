@@ -109,4 +109,11 @@ describe("session cookie", () => {
     await expect(startSession()).rejects.toThrow();
     expect(jar.has(SESSION_COOKIE)).toBe(false);
   });
+
+  it("revokes existing sessions when only the site password changes", async () => {
+    await startSession();
+    expect(await hasValidSession()).toBe(true);
+    vi.stubEnv("SITE_PASSWORD", "a-new-site-password");
+    expect(await hasValidSession()).toBe(false);
+  });
 });

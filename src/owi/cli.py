@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from owi import entries, inbox, samsung_scores, scoring, tuning, users
+from owi import entries, health, inbox, samsung_scores, scoring, tuning, users
 from owi.accounts import Account, Accounts, OwUser
 from owi.calibration import (
     FIT_WINDOW_DAYS,
@@ -180,17 +180,32 @@ def _sync_batch(
         if seen is not None:
             for item in inputs.values():
                 seen.observe(item.samples, now - timedelta(days=ARRIVING_DAYS))
-        for day in sorted(inputs):
-            item = inputs[day]
-            if item.complete and not has_data(item):
-                continue
-            result = compute(item, params, settings.timezone)
-            store.save_day(result)
-            store.save_features(
-                day_features(store, item, result, _person(settings, item.profile, day))
-            )
-            saved.append(day)
-            print(_line(result))
+        # Publish days, features and dependent scores together, including on failure.
+        with store.transaction():
+            for day in sorted(inputs):
+                item = inputs[day]
+                if item.complete and not has_data(item):
+                    continue
+                result = compute(item, params, settings.timezone)
+                store.save_day(result)
+                store.save_features(
+                    day_features(store, item, result, _person(settings, item.profile, day))
+                )
+                saved.append(day)
+                print(_line(result))
+            if saved:
+                _rescore_stored(settings, store, min(saved))
+            measurements = [
+                timestamp
+                for item in inputs.values()
+                for timestamp in (
+                    *[s.timestamp for s in item.samples],
+                    *[w.end for w in item.workouts],
+                    *[s.end for s in item.sleeps],
+                )
+                if timestamp <= now
+            ]
+            store.record_sync(max(measurements, default=None), _now())
     return saved
 
 
@@ -199,35 +214,33 @@ def _sync_once(
 ) -> None:
     """Long ranges go in batches to bound memory; finished batches stay saved.
 
-    Scores chain from day to day, so every stored day from the first saved one on is
-    rescored, also when a later batch fails.
+    Each batch publishes days, features and dependent scores in one transaction.
+    Finished batches survive a later batch's failure.
     """
-    first_saved: date | None = None
-    try:
-        for offset in range(0, len(days), SYNC_BATCH_DAYS):
-            saved = _sync_batch(settings, days[offset : offset + SYNC_BATCH_DAYS], now, seen)
-            if saved and first_saved is None:
-                first_saved = min(saved)
-            sys.stdout.flush()
-    finally:
-        if first_saved is not None:
-            _rescore(settings, first_saved)
+    for offset in range(0, len(days), SYNC_BATCH_DAYS):
+        _sync_batch(settings, days[offset : offset + SYNC_BATCH_DAYS], now, seen)
+        sys.stdout.flush()
+
+
+def _rescore_stored(
+    settings: Settings, store: Store, first: date, last: date | None = None
+) -> None:
+    params = load_params(settings.params_path)
+    models = samsung_scores.load_models(settings.score_weights_path)
+    base = Person(age=settings.age, sex=settings.sex, max_hr=settings.max_hr or params.max_hr)
+    span = store.features_span()
+    if span is None:
+        return
+    last = last or span[1]
+    count = scoring.rescore(store, first, last, base, settings.timezone, models, settings.age_on)
+    print(f"skóre prepočítané od {first} do {last}, počet dní: {count}")
 
 
 def _rescore(settings: Settings, first: date, last: date | None = None) -> None:
     """Recompute scores from stored features, from `first` to `last` or the last stored day."""
-    params = load_params(settings.params_path)
-    models = samsung_scores.load_models(settings.score_weights_path)
-    base = Person(age=settings.age, sex=settings.sex, max_hr=settings.max_hr or params.max_hr)
     with Store(settings.db_path) as store:
-        span = store.features_span()
-        if span is None:
-            return
-        last = last or span[1]
-        count = scoring.rescore(
-            store, first, last, base, settings.timezone, models, settings.age_on
-        )
-    print(f"skóre prepočítané od {first} do {last}, počet dní: {count}")
+        with store.transaction():
+            _rescore_stored(settings, store, first, last)
 
 
 def _reference_days(
@@ -485,13 +498,23 @@ def _delete_queued_folders(settings: Settings, accounts: Accounts) -> None:
     """Remove the folders of users taken out of the app, unless an account uses them again."""
     kept = {account.ow_user_id for account in accounts.all()}
     root = (settings.data_dir / users.USERS_DIR).resolve()
+    errors: list[Exception] = []
     for ow_user_id in accounts.deletions_pending():
         if ow_user_id in kept:
             continue
         folder = users.user_paths(settings.data_dir, ow_user_id).folder
-        if folder.resolve().parent == root:
-            shutil.rmtree(folder, ignore_errors=True)
+        if folder.resolve().parent != root:
+            errors.append(ValueError("user folder is outside data/users"))
+            continue
+        try:
+            if folder.exists():
+                shutil.rmtree(folder)
+        except OSError as error:
+            errors.append(error)
+            continue
         accounts.deletions_done(ow_user_id)
+    if errors:
+        raise errors[0]
 
 
 def _inbox_http() -> httpx.Client:
@@ -577,13 +600,22 @@ def _sync_round(args: argparse.Namespace, settings: Settings) -> bool:
 
 def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
     while True:
+        started = _now()
+        error = None
         try:
             ok = _sync_round(args, settings)
         except OWError as exc:
+            error = type(exc).__name__
             print(f"chyba: {exc}", file=sys.stderr)
             ok = False
         except Exception as exc:  # the loop must outlive a locked or broken database
+            error = type(exc).__name__
             print(f"chyba: {type(exc).__name__}", file=sys.stderr)
+            ok = False
+        try:
+            health.finish_sync(settings.data_dir, started, ok, error)
+        except OSError:
+            print("chyba: stav synchronizácie sa nedá uložiť", file=sys.stderr)
             ok = False
         if not args.loop:
             return 0 if ok else 1

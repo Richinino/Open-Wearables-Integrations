@@ -286,6 +286,8 @@ def test_empty_database_returns_no_days(tmp_path):
             "first_day": None,
             "last_day": None,
             "synced_at": None,
+            "latest_measurement_at": None,
+            "last_compute_success_at": None,
             "days": [],
             "calibration": NO_CALIBRATION,
         },
