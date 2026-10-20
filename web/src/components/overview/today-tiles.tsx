@@ -1,6 +1,6 @@
 "use client";
 
-import { dayFigure, periodFigure } from "@/lib/day-values";
+import { dayFigure, dayValue, periodFigure } from "@/lib/day-values";
 import { useId } from "react";
 import { trendPaths } from "@/components/charts/paths";
 import { ROUTES } from "@/components/shell/nav";
@@ -44,7 +44,7 @@ function LatestNote({ text }: { text?: string | null }) {
 
 function values(dataset: Dataset, end: string, length: number, key: NumericDayKey): (number | null)[] {
   return windowEnding(dataset.days, end, length).map(({ data }) => {
-    const value = data?.[key];
+    const value = key === "resting_hr" ? dayValue(data, "restingHr") : data?.[key];
     return typeof value === "number" && Number.isFinite(value) ? value : null;
   });
 }
@@ -210,14 +210,14 @@ export function SleepTile({ dataset, day, date, latest }: TodayProps) {
 
 /** Resting heart rate of the day and its last 30 days. */
 export function RestingTile({ dataset, day, date, isToday, latest }: TodayProps) {
-  const month = values(dataset, date, 30, "hr_resting");
+  const month = values(dataset, date, 30, "resting_hr");
   const present = month.filter((value): value is number => value !== null);
   const low = present.length ? Math.min(...present) - 2 : 40;
   const high = present.length ? Math.max(...present) + 2 : 70;
   const paths = trendPaths(month, 300, 64, { low, high, topPad: 4 });
   const byDay = indexByDay(dataset.days);
   const weekMean = (end: string) =>
-    average(Array.from({ length: 7 }, (_, offset) => byDay.get(addDays(end, -offset))?.hr_resting));
+    average(Array.from({ length: 7 }, (_, offset) => dayValue(byDay.get(addDays(end, -offset)), "restingHr")));
   const recent = weekMean(date);
   const before = weekMean(addDays(date, -30));
   const change = recent === null || before === null ? null : Math.round(recent - before);
@@ -233,7 +233,7 @@ export function RestingTile({ dataset, day, date, isToday, latest }: TodayProps)
   return (
     <Tile href={ROUTES.heart} label="Pokojový tep" aside={latest ? <LatestNote text={latest} /> : undefined} className="gap-3.5 p-6 sm:p-7">
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <div className="figure text-[48px] leading-none tracking-[-0.03em]">{formatInt(day?.hr_resting ?? null)}</div>
+        <div className="figure text-[48px] leading-none tracking-[-0.03em]">{dayFigure(day, "restingHr", formatInt)}</div>
         <div className="text-[14px] text-ink2">bpm{range}</div>
       </div>
       <svg

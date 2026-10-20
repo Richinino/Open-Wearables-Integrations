@@ -394,7 +394,7 @@ export function HeartTile({ day }: { day: Day }) {
     <TileShell className={TILE}>
       <Heading>Srdce</Heading>
       <div className="flex flex-wrap items-baseline gap-x-2.5">
-        <span className="figure text-[64px] leading-none tracking-[-0.04em]">{formatInt(day.hr_resting)}</span>
+        <span className="figure text-[64px] leading-none tracking-[-0.04em]">{dayFigure(day, "restingHr", formatInt)}</span>
         <span className="text-[14px] text-ink2">bpm v pokoji</span>
       </div>
       <Rows

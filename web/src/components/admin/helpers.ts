@@ -19,3 +19,16 @@ export function dateLabel(value: string | null | undefined): string {
 export function textValue(value: unknown): string {
   return typeof value === "string" || typeof value === "number" ? String(value) : "—";
 }
+
+const DATA_TYPE_LABELS: Record<string, string> = {
+  steps: "Kroky", heart_rate: "Tep", resting_heart_rate: "Pokojový tep", hrv: "Variabilita tepu (HRV)",
+  heart_rate_variability_sdnn: "HRV · SDNN", heart_rate_variability_rmssd: "HRV · RMSSD",
+  sleep: "Spánok", workouts: "Tréningy", workout: "Tréningy", distance: "Vzdialenosť",
+  active_calories: "Aktívne kalórie", active_energy: "Aktívna energia", total_calories: "Celkové kalórie",
+  total_energy: "Celková energia", vo2max: "VO₂max", weight: "Hmotnosť",
+};
+
+export function dataTypeLabel(value: unknown): string {
+  const key = textValue(value);
+  return DATA_TYPE_LABELS[key] ?? key;
+}

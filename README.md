@@ -1,6 +1,7 @@
 # Open Wearables – vlastná inštancia
 
 Prevádzka po úpravách z 19. 10. 2026: [spúšťanie, záloha, nasadenie a presun na iný PC](docs/prevadzka.md).
+Používateľské účty: [prihlásenie, administrácia a bezpečný prechod existujúcich dát](docs/ucty-prevadzka.md).
 Aktuálne opravy a otvorené body sú v [aktualizovanom audite](docs/audit-2026-10-19.md).
 
 Moja inštancia [Open Wearables](https://github.com/the-momentum/open-wearables): dáta zo Samsung Health (telefón a hodinky) sa zbierajú v Dockeri a Claude sa k nim dostane cez MCP.
@@ -26,11 +27,11 @@ Open Wearables zbiera surové dáta, ale jeho denné súhrny pre dáta zo Samsun
 | Tep | pokojový, priemer, maximum, minúty v zónach | presné |
 | Tréningy | čas, typ, tep, zóny, vzdialenosť ak je, odhad kalórií | tep presný, kalórie odhad |
 | Spánok | hlavný spánok dňa bez duplicít medzi zdrojmi | presné |
-| Vzdialenosť | kroky × dĺžka kroku | odhad |
+| Vzdialenosť | meranie zariadenia; inak kroky × dĺžka kroku | meraná alebo odhad |
 | Aktívny čas | minúty s tepom nad prahom a minúty tréningov | odhad |
-| Kalórie | z rezervy tepu, váhy a VO2max; spolu = bazál + aktivita | odhad |
+| Kalórie | údaj zariadenia; inak z rezervy tepu, váhy a VO2max; spolu = bazál + aktivita | merané alebo odhad |
 
-Odhady majú v databáze stĺpce s príponou `_est`. Samsung Health si tieto hodnoty ráta sám a nikam ich neposiela, preto sa dajú len priblížiť.
+Odhady majú v databáze stĺpce s príponou `_est`. Keď zdroj pošle priamo hodnotu, má pri zobrazení prednosť. Podpora Apple Health a Suunto je overená syntetickými testami; kontrola na skutočných údajoch nasleduje po pripojení zariadení.
 
 Návrh je v [`docs/superpowers/specs/2026-10-13-denne-metriky-design.md`](docs/superpowers/specs/2026-10-13-denne-metriky-design.md).
 
@@ -46,11 +47,11 @@ uv run owi sync --from 2026-07-01 --to 2026-07-31
 uv run owi day 2026-07-15 --json
 ```
 
-Výsledky sú v `data/owi.db` (SQLite), tabuľky `daily` a `workouts`; skóre pozri nižšie.
+V pôvodnom režime sú výsledky v `data/owi.db` (SQLite). Po zavedení účtov má každý spárovaný používateľ vlastné `data/users/<ow_user_id>/owi.db`; tabuľky `daily` a `workouts` ostávajú rovnaké. Účty sú v `data/accounts/accounts.db`, Samsung zápisy v `data/zapisy/<ow_user_id>/zapisy.db`. Postup prechodu je v [prevádzke účtov](docs/ucty-prevadzka.md).
 
 ### Skóre
 
-Z uložených dní `owi` počíta aj skóre: Readiness (Oura bez HRV, odhad), Sleep Performance a potrebu spánku (WHOOP), Sleep Score (Apple), pravidelnosť spánku (SRI), Activity (Oura), strain dňa a tréningov (WHOOP, 0–21), stav záťaže (Polar), NightSignal, skóre dňa, VO2max a WHOOP Age. Vzorce sú v [`docs/skore.md`](docs/skore.md), návrh v [`docs/superpowers/specs/2026-10-14-skore-design.md`](docs/superpowers/specs/2026-10-14-skore-design.md).
+Z uložených dní `owi` počíta aj skóre: Readiness (odhad inšpirovaný Oura, voliteľne s HRV pri dostatočnej histórii rovnakého typu), Sleep Performance a potrebu spánku (WHOOP), Sleep Score (Apple), pravidelnosť spánku (SRI), Activity (Oura), strain dňa a tréningov (WHOOP, 0–21), stav záťaže (Polar), NightSignal, skóre dňa, VO2max a WHOOP Age. Vzorce sú v [`docs/skore.md`](docs/skore.md), návrh v [`docs/superpowers/specs/2026-10-14-skore-design.md`](docs/superpowers/specs/2026-10-14-skore-design.md).
 
 Vzorce potrebujú v `.env` vek a pohlavie (`OWI_AGE`, `OWI_SEX` = `male` alebo `female`).
 

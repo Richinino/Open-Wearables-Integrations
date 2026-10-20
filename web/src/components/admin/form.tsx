@@ -1,8 +1,11 @@
 "use client";
 
-import { startTransition, useActionState, useEffect } from "react";
+import { startTransition, useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import type { AccountActionState } from "@/lib/account-input";
+import { useAccount } from "@/lib/account-context";
+import { IDENTITY_FIELD, type AccountIdentity } from "@/lib/account-identity";
+import { runAccountAction } from "@/lib/action-navigation";
 
 export const INPUT = "min-h-11 w-full min-w-0 rounded-xl border border-line-strong bg-bg px-3 py-2 text-ink";
 
@@ -15,16 +18,19 @@ export function Submit({ children, danger = false }: { children: React.ReactNode
   return <button type="submit" disabled={pending} className={`pill pill-outline max-w-full disabled:cursor-wait disabled:opacity-50 ${danger ? "!border-bad !text-bad" : ""}`}>{pending ? "Ukladám…" : children}</button>;
 }
 
-export function ActionForm({ action, children, submit = "Uložiť", danger = false, disabled = false }: {
+export function ActionForm({ action, children, submit = "Uložiť", danger = false, disabled = false, expectedIdentity }: {
   action: (state: AccountActionState, form: FormData) => Promise<AccountActionState>;
   children?: React.ReactNode;
   submit?: string;
   danger?: boolean;
   disabled?: boolean;
+  expectedIdentity?: AccountIdentity;
 }) {
-  const [state, formAction] = useActionState(action, {});
-  useEffect(() => { if (state.navigate) window.location.assign(state.navigate); }, [state.navigate]);
+  const account = useAccount();
+  const identity = expectedIdentity ?? (account ? { actorId: account.account.id, dataAccountId: account.dataAccount.id, viewOnly: account.viewOnly } : null);
+  const [state, formAction] = useActionState((previous: AccountActionState, form: FormData) => runAccountAction(action, previous, form), {});
   return <form action={formAction} className="flex min-w-0 flex-col gap-4">
+    <input type="hidden" name={IDENTITY_FIELD} value={identity ? JSON.stringify(identity) : ""} />
     <fieldset disabled={disabled} className="flex min-w-0 flex-col gap-4 disabled:opacity-60">{children}<div><Submit danger={danger}>{submit}</Submit></div></fieldset>
     {state.error && <p role="alert" className="text-sm text-bad">{state.error}</p>}
     {state.success && <p role="status" className="text-sm text-good-ink">{state.success}</p>}

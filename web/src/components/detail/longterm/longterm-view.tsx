@@ -1,5 +1,8 @@
 "use client";
 
+import { dayValue, periodFigure, periodHasEstimate } from "@/lib/day-values";
+
+import { addDays } from "@/lib/dates";
 import Link from "next/link";
 import { LineChart } from "@/components/charts/charts";
 import { tickPlain } from "@/components/charts/points";
@@ -181,7 +184,7 @@ function BodyAgeTile({ dataset, today }: { dataset: Dataset; today: string }) {
 // ---------------------------------------------------------------------------------------
 
 function RestingTile({ dataset, today }: { dataset: Dataset; today: string }) {
-  const weeks = weeklyMeans(dataset.days, today, (day) => day.hr_resting);
+  const weeks = weeklyMeans(dataset.days, today, (day) => dayValue(day, "restingHr"));
   const change = seriesChange(weeks.map((week) => week.value));
   const last = [...weeks].reverse().find((week) => week.value !== null);
   const note =
@@ -197,7 +200,7 @@ function RestingTile({ dataset, today }: { dataset: Dataset; today: string }) {
         <span className="text-[13px] text-ink2">týždenný priemer</span>
       </div>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="figure text-[clamp(56px,6vw,72px)] leading-[0.9]">{last ? formatInt(last.value) : DASH}</span>
+        <span className="figure text-[clamp(56px,6vw,72px)] leading-[0.9]">{last ? periodFigure(dataset.days, addDays(last.week, 6), 7, "restingHr", last.value, formatInt) : DASH}</span>
         <span className="text-[14px] text-ink2">bpm · {note}</span>
       </div>
       {weeks.length > 1 ? (
@@ -207,6 +210,7 @@ function RestingTile({ dataset, today }: { dataset: Dataset; today: string }) {
             label: formatDayMonth(week.week),
             title: `Týždeň od ${formatDayMonth(week.week)}`,
             value: week.value === null ? null : Math.round(week.value * 10) / 10,
+            estimate: periodHasEstimate(dataset.days.filter((day) => day.day >= week.week && day.day <= addDays(week.week, 6)), "restingHr"),
           }))}
           color="var(--heart)"
           formatTick={tickPlain}

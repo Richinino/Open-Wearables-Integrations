@@ -6,10 +6,12 @@ import { assertWritable, requireAdmin, requireSession, setViewedAccount } from "
 import { accountsApi } from "@/lib/owi-accounts";
 import { accountErrorMessage } from "@/lib/account-forms";
 import { AccountInputError, confirmation, field, type AccountActionState } from "@/lib/account-input";
+import { assertFormIdentity, identityChangeResult } from "@/lib/account-identity";
 
 export async function adminAction(_state: AccountActionState, form: FormData): Promise<AccountActionState> {
   try {
     const session = await requireAdmin();
+    assertFormIdentity(form, session);
     assertWritable(session.claims);
     const target = field(form, "target");
     const operation = field(form, "operation");
@@ -59,26 +61,28 @@ export async function adminAction(_state: AccountActionState, form: FormData): P
     return { success: "Zmena je uložená." };
   } catch (error) {
     unstable_rethrow(error);
-    return { error: error instanceof AccountInputError ? error.message : accountErrorMessage(error) };
+    return identityChangeResult(error) ?? { error: error instanceof AccountInputError ? error.message : accountErrorMessage(error) };
   }
 }
 
 export async function viewAccount(_state: AccountActionState, form: FormData): Promise<AccountActionState> {
   try {
     const session = await requireAdmin();
+    assertFormIdentity(form, session);
     assertWritable(session.claims);
     const target = await accountsApi.getAccount(field(form, "target"));
     if (target.status !== "active" || !target.paired) return { error: "Prezerať sa dá iba aktívny spárovaný účet." };
     await setViewedAccount(session, target.id === session.account.id ? null : target.id);
     return { navigate: "/" };
-  } catch (error) { unstable_rethrow(error); return { error: accountErrorMessage(error) }; }
+  } catch (error) { unstable_rethrow(error); return identityChangeResult(error) ?? { error: accountErrorMessage(error) }; }
 }
 
 export async function exitView(_state: AccountActionState, _form: FormData): Promise<AccountActionState> {
-  void _state; void _form;
+  void _state;
   try {
     const session = await requireSession();
+    assertFormIdentity(_form, session);
     await setViewedAccount(session, null);
     return { navigate: "/" };
-  } catch (error) { unstable_rethrow(error); return { error: accountErrorMessage(error) }; }
+  } catch (error) { unstable_rethrow(error); return identityChangeResult(error) ?? { error: accountErrorMessage(error) }; }
 }

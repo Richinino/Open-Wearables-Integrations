@@ -1,5 +1,7 @@
 "use client";
 
+import { dayValue, dayFigure, dayValueSource, periodFigure } from "@/lib/day-values";
+
 // Tiles of the readiness page: the score and its parts, resting heart rate against its
 // baseline, the night signal of last night and the flagged nights of the last 90 days.
 
@@ -65,6 +67,7 @@ export function ReadinessPartsTile({ day, previous }: { day: Day; previous: Day 
   const facts: Record<string, string | null> = {
     hrv_balance: isNumber(day.hrv_ms) ? `${formatDecimal(day.hrv_ms, 1)} ms · ${day.hrv_kind?.toUpperCase() ?? "HRV"}` : null,
     sleep: sleepTotal === null ? null : `${formatDuration(sleepTotal)} za 24 h`,
+    // This row explains the backend score input, not the selected display metric.
     resting_hr: isNumber(day.hr_resting) ? `${formatInt(day.hr_resting)} bpm` : null,
     previous_day_activity: isNumber(previous?.scores?.strain) ? `včera strain ${formatStrain(previous?.scores?.strain)}` : null,
     sleep_regularity: isNumber(day.scores?.sleep_regularity) ? `SRI ${formatInt(day.scores?.sleep_regularity)}` : null,
@@ -147,7 +150,7 @@ export function RestingBaselineTile({
   const byDay = indexByDay(dataset.days);
   const slots = dateRange(addDays(day.day, -29), day.day);
   const values = slots.map((key) => {
-    const value = byDay.get(key)?.hr_resting;
+    const value = dayValue(byDay.get(key), "restingHr");
     return isNumber(value) ? value : null;
   });
   const low = baseline ? baseline.mean - baseline.sd : null;
@@ -155,7 +158,7 @@ export function RestingBaselineTile({
   return (
     <ChartTile
       label="Pokojový tep oproti normálu"
-      note={restingComparison(day.hr_resting, baseline)}
+      note={restingComparison(dayValue(day, "restingHr"), baseline)}
       legend={
         <Keys
           items={[
@@ -170,14 +173,14 @@ export function RestingBaselineTile({
           .flatMap((key, index) =>
             values[index] === null
               ? []
-              : [[formatDay(key), `${formatInt(values[index])} bpm`, baseline ? `${(values[index] as number) >= baseline.mean ? "+" : "−"}${formatDecimal(Math.abs((values[index] as number) - baseline.mean), 1)}` : DASH]],
+              : [[formatDay(key), `${dayFigure(byDay.get(key), "restingHr", formatInt)} bpm`, baseline ? `${(values[index] as number) >= baseline.mean ? "+" : "−"}${formatDecimal(Math.abs((values[index] as number) - baseline.mean), 1)}` : DASH]],
           )
           .reverse(),
       }}
     >
       <div className="grid grid-cols-3 gap-3">
-        <Figure size="sm" label="Dnes" value={formatInt(day.hr_resting)} unit="bpm" />
-        <Figure size="sm" label="Priemer 60 dní" value={baseline ? formatInt(baseline.mean) : DASH} unit="bpm" />
+        <Figure size="sm" label="Dnes" value={dayFigure(day, "restingHr", formatInt)} unit="bpm" />
+        <Figure size="sm" label="Priemer 60 dní" value={baseline ? periodFigure(dataset.days, addDays(day.day, -1), 60, "restingHr", baseline.mean, formatInt) : DASH} unit="bpm" />
         <Figure size="sm" label="Bežné kolísanie" value={baseline ? `± ${formatDecimal(baseline.sd, 1)}` : DASH} unit="bpm" />
       </div>
       <TrendChart
@@ -185,6 +188,7 @@ export function RestingBaselineTile({
         labels={slots.map(formatDayMonth)}
         titles={slots.map(formatDay)}
         series={[{ label: "pokojový tep", color: "var(--heart)", values }]}
+        notes={(index) => dayValueSource(byDay.get(slots[index]), "restingHr") === "estimated" ? "odhad owi" : undefined}
         band={low !== null && high !== null ? { low: slots.map(() => low), high: slots.map(() => high), color: "color-mix(in oklab, var(--heart) 16%, transparent)" } : undefined}
         guides={baseline ? [{ value: baseline.mean, label: `priemer ${formatInt(baseline.mean)}` }] : []}
         formatValue={(value) => `${formatInt(value)} bpm`}

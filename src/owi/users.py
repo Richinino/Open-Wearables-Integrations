@@ -47,11 +47,29 @@ def user_paths(data_dir: Path, ow_user_id: str) -> UserPaths:
     return UserPaths(ow_user_id, data_dir)
 
 
+def _checkpoint_sqlite(path: Path) -> None:
+    """Put committed WAL pages in the main file before moving it; writers must be stopped."""
+    with path.open("rb") as stream:
+        if stream.read(16) != b"SQLite format 3\0":
+            return
+    try:
+        with closing(
+            sqlite3.connect(f"{path.resolve().as_uri()}?mode=rw", uri=True, timeout=0)
+        ) as db:
+            result = db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            if result is None or result[0] != 0 or result[1] != result[2]:
+                raise OSError(f"SQLite checkpoint busy or incomplete: {path}")
+    except sqlite3.Error as exc:
+        raise OSError(f"SQLite checkpoint failed: {path}") from exc
+
+
 def migrate_legacy(data_dir: Path, ow_user_id: str) -> list[str]:
     """Move the single-user files into the user's folders and return what was moved.
 
     A missing source is skipped. If any target already exists, nothing is moved and
     FileExistsError is raised, so a rerun or a half-done earlier run never overwrites.
+    Stop all writers first. SQLite sources are checkpointed before any move; a busy or
+    failed checkpoint raises OSError with every source still in its original location.
     """
     paths = user_paths(data_dir, ow_user_id)
     plan = [
@@ -64,6 +82,8 @@ def migrate_legacy(data_dir: Path, ow_user_id: str) -> list[str]:
     for _, target in todo:
         if target.exists():
             raise FileExistsError(f"{target} už existuje, nič sa nepresunulo")
+    for source, _ in todo:
+        _checkpoint_sqlite(source)
     moved: list[str] = []
     for source, target in todo:
         target.parent.mkdir(parents=True, exist_ok=True)

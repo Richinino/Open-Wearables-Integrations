@@ -6,15 +6,16 @@
 import { diffDays } from "./dates";
 import { formatDay } from "./format";
 import type { Day } from "./types";
+import { dayValue, dayValueSource } from "./day-values";
 
 function isPositive(value: number | null | undefined): boolean {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
-/** True when the day has something the today tiles can show: steps, sleep or a workout. */
+/** A device RHR is a real observation too; a carried rolling fallback alone is not. */
 export function hasDayData(day: Day | null | undefined): boolean {
   if (!day) return false;
-  return isPositive(day.steps) || isPositive(day.sleep_minutes) || (day.workouts?.length ?? 0) > 0;
+  return isPositive(day.steps) || isPositive(day.sleep_minutes) || (day.workouts?.length ?? 0) > 0 || (dayValueSource(day, "restingHr") === "measured" && isPositive(dayValue(day, "restingHr")));
 }
 
 export interface LatestDay {

@@ -1,3 +1,4 @@
+import { dayValue } from "./day-values";
 // The calendar page and the weekly charts of the workouts page: month and week grids
 // (Monday first), stepping through the months or weeks that have data, the averages of a
 // period and training volume per week. Pure functions; null and absent days mean "no data"
@@ -69,7 +70,7 @@ export function hasData(day: Day | null | undefined): boolean {
   return (
     isNumber(day.steps) ||
     isNumber(day.sleep_minutes) ||
-    isNumber(day.hr_resting) ||
+    isNumber(dayValue(day, "restingHr")) ||
     isNumber(day.scores?.day_score) ||
     (day.workouts?.length ?? 0) > 0
   );
@@ -201,7 +202,7 @@ export function periodAverages(days: Day[], from: string, to: string, today: str
     dayScore: average(inside.map((day) => day.scores?.day_score)),
     steps: average(inside.filter((day) => day.complete !== false).map((day) => day.steps)),
     sleepMinutes: average(inside.map((day) => day.sleep_minutes)),
-    restingHr: average(inside.map((day) => day.hr_resting)),
+    restingHr: average(inside.map((day) => dayValue(day, "restingHr"))),
     strain: average(inside.filter((day) => day.complete !== false).map((day) => day.scores?.strain)),
     workouts: workouts.length,
     workoutSeconds: workouts.reduce((total, workout) => total + (isNumber(workout.duration_s) ? workout.duration_s : 0), 0),

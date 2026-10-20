@@ -1,11 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { dayFigure, dayValue, dayValueSource, periodHasEstimate, periodFigure } from "./day-values";
+import { dayFigure, dayValue, dayValueSource, periodHasEstimate, periodFigure, restingHrDescription } from "./day-values";
 import { periodSummary } from "./metrics";
 import { formatInt } from "./format";
 import type { Day } from "./types";
 
 const legacy = { distance_m_est: 900, activity_kcal_est: 100, total_kcal_est: 1900 } as Day;
 describe("device value provenance", () => {
+  it("uses Apple measured RHR without minute HR, and prefers it over a rolling-minute value", () => {
+    for (const hr_resting of [null, 49]) {
+      const day = { ...legacy, resting_hr: 63, resting_hr_source: "measured" as const, hr_resting };
+      expect(dayValue(day, "restingHr")).toBe(63);
+      expect(dayFigure(day, "restingHr", formatInt)).toBe("63");
+      expect(restingHrDescription(day)).toContain("zo zariadenia");
+    }
+  });
+  it("uses a legitimate derived rolling RHR when the measured field is explicitly null", () => {
+    const day = { ...legacy, resting_hr: null, resting_hr_source: null, hr_resting: 51 };
+    expect(dayValue(day, "restingHr")).toBe(51);
+    expect(dayValueSource(day, "restingHr")).toBe("derived");
+    expect(dayFigure(day, "restingHr", formatInt)).toBe("51");
+    expect(restingHrDescription(day)).toContain("30-minútový");
+    expect(dayValue({ ...day, hr_resting: null }, "restingHr")).toBeNull();
+  });
+  it("marks only an explicitly estimated selected resting HR with an approximation sign", () => {
+    const day = { ...legacy, resting_hr: 60, resting_hr_source: "estimated" as const };
+    expect(dayFigure(day, "restingHr", formatInt)).toContain("≈");
+    expect(restingHrDescription(day)).toContain("Odhad");
+  });
   it("uses a selected device value while preserving the original calibration estimate", () => {
     const day = { ...legacy, distance_m: 1200, distance_m_source: "measured" as const };
     expect(dayValue(day, "distance")).toBe(1200);

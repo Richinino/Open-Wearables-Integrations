@@ -1,5 +1,7 @@
 "use client";
 
+import { dayValue, dayFigure, dayValueSource, restingHrDescription } from "@/lib/day-values";
+
 // /tep: resting heart rate today and over 30 or 90 days, the day's lowest, mean and highest
 // heart rate, time in zones and the night heart rate against its baseline.
 
@@ -46,10 +48,10 @@ function TodayHeartTile({ dataset, day, isToday }: { dataset: Dataset; day: Day;
         <h2 className="eyebrow">{isToday ? "Pokojový tep dnes" : `Pokojový tep · ${formatDay(day.day)}`}</h2>
       </div>
       <div className="flex flex-wrap items-baseline gap-x-2.5">
-        <div className="figure text-[clamp(64px,8vw,104px)] tracking-[-0.045em]">{formatInt(day.hr_resting)}</div>
+        <div className="figure text-[clamp(64px,8vw,104px)] tracking-[-0.045em]">{dayFigure(day, "restingHr", formatInt)}</div>
         <div className="text-[15px] text-ink2">bpm</div>
       </div>
-      <p className="text-[14px] text-ink2">{restingComparison(day.hr_resting, baseline)}</p>
+      <p className="text-[14px] text-ink2">{restingComparison(dayValue(day, "restingHr"), baseline)}</p>
       <p className="text-[13px] text-muted">
         {change === null
           ? "Na porovnanie s minulým mesiacom je zatiaľ málo dát."
@@ -91,7 +93,7 @@ function TodayHeartTile({ dataset, day, isToday }: { dataset: Dataset; day: Day;
           <span>{scaleTo} bpm</span>
         </div>
         <p className="text-[12px] text-muted">
-          Pokojový tep je najnižší 30-minútový priemer dňa. Najnižší a najvyšší tep sú z minútových priemerov.
+          {restingHrDescription(day)} Najnižší a najvyšší tep sú z minútových priemerov.
         </p>
       </div>
     </TileShell>
@@ -102,7 +104,7 @@ function RestingTrendTile({ dataset, date }: { dataset: Dataset; date: string })
   const router = useRouter();
   const [period, setPeriod] = useState(30);
   const slots = windowEnding(dataset.days, date, period);
-  const points = dayPoints(slots, (day) => day.hr_resting, { partial: false });
+  const points = dayPoints(slots, (day) => dayValue(day, "restingHr"), { partial: false }).map((point, index) => ({ ...point, estimate: dayValueSource(slots[index].data, "restingHr") === "estimated" }));
   const values = points.map((point) => point.value);
   const mean = average(values);
   const known = values.filter(isNumber);
@@ -120,7 +122,7 @@ function RestingTrendTile({ dataset, date }: { dataset: Dataset; date: string })
           .filter((slot) => slot.data)
           .map((slot) => {
             const day = slot.data as Day;
-            return [formatDay(day.day), `${formatInt(day.hr_resting)} bpm`, formatInt(day.hr_min), formatInt(day.hr_avg), formatInt(day.hr_max)];
+            return [formatDay(day.day), `${dayFigure(day, "restingHr", formatInt)} bpm`, formatInt(day.hr_min), formatInt(day.hr_avg), formatInt(day.hr_max)];
           })
           .reverse(),
       }}
@@ -222,7 +224,7 @@ function Heart({ dataset, now }: { dataset: Dataset; now: Date }) {
     <>
       <DetailHead section="Pokojový tep" title="Pokojový tep">
         <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-          {focus.isToday ? "Dnes" : formatDay(day.day)} · {formatInt(day.hr_resting)} bpm
+          {focus.isToday ? "Dnes" : formatDay(day.day)} · {dayFigure(day, "restingHr", formatInt)} bpm
           {isNumber(day.hr_min) && isNumber(day.hr_max) ? ` · počas dňa ${formatInt(day.hr_min)}–${formatInt(day.hr_max)} bpm` : ""}
           {focus.label && <Chip tone="warn">{focus.label}</Chip>}
         </span>

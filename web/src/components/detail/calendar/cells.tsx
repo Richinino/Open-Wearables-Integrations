@@ -224,7 +224,7 @@ export function WeekCard({
       <span className="flex flex-col gap-1.5">
         <Pair k="Aktívny čas" v={approx(formatDuration(data.active_minutes_est))} />
         <Pair k="Kalórie" v={dayFigure(data, "totalEnergy", formatInt)} />
-        <Pair k="Pokojový tep" v={formatBpm(data.hr_resting)} />
+        <Pair k="Pokojový tep" v={dayFigure(data, "restingHr", formatBpm)} />
         <Pair k="Strain" v={formatStrain(data.scores?.strain)} />
       </span>
       <span className="mt-auto flex flex-col gap-1.5">

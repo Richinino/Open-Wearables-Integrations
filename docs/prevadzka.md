@@ -2,6 +2,8 @@
 
 Systém má dva Docker Compose projekty: upstream Open Wearables a tento repozitár. Verejná adresa telefónu aj cesta /owi zostávajú na Tailscale Funneli. Zmena hesiel databáz nemení prihlasovanie telefónu ani heslo webu.
 
+Zavedenie viacerých účtov má vlastný [postup migrácie a návratu](ucty-prevadzka.md). Účty sa vytvárajú až po skúšobnej migrácii a s pripraveným kandidátom webu aj backendu.
+
 **Lokálna záloha pred zmenou**
 
 Z koreňa tohto repozitára v PowerShelli:
@@ -61,9 +63,11 @@ Set-Location ..
 
 Skript používa existujúce prihlásenie Vercel CLI, vyberie existujúci projekt zdravie a nahrá iba povolené zdroje webu. Neposiela .env súbory, zdravotné dáta ani node_modules. Nasadzuje do produkcie. Predchádzajúce nasadenie zaznamená v data/web-deployment-before.json a nové v data/web-deployment.json.
 
+Parameter `-SkipDomain` pripraví kandidáta s produkčnými nastaveniami bez prepnutia domény. Záznam je v `data/web-deployment-candidate.json`; kandidát sa po overení povýši samostatne. Ak prihlásenie CLI expirovalo, obnoví ho `npx vercel whoami` pred spustením skriptu.
+
 Web potrebuje aj OWI_WRITE_TOKEN na atomickú rezerváciu prihlasovacieho pokusu. Po desať pokusoch za pätnásť minút z jednej adresy sa ďalšie pokusy odmietajú; existuje aj celkový limit. Pri nedostupnosti tejto ochrany login nepokračuje. Prístup už prihláseného používateľa k dátam je nezávislý.
 
-Relácie sú naviazané aj na SITE_PASSWORD. Zmena hesla odvolá existujúce relácie. Prvé nasadenie tejto zmeny preto vyžaduje nové prihlásenie.
+Po zavedení účtov sa používa e-mail a vlastné heslo. Relácia overuje aktuálny stav, rolu a verziu účtu; zmena hesla, pozastavenie a odhlásenie všade rušia prístup. `SITE_PASSWORD` sa už nepoužíva. Bez zapamätania platí relácia najviac 12 hodín, so zapamätaním 30 dní. Prvé nasadenie účtov vyžaduje nové prihlásenie cez účet majiteľa.
 
 **Dostupnosť a čerstvosť**
 

@@ -1,3 +1,4 @@
+import { dayValue } from "./day-values";
 // Calculations behind the overview tiles: the 12-week heatmap, records, the week in short,
 // the sleep stage strip and the "čo si všimnúť" observations. Pure functions over the days
 // returned by the API; null and absent days mean "no data" and are never counted as zero.
@@ -86,7 +87,7 @@ export function heatValue(day: Day | undefined, metric: HeatMetric): number | nu
         ? day.sleep_minutes
         : metric === "active"
           ? day.active_minutes_est
-          : day.hr_resting;
+          : dayValue(day, "restingHr");
   return isNumber(value) ? value : null;
 }
 
@@ -218,7 +219,7 @@ export function records(days: Day[], end: string, length: number = 90): RecordIt
   return [
     best("steps", (day) => day.steps, true, complete),
     best("sleep", (day) => day.sleep_minutes, true),
-    best("resting", (day) => day.hr_resting, false),
+    best("resting", (day) => dayValue(day, "restingHr"), false),
     workout,
     best("dayScore", (day) => day.scores?.day_score, true),
   ].filter((item): item is RecordItem => item !== null);
@@ -420,7 +421,7 @@ function shortNight(days: Day[], end: string): Insight | null {
 function restingTrend(days: Day[], end: string): Insight | null {
   const byDay = indexByDay(days);
   const mean = (last: string) =>
-    average(dateRange(addDays(last, -6), last).map((day) => byDay.get(day)?.hr_resting));
+    average(dateRange(addDays(last, -6), last).map((day) => dayValue(byDay.get(day), "restingHr")));
   const recent = mean(end);
   const before = mean(addDays(end, -30));
   if (recent === null || before === null) return null;

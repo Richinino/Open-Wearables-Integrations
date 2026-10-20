@@ -6,6 +6,7 @@ import { accountsApi } from "@/lib/owi-accounts";
 import { AccountProvider } from "@/lib/account-context";
 import { ActionForm, Unavailable } from "@/components/admin/form";
 import { exitView } from "./admin/actions";
+import { sessionIdentity } from "@/lib/account-identity";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   let session;
@@ -23,7 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       dataAccount = target;
     } catch (error) {
       unstable_rethrow(error);
-      return <main className="mx-auto flex max-w-xl flex-col gap-5 p-6 py-20"><Unavailable message="Prezeraný účet je nedostupný alebo už nie je aktívny. Vráť sa na svoj účet." /><ActionForm action={exitView} submit="Späť na môj účet" /></main>;
+      return <main className="mx-auto flex max-w-xl flex-col gap-5 p-6 py-20"><Unavailable message="Prezeraný účet je nedostupný alebo už nie je aktívny. Vráť sa na svoj účet." /><ActionForm action={exitView} expectedIdentity={sessionIdentity(session)} submit="Späť na môj účet" /></main>;
     }
   }
   return <AccountProvider value={{ account: session.account, dataAccount, viewOnly: Boolean(session.claims.x), persistent: session.claims.p }}><Shell>{children}</Shell></AccountProvider>;

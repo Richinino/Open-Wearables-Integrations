@@ -3,6 +3,8 @@
 
 import { ENTRY_FIELDS, type FieldErrors } from "./entries";
 import type { Entry, EntryValues } from "./types";
+import { IDENTITY_HEADER, parseIdentity, sameIdentity, type AccountIdentity } from "./account-identity";
+import { reloadChangedIdentity } from "./identity-client";
 
 export type SaveResponse = { ok: true; entry: Entry } | { ok: false; fields: FieldErrors; message: string | null };
 
@@ -34,12 +36,12 @@ export function splitFieldErrors(raw: unknown): { fields: FieldErrors; message: 
   return { fields, message };
 }
 
-export async function putEntry(day: string, values: EntryValues): Promise<SaveResponse> {
+export async function putEntry(day: string, values: EntryValues, identity: AccountIdentity): Promise<SaveResponse> {
   let response: Response;
   try {
     response = await fetch(`/api/entries/${encodeURIComponent(day)}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: { "Content-Type": "application/json", Accept: "application/json", [IDENTITY_HEADER]: JSON.stringify(identity) },
       body: JSON.stringify(values),
       credentials: "same-origin",
       cache: "no-store",
@@ -54,6 +56,8 @@ export async function putEntry(day: string, values: EntryValues): Promise<SaveRe
     window.location.assign("/login");
     return new Promise<SaveResponse>(() => {});
   }
+  if (response.status === 409) reloadChangedIdentity();
+  if (response.status === 200 && !sameIdentity(identity, parseIdentity(response.headers.get(IDENTITY_HEADER)))) reloadChangedIdentity();
 
   let body: unknown = null;
   try {

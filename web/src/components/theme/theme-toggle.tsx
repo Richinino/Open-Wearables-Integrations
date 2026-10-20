@@ -36,7 +36,8 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
     if (!context) { applyTheme(next); return; }
     if (context.viewOnly) return;
     startTransition(async () => {
-      const result = await updateTheme(next);
+      const result = await updateTheme(next, { actorId: context.account.id, dataAccountId: context.dataAccount.id, viewOnly: context.viewOnly });
+      if (result.reload) { window.location.reload(); return; }
       setError(result.error ?? "");
       if (!result.error) document.documentElement.setAttribute("data-theme", next);
     });

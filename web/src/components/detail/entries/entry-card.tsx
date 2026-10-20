@@ -12,6 +12,7 @@ import { ENTRY_FIELDS, hasEntry, inputText, isEmpty, emptyValues, parseInput, ty
 import { formatDayLong, formatInt } from "@/lib/format";
 import { autoValue, formatFieldValue, owiFigureText, withoutAutoFields } from "@/lib/samsung";
 import type { Day, Entry, EntryField } from "@/lib/types";
+import { useAccount } from "@/lib/account-context";
 
 const AUTO_NOTE = "automaticky zo Samsungu";
 
@@ -93,6 +94,7 @@ export function EntryCard({
   onToggle: () => void;
   onSaved: (entry: Entry) => void;
 }) {
+  const account = useAccount();
   const id = useId();
   const form = useRef<HTMLFormElement>(null);
   const [texts, setTexts] = useState<Texts>(() => textsFrom(entry));
@@ -109,7 +111,7 @@ export function EntryCard({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saving) return;
+    if (saving || !account || account.viewOnly) return;
     const typed = emptyValues();
     const problems: FieldErrors = {};
     for (const spec of ENTRY_FIELDS) {
@@ -136,7 +138,7 @@ export function EntryCard({
     setSaving(true);
     setErrors({});
     setMessage(null);
-    const result = await putEntry(day, values);
+    const result = await putEntry(day, values, { actorId: account.account.id, dataAccountId: account.dataAccount.id, viewOnly: account.viewOnly });
     setSaving(false);
     if (!result.ok) {
       setErrors(result.fields);

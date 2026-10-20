@@ -1,6 +1,6 @@
 # Deploy only the web sources to the existing Vercel project using its configured account.
 [CmdletBinding()]
-param([string]$ProjectName = 'zdravie')
+param([string]$ProjectName = 'zdravie', [switch]$SkipDomain)
 $ErrorActionPreference = 'Stop'
 $Repo = Split-Path $PSScriptRoot -Parent
 $AuthRoot = Join-Path $env:APPDATA 'com.vercel.cli/Data'
@@ -38,19 +38,25 @@ try {
     }
     $Revision = ([BitConverter]::ToString($Digest.GetHashAndReset())).Replace('-', '').ToLowerInvariant()
 } finally { $Digest.Dispose() }
-$Payload = @{
+$PayloadFields = @{
     name = $ProjectName; project = $Project.id; target = 'production'; files = $Files
-    meta = @{ sourceRevision = $Revision; source = 'local-hardening' }
+    meta = @{ sourceRevision = $Revision; source = 'local-deploy' }
     projectSettings = @{ rootDirectory = 'web'; framework = 'nextjs'; nodeVersion = $Project.nodeVersion }
-} | ConvertTo-Json -Depth 8 -Compress
+}
+# Same API flag used by `vercel --prod --skip-domain`: build with production
+# configuration, then promote the verified candidate in a coordinated cutover.
+if ($SkipDomain) { $PayloadFields.autoAssignCustomDomains = $false }
+$Payload = $PayloadFields | ConvertTo-Json -Depth 8 -Compress
 if ([Text.Encoding]::UTF8.GetByteCount($Payload) -gt 4MB) { throw 'Deployment manifest is too large for inline upload.' }
 $Details = Invoke-RestMethod "https://api.vercel.com/v9/projects/$($Project.id)?$TeamQuery" -Headers $Headers -TimeoutSec 20
+New-Item -ItemType Directory -Force -Path (Join-Path $Repo 'data') | Out-Null
 @{ id = $Details.targets.production.id; url = $Details.targets.production.url } |
     ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $Repo 'data/web-deployment-before.json')
 $Deployment = Invoke-RestMethod "https://api.vercel.com/v13/deployments?$TeamQuery" -Method Post -Headers $Headers -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($Payload)) -TimeoutSec 60
 $Record = @{
     id = $Deployment.id; url = $Deployment.url; revision = $Revision; project = $Project.id
-    created_at = (Get-Date).ToUniversalTime().ToString('o'); state = $Deployment.readyState
+    created_at = (Get-Date).ToUniversalTime().ToString('o'); state = $Deployment.readyState; staged = [bool]$SkipDomain
 }
-$Record | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $Repo 'data/web-deployment.json')
+$RecordName = if ($SkipDomain) { 'web-deployment-candidate.json' } else { 'web-deployment.json' }
+$Record | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $Repo "data/$RecordName")
 $Record | ConvertTo-Json -Compress

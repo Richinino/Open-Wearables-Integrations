@@ -1,3 +1,4 @@
+import { IDENTITY_HEADER, type AccountIdentity } from "./account-identity";
 // PUT /api/entries/[date]: the session and origin checks, owi's ranges, the hand-over to owi
 // with the write token, owi's errors, and the echo of demo mode. The session is replaced;
 // owi is a stubbed fetch. Every address and token here is invented.
@@ -29,6 +30,7 @@ const VALUES = {
 };
 const SAVED = { day: DAY, ...VALUES, saved_at: "2026-10-16T10:00:00+00:00" };
 
+let identity: AccountIdentity;
 const fetchMock = vi.fn<typeof fetch>();
 
 function configure(values: { url?: string; token?: string; production?: boolean }) {
@@ -39,9 +41,11 @@ function configure(values: { url?: string; token?: string; production?: boolean 
 }
 
 function put(
-  options: { day?: string; body?: unknown; raw?: string; origin?: string | null; host?: string; forwardedHost?: string } = {},
+  options: { day?: string; body?: unknown; raw?: string; origin?: string | null; host?: string; forwardedHost?: string; identity?: AccountIdentity | null } = {},
 ) {
   const headers = new Headers({ "content-type": "application/json", host: options.host ?? SITE });
+  const expected = options.identity === undefined ? identity : options.identity;
+  if (expected) headers.set(IDENTITY_HEADER, JSON.stringify(expected));
   const origin = options.origin === undefined ? `https://${SITE}` : options.origin;
   if (origin !== null) headers.set("origin", origin);
   if (options.forwardedHost) headers.set("x-forwarded-host", options.forwardedHost);
@@ -63,6 +67,7 @@ async function expectJson(response: Response, status: number, body: unknown) {
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
+  identity = { actorId: "account-a", dataAccountId: "account-a", viewOnly: false };
   mocks.currentSession.mockReset();
   mocks.currentSession.mockResolvedValue({ account: { id: "account-a", status: "active", paired: true, has_samsung: true }, claims: { a: "account-a", x: null } });
   fetchMock.mockReset();
@@ -78,6 +83,19 @@ afterEach(() => {
 });
 
 describe("PUT /api/entries/[date] before owi", () => {
+  it("rejects a stale tab after another tab changes actor, target or view mode, without saving", async () => {
+    for (const session of [
+      { account: { id: "account-b", status: "active", paired: true, has_samsung: true }, claims: { a: "account-b", x: null } },
+      { account: { id: "account-a", status: "active", paired: true, has_samsung: true }, claims: { a: "account-a", x: "account-b" } },
+      { account: { id: "account-a", status: "active", paired: true, has_samsung: true }, claims: { a: "account-a", x: "account-a" } },
+    ]) {
+      mocks.currentSession.mockResolvedValue(session);
+      await expectJson(await put(), 409, { error: "session_changed" });
+    }
+    mocks.currentSession.mockResolvedValue({ account: { id: "account-a", status: "active", paired: true, has_samsung: true }, claims: { a: "account-a", x: null } });
+    await expectJson(await put({ identity: null }), 409, { error: "session_changed" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it("denies view mode, pending accounts and accounts without Samsung", async () => {
     for (const [account, claims, code] of [
       [{ status: "active", paired: true, has_samsung: true }, { x: "account-b" }, "read_only"],
@@ -85,7 +103,7 @@ describe("PUT /api/entries/[date] before owi", () => {
       [{ status: "active", paired: true, has_samsung: false }, { x: null }, "unsupported_source"],
     ] as const) {
       mocks.currentSession.mockResolvedValue({ account: { id: "account-a", ...account }, claims });
-      await expectJson(await put(), 403, { error: code });
+      await expectJson(await put({ identity: { actorId: "account-a", dataAccountId: claims.x ?? "account-a", viewOnly: Boolean(claims.x) } }), 403, { error: code });
     }
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -151,6 +169,7 @@ describe("PUT /api/entries/[date] with owi", () => {
   it("sends only the seven fields with the write token, uncached and with a timeout", async () => {
     fetchMock.mockResolvedValue(Response.json(SAVED));
     const response = await put({ body: { steps: 9000, extra: "dropped", day: "2020-01-01" } });
+    expect(JSON.parse(response.headers.get(IDENTITY_HEADER)!)).toEqual(identity);
     await expectJson(response, 200, { ...SAVED });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -266,7 +285,7 @@ describe("PUT /api/entries/[date] with owi", () => {
 });
 
 describe("PUT /api/entries/[date] in demo mode", () => {
-  beforeEach(() => { vi.stubEnv("OWI_LOCAL_DEMO", "1"); mocks.currentSession.mockResolvedValue({ account: { id: "local-demo", status: "active", paired: true, has_samsung: true }, claims: { a: "local-demo", x: null } }); });
+  beforeEach(() => { identity = { actorId: "local-demo", dataAccountId: "local-demo", viewOnly: false }; vi.stubEnv("OWI_LOCAL_DEMO", "1"); mocks.currentSession.mockResolvedValue({ account: { id: "local-demo", status: "active", paired: true, has_samsung: true }, claims: { a: "local-demo", x: null } }); });
   beforeEach(() => configure({}));
 
   it("echoes a valid entry back as saved, without calling anything", async () => {

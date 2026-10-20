@@ -423,6 +423,48 @@ def _user_settings(settings: Settings, account: Account, paths: users.UserPaths)
     )
 
 
+def _command_settings(args: argparse.Namespace, settings: Settings) -> Settings:
+    """Resolve a local data command to a fresh active account after migration.
+
+    Without an explicit account, only the configured legacy owner's pairing is eligible.
+    Never create a legacy store just because that owner is missing or no longer active.
+    """
+    if not hasattr(args, "account"):
+        return settings
+    account_id = args.account
+    if account_id is not None and not users.FOLDER_ID.fullmatch(account_id):
+        raise AccountError("invalid_account_id")
+    if not settings.accounts_path.exists():
+        if account_id is not None:
+            raise AccountError("accounts_unavailable")
+        return settings
+    if not settings.accounts_path.is_file():
+        raise AccountError("accounts_unavailable")
+    if account_id is None:
+        if not settings.user_id:
+            raise AccountError("owner_required_use_account")
+        if not users.FOLDER_ID.fullmatch(settings.user_id):
+            raise AccountError("invalid_owner_id")
+    with Accounts(settings.accounts_path) as accounts:
+        account = (
+            accounts.get(account_id)
+            if account_id is not None
+            else next((a for a in accounts.all() if a.ow_user_id == settings.user_id), None)
+        )
+    if account is None:
+        raise AccountError("account_not_found" if account_id is not None else "owner_not_found")
+    if not account.paired:
+        raise AccountError("account_unpaired")
+    if account.status != "active":
+        raise AccountError("account_inactive")
+    ow_user_id = account.ow_user_id or ""
+    if not users.FOLDER_ID.fullmatch(ow_user_id):
+        raise AccountError("invalid_ow_user_id")
+    if args.command == "calibrate" and not account.training_consent:
+        raise AccountError("training_consent_required")
+    return _user_settings(settings, account, users.user_paths(settings.data_dir, ow_user_id))
+
+
 def _sync_user(
     settings: Settings,
     account: Account,
@@ -786,7 +828,7 @@ def _cmd_users_migrate(args: argparse.Namespace, settings: Settings) -> int:
     print(f"záloha: {backup}")
     try:
         moved = users.migrate_legacy(settings.data_dir, args.ow_user)
-    except FileExistsError as exc:
+    except OSError as exc:
         print(f"chyba: {exc}", file=sys.stderr)
         return 1
     for name in moved:
@@ -888,6 +930,10 @@ def _parser() -> argparse.ArgumentParser:
     import_ = entry_actions.add_parser("import", help="jednorazovo prenesie data/truth.csv")
     import_.add_argument("--path", type=Path, help="CSV súbor (predvolene data/truth.csv)")
     import_.set_defaults(run=_cmd_entries_import)
+    for command in (rescore, day, calibrate, check, import_):
+        command.add_argument(
+            "--account", help="ID účtu (predvolene spárovaný vlastník z OWI_USER_ID)"
+        )
 
     user_commands = commands.add_parser("users", help="priečinky používateľov")
     user_actions = user_commands.add_subparsers(dest="action", required=True)
@@ -922,7 +968,7 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        return args.run(args, load_settings())
+        return args.run(args, _command_settings(args, load_settings()))
     except OWError as exc:
         print(f"chyba: {exc}", file=sys.stderr)
         return 1

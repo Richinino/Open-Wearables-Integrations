@@ -6,21 +6,23 @@ import { assertWritable, endSession, requireSession, startSession } from "./auth
 import { accountsApi } from "./owi-accounts";
 import { accountErrorMessage } from "./account-forms";
 import { AccountInputError, confirmation, passwordField, profileInput, settingsInput, type AccountActionState } from "./account-input";
+import { AccountIdentityMismatchError, assertFormIdentity, identityChangeResult, sameIdentity, sessionIdentity, type AccountIdentity } from "./account-identity";
 
 function message(error: unknown): AccountActionState {
   unstable_rethrow(error);
-  return { error: error instanceof AccountInputError ? error.message : accountErrorMessage(error) };
+  return identityChangeResult(error) ?? { error: error instanceof AccountInputError ? error.message : accountErrorMessage(error) };
 }
 
 export async function logoutAccount(_state: AccountActionState, _form: FormData): Promise<AccountActionState> {
-  void _state; void _form;
-  try { await endSession(); return { navigate: "/login" }; }
+  void _state;
+  try { const session = await requireSession(); assertFormIdentity(_form, session); await endSession(); return { navigate: "/login" }; }
   catch (error) { return message(error); }
 }
 
 export async function updateProfile(_state: AccountActionState, form: FormData): Promise<AccountActionState> {
   try {
     const session = await requireSession();
+    assertFormIdentity(form, session);
     assertWritable(session.claims);
     await accountsApi.updateAccount(session.account.id, profileInput(form));
     revalidatePath("/", "layout");
@@ -31,6 +33,7 @@ export async function updateProfile(_state: AccountActionState, form: FormData):
 export async function updateSettings(_state: AccountActionState, form: FormData): Promise<AccountActionState> {
   try {
     const session = await requireSession();
+    assertFormIdentity(form, session);
     assertWritable(session.claims);
     await accountsApi.updateAccount(session.account.id, { settings: settingsInput(form) });
     revalidatePath("/", "layout");
@@ -38,9 +41,10 @@ export async function updateSettings(_state: AccountActionState, form: FormData)
   } catch (error) { return message(error); }
 }
 
-export async function updateTheme(theme: "light" | "dark"): Promise<AccountActionState> {
+export async function updateTheme(theme: "light" | "dark", expected: AccountIdentity): Promise<AccountActionState> {
   try {
     const session = await requireSession();
+    if (!sameIdentity(expected, sessionIdentity(session))) throw new AccountIdentityMismatchError();
     assertWritable(session.claims);
     if (theme !== "light" && theme !== "dark") return { error: "Neplatný vzhľad." };
     await accountsApi.updateAccount(session.account.id, { settings: { ...session.account.settings, theme } });
@@ -52,6 +56,7 @@ export async function updateTheme(theme: "light" | "dark"): Promise<AccountActio
 export async function changeOwnPassword(_state: AccountActionState, form: FormData): Promise<AccountActionState> {
   try {
     const session = await requireSession();
+    assertFormIdentity(form, session);
     assertWritable(session.claims);
     const current = passwordField(form, "current_password");
     const next = passwordField(form, "new_password");
@@ -66,6 +71,7 @@ export async function changeOwnPassword(_state: AccountActionState, form: FormDa
 export async function logoutEverywhere(_state: AccountActionState, form: FormData): Promise<AccountActionState> {
   try {
     const session = await requireSession();
+    assertFormIdentity(form, session);
     assertWritable(session.claims);
     confirmation(form, "ODHLÁSIŤ");
     await accountsApi.logoutAll(session.account.id);
@@ -77,6 +83,7 @@ export async function logoutEverywhere(_state: AccountActionState, form: FormDat
 export async function deleteOwnAccount(_state: AccountActionState, form: FormData): Promise<AccountActionState> {
   try {
     const session = await requireSession();
+    assertFormIdentity(form, session);
     assertWritable(session.claims);
     confirmation(form, "ZMAZAŤ");
     const password = passwordField(form, "password");

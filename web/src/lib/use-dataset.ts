@@ -5,12 +5,14 @@ import useSWR from "swr";
 import { useAccount } from "./account-context";
 
 import type { Dataset } from "./types";
+import { AccountIdentityMismatchError, IDENTITY_HEADER, parseIdentity, sameIdentity, type AccountIdentity } from "./account-identity";
+import { reloadChangedIdentity } from "./identity-client";
 
 const DATA_URL = "/api/data";
 const REFRESH_INTERVAL_MS = 60 * 1000;
 
-async function fetchDataset(url: string): Promise<Dataset> {
-  const response = await fetch(url, { cache: "no-store", credentials: "same-origin" });
+export async function fetchDataset(url: string, identity: AccountIdentity): Promise<Dataset> {
+  const response = await fetch(url, { cache: "no-store", credentials: "same-origin", headers: { [IDENTITY_HEADER]: JSON.stringify(identity) } });
 
   if (response.status === 401) {
     // A full page load on purpose: the session is gone, so client state should go with it.
@@ -20,7 +22,9 @@ async function fetchDataset(url: string): Promise<Dataset> {
     // flash an error or an empty state on the way out.
     return new Promise<Dataset>(() => {});
   }
+  if (response.status === 409) reloadChangedIdentity();
   if (response.status !== 200) throw new Error(String(response.status));
+  if (!sameIdentity(identity, parseIdentity(response.headers.get(IDENTITY_HEADER)))) reloadChangedIdentity();
 
   return (await response.json()) as Dataset;
 }
@@ -34,9 +38,9 @@ export function useDataset(): {
   update: (change: (dataset: Dataset) => Dataset) => void;
 } {
   const account = useAccount();
-  const key = account ? [DATA_URL, account.dataAccount.id] as const : DATA_URL;
+  const key = account ? [DATA_URL, account.account.id, account.dataAccount.id, account.viewOnly] as const : null;
   const { data, error, isLoading, isValidating, mutate } = useSWR<Dataset, Error>(key,
-    (value: string | readonly [string, string]) => fetchDataset(typeof value === "string" ? value : value[0]), {
+    (value: readonly [string, string, string, boolean]) => fetchDataset(value[0], { actorId: value[1], dataAccountId: value[2], viewOnly: value[3] }), {
     refreshInterval: REFRESH_INTERVAL_MS,
     revalidateOnFocus: true,
     keepPreviousData: false,
@@ -47,5 +51,5 @@ export function useDataset(): {
     },
     [mutate],
   );
-  return { dataset: data, error, isLoading, isValidating, update };
+  return { dataset: error instanceof AccountIdentityMismatchError ? undefined : data, error, isLoading, isValidating, update };
 }

@@ -1,3 +1,4 @@
+import { IDENTITY_HEADER, sessionIdentity, type AccountIdentity } from "./account-identity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET } from "@/app/api/data/route";
 import { login, register, requestReset, confirmReset, logout } from "@/app/login/actions";
@@ -11,6 +12,7 @@ vi.mock("./owi-accounts", async (original) => ({ ...await original<typeof import
 vi.mock("./login-limit", () => ({ reserveLoginAttempt: mocks.reserveLoginAttempt, trustedClientKey: mocks.trustedClientKey }));
 vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`redirect:${path}`); } }));
 const state = { error: null };
+function dataRequest(identity: AccountIdentity = sessionIdentity(testSession())) { return new Request("https://example.test/api/data", { headers: { [IDENTITY_HEADER]: JSON.stringify(identity) } }); }
 function form(patch: Record<string, string> = {}) { const f = new FormData(); for (const [key, value] of Object.entries({ email: "test@example.test", password: "synthetic-password", repeat: "synthetic-password", first_name: "Test", ...patch })) f.set(key, value); return f; }
 beforeEach(() => { vi.resetAllMocks(); mocks.currentSession.mockResolvedValue(testSession()); mocks.reserveLoginAttempt.mockResolvedValue("allowed"); mocks.trustedClientKey.mockResolvedValue("a".repeat(64)); mocks.login.mockResolvedValue(ACCOUNT); mocks.register.mockResolvedValue({ ...ACCOUNT, status: "pending" }); mocks.confirmReset.mockResolvedValue(ACCOUNT); mocks.loadDataset.mockResolvedValue({ days: [] }); });
 afterEach(() => vi.restoreAllMocks());
@@ -51,21 +53,34 @@ describe("public account forms", () => {
   it("ends session on logout", async () => { await expect(logout()).rejects.toThrow("redirect:/login"); expect(mocks.endSession).toHaveBeenCalled(); });
 });
 describe("account data route", () => {
+  it("rejects stale actor, viewed target, view mode and missing identity before reading data", async () => {
+    const stale = sessionIdentity(testSession());
+    for (const session of [testSession({ id: "account-b" }, { a: "account-b" }), testSession({ role: "admin" }, { x: "account-b" }), testSession({ role: "admin" }, { x: "account-a" })]) {
+      mocks.currentSession.mockResolvedValue(session);
+      const response = await GET(dataRequest(stale));
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ error: "session_changed" });
+    }
+    mocks.currentSession.mockResolvedValue(testSession());
+    expect((await GET(new Request("https://example.test/api/data"))).status).toBe(409);
+    expect(mocks.loadDataset).not.toHaveBeenCalled();
+    expect(mocks.getAccount).not.toHaveBeenCalled();
+  });
   it("denies unauthenticated, pending, and unpaired sessions without reading data", async () => {
-    mocks.currentSession.mockResolvedValue(null); expect((await GET()).status).toBe(401);
-    mocks.currentSession.mockResolvedValue(testSession({ status: "pending", paired: false })); expect((await GET()).status).toBe(403); expect(mocks.loadDataset).not.toHaveBeenCalled();
+    mocks.currentSession.mockResolvedValue(null); expect((await GET(dataRequest())).status).toBe(401);
+    mocks.currentSession.mockResolvedValue(testSession({ status: "pending", paired: false })); expect((await GET(dataRequest())).status).toBe(403); expect(mocks.loadDataset).not.toHaveBeenCalled();
   });
   it("routes solely to the authorized account with no-store", async () => {
-    const response = await GET(); expect(response.status).toBe(200); expect(response.headers.get("cache-control")).toBe("private, no-store"); expect(mocks.loadDataset).toHaveBeenCalledWith(ACCOUNT.id);
+    const response = await GET(dataRequest()); expect(response.status).toBe(200); expect(response.headers.get("cache-control")).toBe("private, no-store"); expect(mocks.loadDataset).toHaveBeenCalledWith(ACCOUNT.id); expect(JSON.parse(response.headers.get(IDENTITY_HEADER)!)).toEqual(sessionIdentity(testSession()));
   });
   it("validates viewed target and isolates its data", async () => {
     mocks.currentSession.mockResolvedValue(testSession({ role: "admin" }, { r: "admin", x: "account-b" }));
-    mocks.getAccount.mockResolvedValue({ ...ACCOUNT, id: "account-b" }); expect((await GET()).status).toBe(200); expect(mocks.loadDataset).toHaveBeenCalledWith("account-b");
-    mocks.getAccount.mockResolvedValue({ ...ACCOUNT, id: "account-b", status: "suspended" }); expect((await GET()).status).toBe(403);
+    mocks.getAccount.mockResolvedValue({ ...ACCOUNT, id: "account-b" }); expect((await GET(dataRequest({ actorId: ACCOUNT.id, dataAccountId: "account-b", viewOnly: true }))).status).toBe(200); expect(mocks.loadDataset).toHaveBeenCalledWith("account-b");
+    mocks.getAccount.mockResolvedValue({ ...ACCOUNT, id: "account-b", status: "suspended" }); expect((await GET(dataRequest({ actorId: ACCOUNT.id, dataAccountId: "account-b", viewOnly: true }))).status).toBe(403);
   });
   it("fails closed on account/data outage", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    mocks.currentSession.mockRejectedValue(new OwiAccountError("unavailable", 503)); expect((await GET()).status).toBe(503);
-    mocks.currentSession.mockResolvedValue(testSession()); mocks.loadDataset.mockRejectedValue(new DatasetUnavailableError("request failed")); expect((await GET()).status).toBe(503);
+    mocks.currentSession.mockRejectedValue(new OwiAccountError("unavailable", 503)); expect((await GET(dataRequest())).status).toBe(503);
+    mocks.currentSession.mockResolvedValue(testSession()); mocks.loadDataset.mockRejectedValue(new DatasetUnavailableError("request failed")); expect((await GET(dataRequest())).status).toBe(503);
   });
 });

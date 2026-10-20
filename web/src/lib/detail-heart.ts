@@ -1,3 +1,4 @@
+import { dayValue } from "./day-values";
 // Calculations behind the readiness and heart-rate detail pages: what each readiness part
 // measures, resting heart rate against its own baseline, the night signal of a night in
 // plain words and the yellow and red nights of the last months. Pure functions; null and
@@ -59,8 +60,8 @@ export function readinessDay(days: Day[], focus: string): Day | null {
 export function restingBaseline(days: Day[], date: string, length: number = 60, minimum: number = 7): Baseline | null {
   const from = addDays(date, -length);
   const values = days
-    .filter((day) => day.day >= from && day.day < date && isNumber(day.hr_resting))
-    .map((day) => day.hr_resting as number);
+    .filter((day) => day.day >= from && day.day < date)
+    .flatMap((day) => { const value = dayValue(day, "restingHr"); return value === null ? [] : [value]; });
   if (values.length < minimum) return null;
   const mean = average(values) as number;
   const sd = Math.sqrt(average(values.map((value) => (value - mean) ** 2)) as number);
@@ -183,7 +184,7 @@ export interface HeartTrend {
 /** Resting heart rate of the last week against the same week `period` days earlier. */
 export function restingTrend(days: Day[], end: string, period: number): HeartTrend {
   const byDay = indexByDay(days);
-  const week = (last: string) => average(dateRange(addDays(last, -6), last).map((date) => byDay.get(date)?.hr_resting));
+  const week = (last: string) => average(dateRange(addDays(last, -6), last).map((date) => dayValue(byDay.get(date), "restingHr")));
   const recent = week(end);
   const before = week(addDays(end, -period));
   return { recent, before, change: recent === null || before === null ? null : recent - before };

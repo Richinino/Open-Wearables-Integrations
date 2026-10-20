@@ -6,6 +6,7 @@ export interface AccountActionState {
   error?: string;
   success?: string;
   navigate?: string;
+  reload?: boolean;
   resetPath?: string;
   expiresAt?: string;
 }

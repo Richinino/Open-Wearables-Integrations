@@ -1,6 +1,6 @@
 "use client";
 
-import { dayFigure } from "@/lib/day-values";
+import { dayFigure, periodHasEstimate } from "@/lib/day-values";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -81,7 +81,7 @@ function SelectedDay({ date, day, timeZone }: { date: string | null; day: Day | 
           },
           { k: "Aktívny čas", v: approx(formatDuration(day.active_minutes_est)) },
           { k: "Kalórie", v: dayFigure(day, "totalEnergy", formatKcal) },
-          { k: "Pokojový tep", v: formatBpm(day.hr_resting) },
+          { k: "Pokojový tep", v: dayFigure(day, "restingHr", formatBpm) },
           { k: "Strain dňa", v: formatStrain(day.scores?.strain) },
           {
             k: workouts.length > 1 ? "Tréningy" : "Tréning",
@@ -100,6 +100,8 @@ function SelectedDay({ date, day, timeZone }: { date: string | null; day: Day | 
 
 function Averages({ title, dataset, from, to, today }: { title: string; dataset: Dataset; from: string; to: string; today: string }) {
   const result = periodAverages(dataset.days, from, to, today);
+  const restingFigure = formatBpm(result.restingHr);
+  const estimatedResting = periodHasEstimate(dataset.days.filter((day) => day.day >= from && day.day <= to && day.day <= today), "restingHr");
   const trainings = result.workouts ? `${result.workouts}× · ${formatDurationCompact(result.workoutSeconds / 60)}` : "žiadne";
   return (
     <section className="glass flex flex-auto flex-col gap-1 p-[26px]">
@@ -111,7 +113,7 @@ function Averages({ title, dataset, from, to, today }: { title: string; dataset:
           { k: "Kroky za deň", v: formatInt(result.steps) },
           { k: "Spánok za noc", v: formatDurationCompact(result.sleepMinutes) },
           { k: "Tréningy", v: trainings },
-          { k: "Pokojový tep", v: formatBpm(result.restingHr) },
+          { k: "Pokojový tep", v: estimatedResting ? approx(restingFigure) : restingFigure },
         ]}
       />
       <p className="pt-2 text-[12px] text-muted">

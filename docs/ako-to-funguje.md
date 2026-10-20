@@ -1,6 +1,6 @@
 # Ako to funguje
 
-Stav k 2026-10-17. Čo zbierame, z akých zdrojov, čo z toho presne počítame a čo len odhadujeme. Vzorce skóre sú zvlášť v [`skore.md`](skore.md).
+Pôvodný prehľad Samsung dát k 2026-10-17. Od 20. 10. pribudli používateľské účty a prednosť meraných hodnôt z Apple Health, Suunto a ďalších zdrojov. Aktuálne vzorce vrátane voliteľného HRV sú v [`skore.md`](skore.md), rozloženie dát a prechod v [`ucty-prevadzka.md`](ucty-prevadzka.md). Nasledujúce pozorovania o tom, čo Samsung posiela, sa týkajú pôvodného pripojenia; neobmedzujú ostatných poskytovateľov.
 
 Konkrétne počty záznamov a dátumy pre tvoj účet sú len lokálne v `data/prehlad-dat.md` (mimo gitu).
 

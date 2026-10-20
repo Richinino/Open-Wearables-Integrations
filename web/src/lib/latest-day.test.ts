@@ -6,6 +6,13 @@ import { makeDay, makeWorkout } from "./test-fixtures";
 const TODAY = "2026-10-15";
 
 describe("hasDayData", () => {
+  it("counts actual device RHR as fresh data while keeping a rolling-only empty shell empty", () => {
+    const measured = makeDay(TODAY, { resting_hr: 62, resting_hr_source: "measured", hr_resting: null });
+    const older = makeDay("2026-10-14", { steps: 9000 });
+    expect(hasDayData(measured)).toBe(true);
+    expect(latestDay([older, measured], TODAY, TODAY)).toMatchObject({ day: measured, fallback: false });
+    expect(hasDayData(makeDay(TODAY, { resting_hr: null, hr_resting: 51 }))).toBe(false);
+  });
   it("needs steps, sleep or a workout", () => {
     expect(hasDayData(null)).toBe(false);
     expect(hasDayData(makeDay(TODAY))).toBe(false);

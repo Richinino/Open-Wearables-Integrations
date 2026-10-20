@@ -366,6 +366,7 @@ function readinessReason(day: Day, score: Score | null | undefined): string {
   if (scoreValue(score) === null) return missingReason(score);
   const parts: string[] = [];
   const restingComponent = score?.components?.resting_hr;
+  // Describe the exact rolling-minute input used by the backend score, not device RHR.
   if (isNumber(day.hr_resting) && isNumber(restingComponent)) {
     // 87.5 at the person's mean, 100 a standard deviation below it, 57.5 one above.
     const where =

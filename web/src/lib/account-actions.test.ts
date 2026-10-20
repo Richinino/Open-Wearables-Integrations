@@ -1,3 +1,4 @@
+import { IDENTITY_FIELD, sessionIdentity } from "./account-identity";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Account, AccountSession } from "./account-types";
 import { changeOwnPassword, deleteOwnAccount, logoutAccount, logoutEverywhere, updateProfile, updateSettings, updateTheme } from "./account-actions";
@@ -15,7 +16,7 @@ vi.mock("next/navigation", () => ({ unstable_rethrow: () => {} }));
 
 const account: Account = { id: "actor", email: "actor@example.test", first_name: "Test", last_name: null, role: "admin", status: "active", paired: true, birth_date: null, sex: null, training_consent: true, settings: { theme: "system", sleep_score: "performance", overview_mode: "auto" }, has_samsung: true, created_at: "2026-01-01", last_login_at: null, session_version: 1 };
 let session: AccountSession;
-function form(values: Record<string, string> = {}) { const data = new FormData(); for (const [key, value] of Object.entries(values)) data.set(key, value); return data; }
+function form(values: Record<string, string> = {}) { const data = new FormData(); data.set(IDENTITY_FIELD, JSON.stringify(sessionIdentity(session))); for (const [key, value] of Object.entries(values)) data.set(key, value); return data; }
 const profile = { first_name: "Jana", email: "jana@example.test", sex: "female", id: "victim", actor: "victim", role: "admin" };
 beforeEach(() => {
   vi.resetAllMocks();
@@ -29,6 +30,14 @@ beforeEach(() => {
 });
 
 describe("profile actions", () => {
+  it("rejects stale profile, settings, password, deletion, logout and theme actions after an actor switch", async () => {
+    const staleForm = form({ ...profile, confirmation: "ZMAZAŤ", password: "synthetic-password" });
+    const staleIdentity = sessionIdentity(session);
+    session.account.id = "new-actor"; session.claims.a = "new-actor";
+    for (const action of [updateProfile, updateSettings, changeOwnPassword, logoutEverywhere, deleteOwnAccount, logoutAccount]) expect(await action({}, staleForm)).toMatchObject({ reload: true });
+    expect(await updateTheme("dark", staleIdentity)).toMatchObject({ reload: true });
+    for (const mock of [mocks.updateAccount, mocks.changePassword, mocks.logoutAll, mocks.deleteOwnAccount, mocks.endSession]) expect(mock).not.toHaveBeenCalled();
+  });
   it("updates only the fresh session actor and excludes submitted identity and role", async () => {
     expect(await updateProfile({}, form(profile))).toHaveProperty("success");
     expect(mocks.requireSession).toHaveBeenCalledOnce();
@@ -37,7 +46,7 @@ describe("profile actions", () => {
   it("blocks every profile mutation in view mode", async () => {
     session.claims.x = "viewed";
     const settings = form({ theme: "dark", sleep_score: "apple", overview_mode: "auto" });
-    for (const result of [await updateProfile({}, form(profile)), await updateSettings({}, settings), await changeOwnPassword({}, form()), await logoutEverywhere({}, form({ confirmation: "ODHLÁSIŤ" })), await deleteOwnAccount({}, form({ confirmation: "ZMAZAŤ", password: "secret" })), await updateTheme("dark")]) expect(result.error).toContain("nedá zapisovať");
+    for (const result of [await updateProfile({}, form(profile)), await updateSettings({}, settings), await changeOwnPassword({}, form()), await logoutEverywhere({}, form({ confirmation: "ODHLÁSIŤ" })), await deleteOwnAccount({}, form({ confirmation: "ZMAZAŤ", password: "secret" })), await updateTheme("dark", sessionIdentity(session))]) expect(result.error).toContain("nedá zapisovať");
     for (const mock of [mocks.updateAccount, mocks.changePassword, mocks.logoutAll, mocks.deleteOwnAccount]) expect(mock).not.toHaveBeenCalled();
   });
   it("lets a pending actor update their own profile", async () => {
@@ -47,7 +56,7 @@ describe("profile actions", () => {
   it("persists settings server-side and only changes the actor theme", async () => {
     await updateSettings({}, form({ theme: "light", sleep_score: "samsung", overview_mode: "morning" }));
     expect(mocks.updateAccount).toHaveBeenCalledWith("actor", { settings: { theme: "light", sleep_score: "samsung", overview_mode: "morning" } });
-    await updateTheme("dark");
+    await updateTheme("dark", sessionIdentity(session));
     expect(mocks.updateAccount).toHaveBeenLastCalledWith("actor", { settings: { ...account.settings, theme: "dark" } });
   });
   it("checks password confirmation then renews the current actor session", async () => {
@@ -83,6 +92,15 @@ describe("profile actions", () => {
 });
 
 describe("admin actions", () => {
+  it("rejects stale admin forms and view controls after another tab changes the active actor or target", async () => {
+    const stale = form({ operation: "resolve", target: "12" });
+    session.account.id = "other-admin"; session.claims.a = "other-admin";
+    expect(await adminAction({}, stale)).toMatchObject({ reload: true });
+    expect(await viewAccount({}, stale)).toMatchObject({ reload: true });
+    session.claims.x = "new-target";
+    expect(await exitView({}, stale)).toMatchObject({ reload: true });
+    expect(mocks.resolveInbox).not.toHaveBeenCalled(); expect(mocks.setViewedAccount).not.toHaveBeenCalled();
+  });
   it("freshly authorizes every admin operation and ignores submitted actor identity", async () => {
     await adminAction({}, form({ operation: "resolve", target: "12", actor: "forged" }));
     expect(mocks.requireAdmin).toHaveBeenCalledOnce();

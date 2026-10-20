@@ -10,20 +10,28 @@ const FIELDS = {
   restingHr: ["resting_hr", "resting_hr_source", "hr_resting"],
 } as const;
 
-/** Explicit null in a new payload is missing data, never an excuse to reuse an old estimate. */
+/** Selected device values win. RHR also has a valid derived rolling-minute fallback. */
 export function dayValue(day: Day | null | undefined, metric: DayMetric): number | null {
   if (!day) return null;
   const [field, , fallback] = FIELDS[metric];
-  const value = Object.hasOwn(day, field) ? day[field] : day[fallback];
+  const value = metric === "restingHr" ? day[field] ?? day[fallback] : Object.hasOwn(day, field) ? day[field] : day[fallback];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 export function dayValueSource(day: Day | null | undefined, metric: DayMetric): ValueSource | null {
   if (dayValue(day, metric) === null || !day) return null;
   const [field, source] = FIELDS[metric];
-  if (!Object.hasOwn(day, field)) return metric === "restingHr" ? "derived" : "estimated";
+  if (!Object.hasOwn(day, field) || (metric === "restingHr" && day[field] == null)) return metric === "restingHr" ? "derived" : "estimated";
   const value = day[source];
   return value === "measured" || value === "derived" || value === "estimated" ? value : null;
+}
+
+export function restingHrDescription(day: Day | null | undefined): string {
+  const source = dayValueSource(day, "restingHr");
+  if (source === "measured") return "Pokojový tep zo zariadenia.";
+  if (source === "derived") return "Pokojový tep je najnižší 30-minútový priemer dňa z minútových meraní.";
+  if (source === "estimated") return "Odhad pokojového tepu.";
+  return "Pokojový tep pre tento deň chýba.";
 }
 
 export function dayFigure(
@@ -44,7 +52,7 @@ export function periodFigure(
   value: number | null, format: (value: number | null | undefined) => string,
 ): string {
   const from = addDays(end, -(length - 1));
-  const used = days.filter((day) => day.complete !== false && day.day >= from && day.day <= end);
+  const used = days.filter((day) => (metric === "restingHr" || day.complete !== false) && day.day >= from && day.day <= end);
   const text = format(value);
   return periodHasEstimate(used, metric) ? approx(text) : text;
 }
