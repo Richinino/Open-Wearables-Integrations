@@ -38,8 +38,15 @@ function Get-HttpCode([string]$Uri, [string]$Resolve = '') {
 }
 function Get-FunnelAddresses([string]$Name) {
     # Resolve public ingress independently of MagicDNS on this host.
-    $Answer = Invoke-RestMethod -Uri "https://dns.google/resolve?name=$Name&type=A" -TimeoutSec 12
-    return @($Answer.Answer | Where-Object { $_.type -eq 1 } | ForEach-Object { $_.data })
+    # One resolver may still cache NXDOMAIN briefly after a stopped node comes back.
+    foreach ($Resolver in @('https://dns.google/resolve', 'https://cloudflare-dns.com/dns-query')) {
+        try {
+            $Answer = Invoke-RestMethod -Uri "${Resolver}?name=$Name&type=A" -Headers @{ Accept = 'application/dns-json' } -TimeoutSec 12
+            $Addresses = @($Answer.Answer | Where-Object { $_.type -eq 1 } | ForEach-Object { $_.data })
+            if ($Addresses.Count -gt 0) { return $Addresses }
+        } catch { }
+    }
+    throw 'public DNS resolvers returned no ingress addresses'
 }
 function Test-Funnel([string]$Name, [string[]]$Addresses) {
     $Transport = $false
@@ -52,8 +59,30 @@ function Test-Funnel([string]$Name, [string[]]$Addresses) {
     }
     return @{ Healthy = $false; Transport = $Transport }
 }
-function Reconnect([string]$Reason) {
-    if (Test-Path -LiteralPath $StateFile) {
+function New-TailscaleUpStartInfo {
+    $Info = New-Object System.Diagnostics.ProcessStartInfo
+    $Info.FileName = $Tailscale
+    # Bare `up` preserves ALL existing preferences, including unattended mode.
+    # Even adding --timeout makes Tailscale require every non-default setting again.
+    $Info.Arguments = 'up'
+    $Info.UseShellExecute = $false
+    $Info.CreateNoWindow = $true
+    $Info.RedirectStandardOutput = $true
+    $Info.RedirectStandardError = $true
+    return $Info
+}
+function Invoke-TailscaleUp {
+    $Process = [System.Diagnostics.Process]::Start((New-TailscaleUpStartInfo))
+    try {
+        if (-not $Process.WaitForExit(20000)) {
+            $Process.Kill()
+            throw 'tailscale up timed out; connection preferences were preserved'
+        }
+        if ($Process.ExitCode -ne 0) { throw "tailscale up failed (exit $($Process.ExitCode))" }
+    } finally { $Process.Dispose() }
+}
+function Reconnect([string]$Reason, [switch]$AlreadyStopped) {
+    if (-not $AlreadyStopped -and (Test-Path -LiteralPath $StateFile)) {
         try {
             $Last = [datetimeoffset]::Parse((Get-Content -LiteralPath $StateFile -Raw))
             if ([datetimeoffset]::Now - $Last -lt [timespan]::FromMinutes($MinMinutesBetweenReconnects)) {
@@ -62,11 +91,13 @@ function Reconnect([string]$Reason) {
             }
         } catch { Write-Log 'invalid reconnect timestamp; ignoring it' }
     }
-    & $Tailscale down | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'tailscale down failed' }
-    & $Tailscale up --timeout=20s | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'tailscale up failed' }
+    # Rate-limit failed disruptive reconnects too. A stopped node can always resume.
     [datetimeoffset]::Now.ToString('o') | Set-Content -LiteralPath $StateFile -Encoding UTF8
+    if (-not $AlreadyStopped) {
+        & $Tailscale down | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'tailscale down failed' }
+    }
+    Invoke-TailscaleUp
     Write-Log "$Reason; Tailscale reconnected; verifying ingress"
     return $true
 }
@@ -81,7 +112,7 @@ function Invoke-Watchdog {
         $Status = & $Tailscale status --json | ConvertFrom-Json
         if ($LASTEXITCODE -ne 0) { throw 'tailscale status failed' }
         if ($Status.BackendState -ne 'Running') {
-            if (-not (Reconnect "Tailscale state $($Status.BackendState)")) {
+            if (-not (Reconnect "Tailscale state $($Status.BackendState)" -AlreadyStopped)) {
                 $Check.state = 'tailscale_not_running'; Write-Health $Check; return 1
             }
             $Status = & $Tailscale status --json | ConvertFrom-Json

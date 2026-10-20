@@ -86,6 +86,8 @@ Healthcheck Dockeru sám automaticky neopraví nezdravý proces. Restart policy 
 
 Existujúca úloha beží každých päť minút. Kontroluje lokálne API aj verejný Funnel; HTTP 502 alebo 503 nepovažuje za zdravú aplikáciu. Privátnu cestu hodnotí samostatne a pri jej chybe nereštartuje fungujúci verejný Funnel. Po opravnom reconnecte overí výsledok.
 
+Pri obnove spojenia spúšťa samotné tailscale up bez parametrov, aby zachoval existujúce nastavenia vrátane unattended režimu. Čakanie obmedzuje nadradený proces na 20 sekúnd; nepridávaj samotný --timeout, ktorý vyžaduje opakovať všetky nepredvolené nastavenia. Zastavený uzol obnoví aj počas ochranného intervalu bez ďalšieho down. Verejné DNS overuje cez Google s náhradným resolverom Cloudflare, pretože po dlhšom odpojení môže prvý resolver dočasne vracať uložené NXDOMAIN.
+
 Pre beh aj pred prihlásením používateľa je pripravený tento príkaz, ktorý vyžaduje PowerShell spustený ako Administrátor:
 
 ~~~powershell
