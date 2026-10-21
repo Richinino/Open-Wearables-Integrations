@@ -15,3 +15,11 @@ __pycache__/
 .ruff_cache/
 .superpowers/
 .idea/
+.work-notes/
+android/.gradle/
+android/.kotlin/
+android/**/build/
+android/local.properties
+*.jks
+*.keystore
+/artifacts/android/
