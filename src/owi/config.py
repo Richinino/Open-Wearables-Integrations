@@ -34,6 +34,8 @@ class Settings:
     # Set for one account's sync: its birth date and its folders instead of the single-user ones.
     birth_date: date | None = None
     paths: UserPaths | None = None
+    # Legacy installations keep using their fitted values; accounts supply fresh consent.
+    training_consent: bool = True
 
     def age_on(self, day: date) -> int | None:
         """The age at `day` from the birth date, else the configured age."""

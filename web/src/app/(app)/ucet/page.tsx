@@ -1,11 +1,14 @@
+import { PageIdentity } from "@/components/admin/page-identity";
+import { sessionIdentity } from "@/lib/account-identity";
 import { requireSession } from "@/lib/auth";
 import { ActionForm, Field, INPUT, Panel } from "@/components/admin/form";
 import { changeOwnPassword, deleteOwnAccount, logoutEverywhere, updateProfile } from "@/lib/account-actions";
 
 export default async function AccountPage() {
-  const { account, claims } = await requireSession();
+  const session = await requireSession();
+  const { account, claims } = session;
   const viewOnly = Boolean(claims.x);
-  return <>
+  return <PageIdentity expected={sessionIdentity(session)}><>
     <div className="px-1"><p className="eyebrow">Tvoj profil</p><h1 className="mt-1 text-3xl font-semibold">Nastavenia účtu</h1><p className="mt-2 text-ink2">Osobné údaje pre tvoj účet a výpočty. Heslo vidíš iba ty.</p></div>
     {viewOnly && <p role="status" className="text-warn">Prezeráš cudzí účet. Svoj profil môžeš meniť po návrate na svoj účet.</p>}
     <div className="grid min-w-0 gap-[18px] lg:grid-cols-2">
@@ -22,5 +25,5 @@ export default async function AccountPage() {
       </div>
     </div>
     <Panel title="Zmazanie účtu"><p className="max-w-2xl text-sm text-ink2">Natrvalo zmaže účet, jeho vypočítané dni, zápisy aj doladené čísla. Surové dáta v Open Wearables ostanú. Na potvrdenie napíš ZMAZAŤ a vyplň svoje heslo.</p><div className="max-w-lg"><ActionForm action={deleteOwnAccount} danger disabled={viewOnly} submit="Natrvalo zmazať môj účet"><Field label="Potvrdenie zmazania"><input className={INPUT} name="confirmation" autoComplete="off" placeholder="ZMAZAŤ" required /></Field><Field label="Tvoje heslo"><input className={INPUT} name="password" type="password" autoComplete="current-password" required /></Field></ActionForm></div></Panel>
-  </>;
+  </></PageIdentity>;
 }

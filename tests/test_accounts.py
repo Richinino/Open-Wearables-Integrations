@@ -491,3 +491,21 @@ def test_inbox_remembers_who_resolved_an_item_and_old_databases_are_migrated(tmp
         automatic = store.inbox_resolve(second.id, NOW, automatic=True)
     assert by_hand.resolved_by == "admin"
     assert automatic.resolved_by == "auto"
+
+
+@pytest.mark.parametrize("replace_directly", [False, True])
+def test_pairing_changes_revoke_established_sessions_but_initial_pairing_does_not(
+    store, replace_directly
+):
+    pending = register(store)
+    initial = store.pair(pending.id, "ow-first")
+    assert initial.session_version == pending.session_version
+    assert store.pair(initial.id, "ow-first").session_version == initial.session_version
+    if not replace_directly:
+        removed = store.unpair(initial.id)
+        assert removed.session_version == initial.session_version + 1
+        assert store.unpair(initial.id).session_version == removed.session_version
+    replacement = store.pair(initial.id, "ow-second")
+    assert replacement.status == "active" and replacement.ow_user_id == "ow-second"
+    assert replacement.session_version == initial.session_version + 1
+    assert store.get(initial.id).session_version != initial.session_version

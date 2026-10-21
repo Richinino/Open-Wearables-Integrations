@@ -5,7 +5,7 @@ import { putEntry, SAVE_MESSAGES, splitFieldErrors } from "./entry-client";
 import { emptyValues } from "./entries";
 import { makeEntry } from "./test-fixtures";
 
-const IDENTITY = { actorId: "account-a", dataAccountId: "account-a", viewOnly: false };
+const IDENTITY = { actorId: "account-a", dataAccountId: "account-a", viewOnly: false, sessionVersion: 0 };
 const HEADERS = { [IDENTITY_HEADER]: JSON.stringify(IDENTITY) };
 const DAY = "2026-10-15";
 const fetchMock = vi.fn<typeof fetch>();

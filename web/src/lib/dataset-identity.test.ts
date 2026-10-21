@@ -20,9 +20,11 @@ describe("SWR account identity isolation", () => {
     const render = () => renderToStaticMarkup(createElement(Probe));
     render(); expect(mocks.swr.mock.lastCall?.[0]).toBeNull();
     mocks.account = { account: TEST_ACCOUNT, dataAccount: { ...TEST_ACCOUNT, id: "target" }, viewOnly: true, persistent: false };
-    render(); expect(mocks.swr.mock.lastCall?.[0]).toEqual(["/api/data", TEST_ACCOUNT.id, "target", true]);
+    render(); expect(mocks.swr.mock.lastCall?.[0]).toEqual(["/api/data", TEST_ACCOUNT.id, "target", true, TEST_ACCOUNT.session_version]);
     mocks.account = { ...mocks.account, account: { ...TEST_ACCOUNT, id: "other-admin" } };
-    render(); expect(mocks.swr.mock.lastCall?.[0]).toEqual(["/api/data", "other-admin", "target", true]);
+    render(); expect(mocks.swr.mock.lastCall?.[0]).toEqual(["/api/data", "other-admin", "target", true, TEST_ACCOUNT.session_version]);
+    mocks.account = { ...mocks.account, account: { ...mocks.account.account, session_version: TEST_ACCOUNT.session_version + 1 } };
+    render(); expect(mocks.swr.mock.lastCall?.[0]).toEqual(["/api/data", "other-admin", "target", true, TEST_ACCOUNT.session_version + 1]);
     expect(mocks.swr.mock.lastCall?.[2]).toMatchObject({ keepPreviousData: false });
   });
   it("does not expose a cached dataset after a mismatch while full reload begins", () => {

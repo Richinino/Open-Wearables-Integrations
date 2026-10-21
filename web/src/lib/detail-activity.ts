@@ -186,7 +186,9 @@ export interface StepsStats {
 export function stepsStats(days: Day[], end: string, length: number): StepsStats {
   const from = addDays(end, -(length - 1));
   const finished = days.filter((day) => day.day >= from && day.day <= end && finishedSteps(day) !== null);
-  const distances = finished.map((day) => dayValue(day, "distance"));
+  const distances = days
+    .filter((day) => day.day >= from && day.day <= end && day.complete !== false)
+    .map((day) => dayValue(day, "distance"));
   return {
     average: average(finished.map(finishedSteps)),
     days: finished.length,

@@ -67,9 +67,9 @@ async function expectJson(response: Response, status: number, body: unknown) {
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
-  identity = { actorId: "account-a", dataAccountId: "account-a", viewOnly: false };
+  identity = { actorId: "account-a", dataAccountId: "account-a", viewOnly: false, sessionVersion: 0 };
   mocks.currentSession.mockReset();
-  mocks.currentSession.mockResolvedValue({ account: { id: "account-a", status: "active", paired: true, has_samsung: true }, claims: { a: "account-a", x: null } });
+  mocks.currentSession.mockResolvedValue({ account: { id: "account-a", status: "active", paired: true, has_samsung: true, session_version: 0 }, claims: { a: "account-a", x: null } });
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
   configure({ url: API_URL, token: WRITE_TOKEN, production: true });
@@ -85,14 +85,14 @@ afterEach(() => {
 describe("PUT /api/entries/[date] before owi", () => {
   it("rejects a stale tab after another tab changes actor, target or view mode, without saving", async () => {
     for (const session of [
-      { account: { id: "account-b", status: "active", paired: true, has_samsung: true }, claims: { a: "account-b", x: null } },
-      { account: { id: "account-a", status: "active", paired: true, has_samsung: true }, claims: { a: "account-a", x: "account-b" } },
-      { account: { id: "account-a", status: "active", paired: true, has_samsung: true }, claims: { a: "account-a", x: "account-a" } },
+      { account: { id: "account-b", status: "active", paired: true, has_samsung: true, session_version: 0 }, claims: { a: "account-b", x: null } },
+      { account: { id: "account-a", status: "active", paired: true, has_samsung: true, session_version: 0 }, claims: { a: "account-a", x: "account-b" } },
+      { account: { id: "account-a", status: "active", paired: true, has_samsung: true, session_version: 0 }, claims: { a: "account-a", x: "account-a" } },
     ]) {
       mocks.currentSession.mockResolvedValue(session);
       await expectJson(await put(), 409, { error: "session_changed" });
     }
-    mocks.currentSession.mockResolvedValue({ account: { id: "account-a", status: "active", paired: true, has_samsung: true }, claims: { a: "account-a", x: null } });
+    mocks.currentSession.mockResolvedValue({ account: { id: "account-a", status: "active", paired: true, has_samsung: true, session_version: 0 }, claims: { a: "account-a", x: null } });
     await expectJson(await put({ identity: null }), 409, { error: "session_changed" });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -102,8 +102,8 @@ describe("PUT /api/entries/[date] before owi", () => {
       [{ status: "pending", paired: false, has_samsung: true }, { x: null }, "pending"],
       [{ status: "active", paired: true, has_samsung: false }, { x: null }, "unsupported_source"],
     ] as const) {
-      mocks.currentSession.mockResolvedValue({ account: { id: "account-a", ...account }, claims });
-      await expectJson(await put({ identity: { actorId: "account-a", dataAccountId: claims.x ?? "account-a", viewOnly: Boolean(claims.x) } }), 403, { error: code });
+      mocks.currentSession.mockResolvedValue({ account: { id: "account-a", session_version: 0, ...account }, claims });
+      await expectJson(await put({ identity: { actorId: "account-a", dataAccountId: claims.x ?? "account-a", viewOnly: Boolean(claims.x), sessionVersion: 0 } }), 403, { error: code });
     }
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -285,7 +285,7 @@ describe("PUT /api/entries/[date] with owi", () => {
 });
 
 describe("PUT /api/entries/[date] in demo mode", () => {
-  beforeEach(() => { identity = { actorId: "local-demo", dataAccountId: "local-demo", viewOnly: false }; vi.stubEnv("OWI_LOCAL_DEMO", "1"); mocks.currentSession.mockResolvedValue({ account: { id: "local-demo", status: "active", paired: true, has_samsung: true }, claims: { a: "local-demo", x: null } }); });
+  beforeEach(() => { identity = { actorId: "local-demo", dataAccountId: "local-demo", viewOnly: false, sessionVersion: 0 }; vi.stubEnv("OWI_LOCAL_DEMO", "1"); mocks.currentSession.mockResolvedValue({ account: { id: "local-demo", status: "active", paired: true, has_samsung: true, session_version: 0 }, claims: { a: "local-demo", x: null } }); });
   beforeEach(() => configure({}));
 
   it("echoes a valid entry back as saved, without calling anything", async () => {

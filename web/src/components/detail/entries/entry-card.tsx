@@ -138,7 +138,7 @@ export function EntryCard({
     setSaving(true);
     setErrors({});
     setMessage(null);
-    const result = await putEntry(day, values, { actorId: account.account.id, dataAccountId: account.dataAccount.id, viewOnly: account.viewOnly });
+    const result = await putEntry(day, values, { actorId: account.account.id, dataAccountId: account.dataAccount.id, viewOnly: account.viewOnly, sessionVersion: account.account.session_version });
     setSaving(false);
     if (!result.ok) {
       setErrors(result.fields);

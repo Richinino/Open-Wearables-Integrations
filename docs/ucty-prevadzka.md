@@ -15,7 +15,7 @@
 9. Spusti overený image backendu, skontroluj `/ready`, `/version`, prístup k presunutým výsledkom a úspešný sync. Až potom povýš pripravený web na produkciu, napr. cez `vercel promote <deployment-url>`.
 10. Over prihlasovanie, dostupnosť pôvodných dní a zápisov, administráciu a ďalší príjem dát. Staré spoločné heslo už web nepoužíva; staré relácie sa zneplatnia.
 
-Pri presune SQLite nestačí presunúť hlavný `.db` súbor, ak vedľa neho zostal nepotvrdený obsah WAL po páde procesu. Migračný príkaz pred presunom zapíše potvrdené stránky WAL do databázy a pri blokovaní odmietne pokračovať. Aj tak musí počas presunu zostať sync a API zastavené.
+Pri presune SQLite nestačí presunúť hlavný `.db` súbor, ak vedľa neho zostal obsah WAL, ktorý sa ešte nezapísal do hlavného súboru. Migračný príkaz pred presunom zapíše potvrdené stránky WAL do databázy a pri blokovaní odmietne pokračovať. Aj tak musí počas presunu zostať sync a API zastavené.
 
 ## Návrat pri probléme
 

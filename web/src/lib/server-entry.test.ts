@@ -75,8 +75,8 @@ describe("account data route", () => {
   });
   it("validates viewed target and isolates its data", async () => {
     mocks.currentSession.mockResolvedValue(testSession({ role: "admin" }, { r: "admin", x: "account-b" }));
-    mocks.getAccount.mockResolvedValue({ ...ACCOUNT, id: "account-b" }); expect((await GET(dataRequest({ actorId: ACCOUNT.id, dataAccountId: "account-b", viewOnly: true }))).status).toBe(200); expect(mocks.loadDataset).toHaveBeenCalledWith("account-b");
-    mocks.getAccount.mockResolvedValue({ ...ACCOUNT, id: "account-b", status: "suspended" }); expect((await GET(dataRequest({ actorId: ACCOUNT.id, dataAccountId: "account-b", viewOnly: true }))).status).toBe(403);
+    mocks.getAccount.mockResolvedValue({ ...ACCOUNT, id: "account-b" }); expect((await GET(dataRequest({ actorId: ACCOUNT.id, dataAccountId: "account-b", viewOnly: true, sessionVersion: 0 }))).status).toBe(200); expect(mocks.loadDataset).toHaveBeenCalledWith("account-b");
+    mocks.getAccount.mockResolvedValue({ ...ACCOUNT, id: "account-b", status: "suspended" }); expect((await GET(dataRequest({ actorId: ACCOUNT.id, dataAccountId: "account-b", viewOnly: true, sessionVersion: 0 }))).status).toBe(403);
   });
   it("fails closed on account/data outage", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});

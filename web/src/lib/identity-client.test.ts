@@ -5,9 +5,9 @@ import { AccountIdentityMismatchError, IDENTITY_HEADER, parseIdentity, sameIdent
 import { emptyValues } from "./entries";
 import { makeEntry } from "./test-fixtures";
 
-const VIEW_A: AccountIdentity = { actorId: "admin", dataAccountId: "target-a", viewOnly: true };
-const VIEW_B: AccountIdentity = { actorId: "admin", dataAccountId: "target-b", viewOnly: true };
-const OWN: AccountIdentity = { actorId: "account-a", dataAccountId: "account-a", viewOnly: false };
+const VIEW_A: AccountIdentity = { actorId: "admin", dataAccountId: "target-a", viewOnly: true, sessionVersion: 0 };
+const VIEW_B: AccountIdentity = { actorId: "admin", dataAccountId: "target-b", viewOnly: true, sessionVersion: 0 };
+const OWN: AccountIdentity = { actorId: "account-a", dataAccountId: "account-a", viewOnly: false, sessionVersion: 0 };
 const DAY = "2026-10-15";
 const fetchMock = vi.fn<typeof fetch>();
 const reload = vi.fn();
@@ -49,7 +49,13 @@ describe("identity-bound browser data", () => {
   });
   it("requires exact actor, target and view-mode matches and validates malformed input", () => {
     expect(sameIdentity(VIEW_A, { ...VIEW_A })).toBe(true);
-    for (const identity of [VIEW_B, { ...VIEW_A, actorId: "other-admin" }, { ...VIEW_A, viewOnly: false }, null]) expect(sameIdentity(VIEW_A, identity)).toBe(false);
-    for (const raw of [null, "bad", "null", "[]", JSON.stringify({ ...VIEW_A, viewOnly: "false" })]) expect(parseIdentity(raw)).toBeNull();
+    for (const identity of [VIEW_B, { ...VIEW_A, actorId: "other-admin" }, { ...VIEW_A, viewOnly: false }, { ...VIEW_A, sessionVersion: 1 }, null]) expect(sameIdentity(VIEW_A, identity)).toBe(false);
+    for (const raw of [null, "bad", "null", "[]", JSON.stringify({ ...VIEW_A, viewOnly: "false" }), ...[undefined, -1, 0.5, "0", Number.MAX_SAFE_INTEGER + 1].map((sessionVersion) => JSON.stringify({ ...VIEW_A, sessionVersion }))]) expect(parseIdentity(raw)).toBeNull();
+  });
+  it.each(["dataset", "entry"])("rejects %s payloads echoed for a newer session of the same actor", async (kind) => {
+    const response = Response.json(kind === "dataset" ? { days: [] } : makeEntry(DAY), { headers: { [IDENTITY_HEADER]: JSON.stringify({ ...OWN, sessionVersion: OWN.sessionVersion + 1 }) } });
+    const read = vi.spyOn(response, "json"); fetchMock.mockResolvedValue(response);
+    await expect(kind === "dataset" ? fetchDataset("/api/data", OWN) : putEntry(DAY, emptyValues(), OWN)).rejects.toBeInstanceOf(AccountIdentityMismatchError);
+    expect(reload).toHaveBeenCalledOnce(); expect(read).not.toHaveBeenCalled();
   });
 });

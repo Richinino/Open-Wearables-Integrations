@@ -27,7 +27,7 @@ export function ActionForm({ action, children, submit = "Uložiť", danger = fal
   expectedIdentity?: AccountIdentity;
 }) {
   const account = useAccount();
-  const identity = expectedIdentity ?? (account ? { actorId: account.account.id, dataAccountId: account.dataAccount.id, viewOnly: account.viewOnly } : null);
+  const identity = expectedIdentity ?? (account ? { actorId: account.account.id, dataAccountId: account.dataAccount.id, viewOnly: account.viewOnly, sessionVersion: account.account.session_version } : null);
   const [state, formAction] = useActionState((previous: AccountActionState, form: FormData) => runAccountAction(action, previous, form), {});
   return <form action={formAction} className="flex min-w-0 flex-col gap-4">
     <input type="hidden" name={IDENTITY_FIELD} value={identity ? JSON.stringify(identity) : ""} />

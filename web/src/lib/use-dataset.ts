@@ -38,9 +38,9 @@ export function useDataset(): {
   update: (change: (dataset: Dataset) => Dataset) => void;
 } {
   const account = useAccount();
-  const key = account ? [DATA_URL, account.account.id, account.dataAccount.id, account.viewOnly] as const : null;
+  const key = account ? [DATA_URL, account.account.id, account.dataAccount.id, account.viewOnly, account.account.session_version] as const : null;
   const { data, error, isLoading, isValidating, mutate } = useSWR<Dataset, Error>(key,
-    (value: readonly [string, string, string, boolean]) => fetchDataset(value[0], { actorId: value[1], dataAccountId: value[2], viewOnly: value[3] }), {
+    (value: readonly [string, string, string, boolean, number]) => fetchDataset(value[0], { actorId: value[1], dataAccountId: value[2], viewOnly: value[3], sessionVersion: value[4] }), {
     refreshInterval: REFRESH_INTERVAL_MS,
     revalidateOnFocus: true,
     keepPreviousData: false,

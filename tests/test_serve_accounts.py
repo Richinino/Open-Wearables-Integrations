@@ -1082,3 +1082,52 @@ def test_serve_hands_the_accounts_store_and_data_folder_to_the_server(tmp_path, 
     assert seen["accounts_path"] == accounts_path(tmp_path / "data")
     assert seen["data_dir"] == tmp_path / "data"
     assert not accounts_path(tmp_path / "data").exists()
+
+
+def test_consent_off_reports_default_calibration_without_deleting_previous_fit(data):
+    from owi.calibration import save_params
+    from owi.models import Params
+    from owi.store import FitRecord
+
+    account = make_user(data, ow_user_id="ow-fitted")
+    save_days(data, "ow-fitted", 1000)
+    paths = user_paths(data, "ow-fitted")
+    fit = FitRecord(NOW, 20, None, {"stride_m": 1.1}, {})
+    save_params(paths.params_path, Params(stride_m=1.1))
+    with Store(paths.db_path) as db:
+        db.save_fit(fit)
+    target = f"/v1/days?account={account.id}"
+    before = call(data, "GET", target, authorization=READ_AUTH).body["calibration"]
+    assert before["fitted_at"] is not None and before["params"]["stride_m"] == 1.1
+    store(data).update(account.id, {"training_consent": False})
+    after = call(data, "GET", target, authorization=READ_AUTH).body["calibration"]
+    assert after["fitted_at"] is None and after["entries"] == 0 and after["quality"] == {}
+    assert after["params"] == after["defaults"]
+    with Store(paths.db_path) as db:
+        assert db.latest_fit() == fit
+    store(data).update(account.id, {"training_consent": True})
+    assert call(data, "GET", target, authorization=READ_AUTH).body["calibration"] == before
+
+
+@pytest.mark.parametrize("replace_directly", [False, True])
+def test_pairing_api_exposes_revoked_session_version_for_replacement_directory(
+    data, replace_directly
+):
+    admin = make_admin(data)
+    account = make_user(data, ow_user_id="ow-first")
+    known_ow_users(data, "ow-first", "ow-second")
+    save_days(data, "ow-first", 1000)
+    save_days(data, "ow-second", 2000)
+    path = f"/v1/admin/accounts/{account.id}"
+    if not replace_directly:
+        removed = admin_call(data, admin.id, "POST", f"{path}/unpair")
+        assert removed.status == 200
+        assert removed.body["session_version"] == account.session_version + 1
+    paired = admin_call(data, admin.id, "POST", f"{path}/pair", {"ow_user_id": "ow-second"})
+    assert paired.status == 200
+    fresh = call(data, "GET", f"/v1/accounts/{account.id}")
+    assert fresh.status == 200 and fresh.body["status"] == "active"
+    assert fresh.body["session_version"] == account.session_version + 1
+    assert fresh.body["id"] == account.id  # identity IDs alone cannot catch the change
+    days = call(data, "GET", f"/v1/days?account={account.id}", authorization=READ_AUTH)
+    assert days.status == 200 and days.body["days"][0]["steps"] == 2001

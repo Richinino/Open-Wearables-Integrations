@@ -6,12 +6,12 @@ from datetime import date
 
 import pytest
 
-from owi import cli, entries
+from owi import cli, entries, samsung_scores
 from owi.accounts import Accounts
-from owi.calibration import load_params
+from owi.calibration import load_params, save_params
 from owi.config import Settings
-from owi.models import STEPS
-from owi.store import Store
+from owi.models import STEPS, Params
+from owi.store import FitRecord, Store
 from owi.users import user_paths
 from tests.factories import make_features, sample, utc
 from tests.fakes import FakeClient
@@ -261,3 +261,70 @@ def test_commands_keep_legacy_paths_before_accounts_database_exists(settings, mo
     assert load_params(settings.params_path).stride_m > 0.74
     assert not settings.accounts_path.exists()
     assert not (settings.data_dir / "users").exists()
+
+
+def test_accounts_list_before_migration_is_read_only_and_keeps_legacy_dispatch(
+    settings, monkeypatch, capsys
+):
+    assert cli.main(["accounts", "list"]) == 0
+    assert capsys.readouterr().out == "email\trole\tstatus\tow_user\n"
+    assert not settings.accounts_path.exists()
+    assert not settings.accounts_path.parent.exists()
+    synced = []
+    monkeypatch.setattr(cli, "_sync_once", lambda selected, *args: synced.append(selected))
+    monkeypatch.setattr(cli, "_tune", lambda *args: None)
+    monkeypatch.setattr(cli, "_sync_accounts", lambda *args: pytest.fail("account mode activated"))
+    assert cli.main(["sync", "--days", "1"]) == 0
+    assert synced == [settings]
+    assert not settings.accounts_path.exists()
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_disabling_consent_ignores_saved_fits_in_sync_and_local_rescore(
+    settings, monkeypatch, explicit
+):
+    account = add_account(settings, "ow-owner", training_consent=True)
+    paths = seed_day(settings, monkeypatch, "ow-owner", 10000)
+    fitted = Params(stride_m=1.1, max_hr=155)
+    models = samsung_scores.SamsungModels(
+        sleep=samsung_scores.ScoreModel(30, {"duration": 1.0}),
+        energy=samsung_scores.ScoreModel(30, {"load": 1.0}),
+    )
+    save_params(paths.params_path, fitted)
+    samsung_scores.save_models(paths.score_weights_path, models)
+    fit = FitRecord(NOW, 30, None, {"stride_m": 1.1}, {})
+    with Store(paths.db_path) as db:
+        db.save_fit(fit)
+    original_files = [p.read_bytes() for p in (paths.params_path, paths.score_weights_path)]
+    params_seen, models_seen = [], []
+    original_compute, original_rescore = cli.compute, cli.scoring.rescore
+
+    def compute(item, params, timezone):
+        params_seen.append(params)
+        return original_compute(item, params, timezone)
+
+    def rescore(*args):
+        models_seen.append(args[5])
+        return original_rescore(*args)
+
+    monkeypatch.setattr(cli, "compute", compute)
+    monkeypatch.setattr(cli.scoring, "rescore", rescore)
+    tuned = []
+    monkeypatch.setattr(cli, "_tune", lambda *args: tuned.append(True))
+    cli._sync_user(settings, account, paths, [DAY], NOW)
+    assert params_seen == [fitted] and models_seen == [models] and tuned == [True]
+    with Accounts(settings.accounts_path) as accounts:
+        account = accounts.update(account.id, {"training_consent": False})
+    params_seen.clear()
+    models_seen.clear()
+    tuned.clear()
+    cli._sync_user(settings, account, paths, [DAY], NOW)
+    selector = ["--account", account.id] if explicit else []
+    assert cli.main(["rescore", *selector]) == 0
+    assert params_seen == [Params()]
+    assert models_seen == [samsung_scores.SamsungModels()] * 2
+    assert tuned == []
+    with Store(paths.db_path) as db:
+        assert db.get_day(DAY).distance_m_est == 10000 * Params().stride_m
+        assert db.latest_fit() == fit
+    assert [p.read_bytes() for p in (paths.params_path, paths.score_weights_path)] == original_files

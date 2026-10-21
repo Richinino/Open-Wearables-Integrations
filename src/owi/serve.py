@@ -158,7 +158,12 @@ def _entries(path: Path, first: date, last: date) -> dict[date, Entry]:
 
 
 def _days(
-    query: dict[str, list[str]], db_path: Path, timezone: str, entries_path: Path, params_path: Path
+    query: dict[str, list[str]],
+    db_path: Path,
+    timezone: str,
+    entries_path: Path,
+    params_path: Path,
+    training_consent: bool = True,
 ) -> Response:
     try:
         first, last = _query_day(query, "from"), _query_day(query, "to")
@@ -206,7 +211,10 @@ def _days(
                 )
                 for result in found
             ],
-            "calibration": tuning.summary(last_fit, _params(params_path)),
+            "calibration": tuning.summary(
+                last_fit if training_consent else None,
+                _params(params_path) if training_consent else Params(),
+            ),
         },
     )
 
@@ -265,6 +273,7 @@ class _DataPaths:
     db_path: Path
     entries_path: Path
     params_path: Path
+    training_consent: bool = True
 
 
 def _data_paths(
@@ -291,7 +300,9 @@ def _data_paths(
     if account.status != "active" or ow_user_id is None or not _FOLDER_ID.fullmatch(ow_user_id):
         return _error(404, "not_paired")
     paths = users.user_paths(data_dir, ow_user_id)
-    return _DataPaths(paths.db_path, paths.entries_path, paths.params_path)
+    return _DataPaths(
+        paths.db_path, paths.entries_path, paths.params_path, account.training_consent
+    )
 
 
 # accounts: JSON
@@ -832,7 +843,14 @@ def respond(
     paths = _data_paths(query, accounts_path, data_dir, legacy)
     if isinstance(paths, Response):
         return paths
-    return _days(query, paths.db_path, timezone, paths.entries_path, paths.params_path)
+    return _days(
+        query,
+        paths.db_path,
+        timezone,
+        paths.entries_path,
+        paths.params_path,
+        paths.training_consent,
+    )
 
 
 def _application(context: dict[str, Any]) -> Callable:

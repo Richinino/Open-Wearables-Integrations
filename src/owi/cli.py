@@ -176,7 +176,7 @@ def _sync_batch(
     Days are saved in date order, so each day's features see those of the days before it.
     Returns the days that were saved.
     """
-    params = load_params(settings.params_path)
+    params = load_params(settings.params_path) if settings.training_consent else Params()
     saved: list[date] = []
     with Store(settings.db_path) as store, OWClient(settings.api_url, settings.api_key) as client:
         inputs = _fetch(settings, params.max_hr, client, store, days, now)
@@ -238,8 +238,12 @@ def _sync_once(
 def _rescore_stored(
     settings: Settings, store: Store, first: date, last: date | None = None
 ) -> None:
-    params = load_params(settings.params_path)
-    models = samsung_scores.load_models(settings.score_weights_path)
+    params = load_params(settings.params_path) if settings.training_consent else Params()
+    models = (
+        samsung_scores.load_models(settings.score_weights_path)
+        if settings.training_consent
+        else samsung_scores.SamsungModels()
+    )
     base = Person(age=settings.age, sex=settings.sex, max_hr=settings.max_hr or params.max_hr)
     span = store.features_span()
     if span is None:
@@ -420,6 +424,7 @@ def _user_settings(settings: Settings, account: Account, paths: users.UserPaths)
         sex=account.sex or base.sex,
         birth_date=date.fromisoformat(account.birth_date) if account.birth_date else None,
         paths=paths,
+        training_consent=account.training_consent,
     )
 
 
@@ -770,7 +775,7 @@ def _cmd_calibrate(args: argparse.Namespace, settings: Settings) -> int:
 
 
 def _cmd_check(args: argparse.Namespace, settings: Settings) -> int:
-    params = load_params(settings.params_path)
+    params = load_params(settings.params_path) if settings.training_consent else Params()
     loaded = _entry_inputs(settings, params.max_hr, _now())
     if loaded is None:
         return 1
@@ -889,8 +894,10 @@ def _cmd_accounts_create_admin(args: argparse.Namespace, settings: Settings) -> 
 
 
 def _cmd_accounts_list(args: argparse.Namespace, settings: Settings) -> int:
-    with Accounts(settings.accounts_path) as accounts:
-        found = accounts.all()
+    found = []
+    if settings.accounts_path.is_file():
+        with Accounts(settings.accounts_path) as accounts:
+            found = accounts.all()
     print("email\trole\tstatus\tow_user")
     for account in found:
         print(f"{account.email}\t{account.role}\t{account.status}\t{account.ow_user_id or '-'}")

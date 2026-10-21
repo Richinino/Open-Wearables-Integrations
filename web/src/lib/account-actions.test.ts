@@ -30,6 +30,14 @@ beforeEach(() => {
 });
 
 describe("profile actions", () => {
+  it("rejects old forms when another tab renews the same account after its pairing changes", async () => {
+    const staleForm = form({ ...profile, confirmation: "ZMAZAŤ", password: "synthetic-password" });
+    const staleIdentity = sessionIdentity(session);
+    session.account.session_version += 1; session.claims.v += 1;
+    for (const action of [updateProfile, updateSettings, changeOwnPassword, logoutEverywhere, deleteOwnAccount, logoutAccount]) expect(await action({}, staleForm)).toMatchObject({ reload: true });
+    expect(await updateTheme("dark", staleIdentity)).toMatchObject({ reload: true });
+    for (const mock of [mocks.updateAccount, mocks.changePassword, mocks.logoutAll, mocks.deleteOwnAccount, mocks.endSession]) expect(mock).not.toHaveBeenCalled();
+  });
   it("rejects stale profile, settings, password, deletion, logout and theme actions after an actor switch", async () => {
     const staleForm = form({ ...profile, confirmation: "ZMAZAŤ", password: "synthetic-password" });
     const staleIdentity = sessionIdentity(session);

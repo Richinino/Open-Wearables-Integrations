@@ -797,15 +797,16 @@ class Accounts:
 
     def pair(self, account_id: str, ow_user_id: str) -> Account:
         def work(db: sqlite3.Connection) -> Account | AccountError:
-            _load(db, account_id)
+            account = _load(db, account_id)
             other = db.execute(
                 "SELECT id FROM accounts WHERE ow_user_id = ? AND id != ?", (ow_user_id, account_id)
             ).fetchone()
             if other is not None:
                 return AccountError("ow_user_taken")
             db.execute(
-                "UPDATE accounts SET ow_user_id = ?, status = 'active' WHERE id = ?",
-                (ow_user_id, account_id),
+                "UPDATE accounts SET ow_user_id = ?, status = 'active',"
+                " session_version = session_version + ? WHERE id = ?",
+                (ow_user_id, int(account.paired and account.ow_user_id != ow_user_id), account_id),
             )
             return _load(db, account_id)
 
@@ -816,8 +817,9 @@ class Accounts:
             account = _load(db, account_id)
             _guard_last_admin(db, account, account.role, "pending")
             db.execute(
-                "UPDATE accounts SET ow_user_id = NULL, status = 'pending' WHERE id = ?",
-                (account_id,),
+                "UPDATE accounts SET ow_user_id = NULL, status = 'pending',"
+                " session_version = session_version + ? WHERE id = ?",
+                (int(account.paired), account_id),
             )
             return _load(db, account_id)
 

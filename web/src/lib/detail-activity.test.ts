@@ -123,3 +123,21 @@ describe("steps", () => {
     expect(weekendShare(pattern.map((item) => ({ ...item, average: null })))).toBeNull();
   });
 });
+
+
+describe("distance totals independent of steps", () => {
+  const measured = makeDay(END, { distance_m: 2400, distance_m_est: 9999, steps: null });
+  it("includes completed measured-distance-only days without changing step statistics", () => {
+    expect(stepsStats([measured], END, 7)).toEqual({ average: null, days: 0, total: null, distance: 2400, distanceAverage: 2400 });
+  });
+  it.each([7, 30])("combines measured and estimated distances in %s-day windows", (length) => {
+    const days = [measured,
+      makeDay(addDays(END, -1), { steps: 5000, distance_m_est: 3500 }),
+      makeDay(addDays(END, -2), { steps: 6000, distance_m: 4100, distance_m_est: 9999 }),
+      makeDay(addDays(END, -3), { complete: false, distance_m: 9000 }),
+      makeDay(addDays(END, -length), { distance_m: 9999 }),
+      makeDay(addDays(END, 1), { distance_m: 9999 }),
+    ];
+    expect(stepsStats(days, END, length)).toEqual({ average: 5500, days: 2, total: 11000, distance: 10000, distanceAverage: 10000 / 3 });
+  });
+});
