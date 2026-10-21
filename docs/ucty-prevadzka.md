@@ -26,7 +26,7 @@ Zastav nové služby, obnov predošlý webový deployment a predošlý tag image
 - Registrácia vytvorí čakajúci účet. Admin ho spáruje len s overenou identitou Open Wearables. Zariadenia sa stále pripájajú v Open Wearables.
 - Obnova hesla vytvorí žiadosť v inboxe. Admin odovzdá jednorazový odkaz súkromne; aplikácia neposiela e-maily. Nový odkaz nahradí starý.
 - Prezeranie iného účtu je len na čítanie. Zmenu profilu, roly alebo párovania rob cez admin panel po návrate na svoj účet.
-- Pozastavenie, zmena hesla a odhlásenie zo všetkých zariadení zneplatňujú relácie. Posledný aktívny admin musí zostať zachovaný.
+- Pozastavený účet sa s existujúcou reláciou nedostane k dátam. Zmena hesla a odhlásenie zo všetkých zariadení zneplatňujú aj predchádzajúce relácie. Posledný aktívny admin musí zostať zachovaný.
 - Lokálne príkazy `day`, `rescore`, `calibrate`, `check` a `entries import` predvolene vyberajú aktívny spárovaný účet majiteľa podľa `OWI_USER_ID`. Iný účet sa vyberá výslovne pomocou `--account <id účtu>`. Neznáma alebo neaktívna identita skončí chybou; nevytvorí sa prázdna pôvodná databáza. Kalibrácia vyžaduje aktuálny súhlas daného účtu.
 - Apple Health a Suunto sú pokryté syntetickými testami. Kontrola skutočných údajov ďalšieho človeka nasleduje až po jeho pripojení a na výslovný pokyn majiteľa so súhlasom dotknutého človeka.
 - Pri prenose na ďalší počítač prenes celé `data/`, lokálnu konfiguráciu a overenú zálohu. Samotný klon repozitára účty ani históriu neobsahuje.
