@@ -80,8 +80,9 @@ import androidx.compose.ui.unit.sp
 import sk.zdravie.app.model.AppSession
 import sk.zdravie.app.model.AppUiState
 import sk.zdravie.app.model.WorkoutSummary
+import sk.zdravie.app.BuildConfig
 
-private const val Web = "https://zdravie-rho.vercel.app"
+private val Web = BuildConfig.API_BASE_URL.trimEnd('/')
 private enum class AppTab(val title: String) { OVERVIEW("Prehľad"), HISTORY("História"), ACCOUNT("Účet") }
 
 /** Native screens consume only the current controller state. No credentials or health data are saved by UI. */
@@ -92,6 +93,8 @@ fun ZdravieApp(
     onLogout: () -> Unit,
     onRefresh: () -> Unit,
     onOpenWeb: (String) -> Unit,
+    onCheckForUpdates: (() -> Unit)? = null,
+    overlay: @Composable () -> Unit = {},
 ) {
     val session = state.session
     // A changed identity discards navigation, selected dates, and all other remembered UI state.
@@ -101,8 +104,9 @@ fun ZdravieApp(
             if (session == null) {
                 LoginScreen(state, onLogin, onRefresh, onOpenWeb)
             } else {
-                SignedInApp(state, session, localTheme, { localTheme = it }, onLogout, onRefresh, onOpenWeb)
+                SignedInApp(state, session, localTheme, { localTheme = it }, onLogout, onRefresh, onOpenWeb, onCheckForUpdates)
             }
+            overlay()
         }
     }
 }
@@ -209,6 +213,7 @@ private fun SignedInApp(
     onLogout: () -> Unit,
     onRefresh: () -> Unit,
     onOpenWeb: (String) -> Unit,
+    onCheckForUpdates: (() -> Unit)?,
 ) {
     var tab by remember { mutableStateOf(AppTab.OVERVIEW) }
     var metric by remember { mutableStateOf(HistoryMetric.STEPS) }
@@ -231,7 +236,7 @@ private fun SignedInApp(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
             when {
-                tab == AppTab.ACCOUNT -> AccountScreen(state, session, theme, onTheme, onLogout, onRefresh, onOpenWeb)
+                tab == AppTab.ACCOUNT -> AccountScreen(state, session, theme, onTheme, onLogout, onRefresh, onOpenWeb, onCheckForUpdates)
                 waiting -> WaitingScreen(state, session, onRefresh, onOpenWeb)
                 tab == AppTab.HISTORY -> HistoryScreen(state, metric, { metric = it }, onRefresh)
                 else -> OverviewScreen(state, session, onRefresh) { selected -> metric = selected; tab = AppTab.HISTORY }
@@ -325,6 +330,7 @@ private fun AccountScreen(
     onLogout: () -> Unit,
     onRefresh: () -> Unit,
     onOpenWeb: (String) -> Unit,
+    onCheckForUpdates: (() -> Unit)?,
 ) {
     var confirmLogout by remember { mutableStateOf(false) }
     val account = session.account
@@ -369,7 +375,14 @@ private fun AccountScreen(
                 Button(onClick = { confirmLogout = true }, modifier = Modifier.fillMaxWidth()) { Text("Odhlásiť sa") }
             }
         }
-        item { MutedText("Zdravie · natívna aplikácia pre Android", small = true) }
+        item {
+            Panel {
+                SectionTitle("Aplikácia")
+                ValueRow("Verzia", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+                if (onCheckForUpdates != null) OutlinedButton(onClick = onCheckForUpdates, modifier = Modifier.fillMaxWidth()) { Text("Skontrolovať aktualizácie") }
+                MutedText("Zdravie · natívna aplikácia pre Android", small = true)
+            }
+        }
     }
     if (confirmLogout) AlertDialog(
         onDismissRequest = { confirmLogout = false },

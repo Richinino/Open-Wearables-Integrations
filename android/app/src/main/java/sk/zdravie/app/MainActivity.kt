@@ -11,21 +11,37 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import sk.zdravie.app.ui.ZdravieApp
+import sk.zdravie.app.updates.UpdateUi
+import sk.zdravie.app.updates.UpdateViewModel
 
 class MainActivity:ComponentActivity() {
     private lateinit var model: ZdravieViewModel
+    private lateinit var updater: UpdateViewModel
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         model=ViewModelProvider(this)[ZdravieViewModel::class.java]
+        updater=ViewModelProvider(this)[UpdateViewModel::class.java]
         setContent {
             val state by model.state.collectAsStateWithLifecycle()
-            ZdravieApp(state,model::login,model::logout,model::refresh,::openWeb)
+            val updateState by updater.state.collectAsStateWithLifecycle()
+            ZdravieApp(state,model::login,model::logout,model::refresh,::openWeb,
+                onCheckForUpdates = { updater.check(manual = true) },
+                overlay = {
+                    UpdateUi(updateState, updater::download, updater::defer,
+                        { updater.install(this) }, updater::dismissError, updater::cancelDownload,
+                        { updater.check(manual = true) })
+                })
         }
     }
     override fun onStart() {
         super.onStart()
         if(model.state.value.hasLoaded) model.refresh()
+        updater.check()
+    }
+    override fun onResume() {
+        super.onResume()
+        updater.onResume(this)
     }
     private fun openWeb(value:String) {
         val base=Uri.parse(BuildConfig.API_BASE_URL)

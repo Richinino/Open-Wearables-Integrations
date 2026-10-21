@@ -1,0 +1,73 @@
+name: Android release
+
+on:
+  push:
+    branches: [claude/bold-brahmagupta-tvvwvt]
+    paths:
+      - android/app/src/main/**
+      - android/app/build.gradle.kts
+      - android/build.gradle.kts
+      - android/settings.gradle.kts
+      - android/gradle.properties
+      - android/gradle/**
+      - android/version.properties
+      - android/release-certificate.sha256
+      - android/RELEASE_NOTES.md
+      - scripts/android-release.py
+      - .github/workflows/android-release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/claude/bold-brahmagupta-tvvwvt'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Calculate increasing release version
+        id: version
+        run: python scripts/android-release.py version --run-number "$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+      - name: Verify release tooling
+        run: python -m unittest discover -s tests -p test_android_release.py
+      - name: Build and verify signed APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          RELEASE_CODE: ${{ steps.version.outputs.versionCode }}
+          RELEASE_NAME: ${{ steps.version.outputs.versionName }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_BASE64" && test -n "$ANDROID_KEYSTORE_PASSWORD" && test -n "$ANDROID_KEY_ALIAS" && test -n "$ANDROID_KEY_PASSWORD"
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/zdravie-signing.p12"
+          trap 'rm -f -- "$ANDROID_KEYSTORE_PATH"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          chmod 600 "$ANDROID_KEYSTORE_PATH"
+          bash android/gradlew -p android :app:testDebugUnitTest :app:lintDebug :app:assembleRelease --no-daemon \
+            -PandroidVersionCode="$RELEASE_CODE" -PandroidVersionName="$RELEASE_NAME" -PupdateRepository="$GITHUB_REPOSITORY"
+          python scripts/android-release.py package \
+            --apk android/app/build/outputs/apk/release/app-release.apk --output "$RUNNER_TEMP/android-dist" \
+            --repository "$GITHUB_REPOSITORY" --version-code "$RELEASE_CODE" --version-name "$RELEASE_NAME" \
+            --aapt "$ANDROID_HOME/build-tools/36.0.0/aapt" --apksigner "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/android-release.py publish --output "$RUNNER_TEMP/android-dist" --repository "$GITHUB_REPOSITORY" --commit "$GITHUB_SHA"

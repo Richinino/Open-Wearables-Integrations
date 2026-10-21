@@ -2,6 +2,8 @@
 
 Natívny klient v Kotline a Jetpack Compose. Prihlasuje sa existujúcim účtom Zdravie cez `https://zdravie-rho.vercel.app`; spoločné serverové tokeny a podpisové kľúče zostávajú na serveri.
 
+Na bežnú inštaláciu použi [najnovšie podpísané vydanie](https://github.com/Richinino/Open-Wearables-Integrations/releases/latest). Od verzie 0.1.1 appka ponúka nové verzie priamo v aplikácii: stiahnuť, odložiť a potvrdiť inštaláciu cez Android. Pôvodnú 0.1.0 treba raz aktualizovať týmto APK cez existujúcu appku, bez odinštalovania. Postup a automatické vydávanie sú v [príručke aktualizácií](../docs/mobile/android-releases.md).
+
 Prvá verzia obsahuje prihlásenie, stav čakajúceho účtu, prehľad meraní, graf histórie za 14/30 dní, detail dňa a tréningov, profil a odhlásenie. Podporuje svetlý/tmavý vzhľad a preferované skóre spánku. Správa profilu, registrácia a obnova hesla otvoria existujúci web v prehliadači.
 
 Zobrazuje dáta, ktoré už do servera posiela Open Wearables. Zber cez Health Connect, widgety, upozornenia a offline história v tejto verzii ešte nie sú zahrnuté. Namerané hodnoty majú prednosť; odhadované hodnoty a približná Readiness sú označené. Chýbajúci údaj sa nezobrazuje ako nula.
@@ -18,7 +20,9 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA/Android/Sdk"
 ./android/gradlew.bat -p android :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
 ```
 
-APK vznikne v `app/build/outputs/apk/debug/app-debug.apk`. Ide o vývojový balíček. Pred rozšírením ďalším ľuďom treba pripraviť vydanie s trvalým podpisovým kľúčom; heslá ani podpisové kľúče sa neukladajú do repozitára.
+APK vznikne v `app/build/outputs/apk/debug/app-debug.apk`. Ide o vývojový balíček s lokálnym debug podpisom. Verejné vydania zostavuje samostatný release workflow s trvalým podpisom; heslá ani súkromné podpisové kľúče sa neukladajú do repozitára. Vlastný debug/fork balíček môže aktualizovať iba APK podpísané rovnakým kľúčom.
+
+Vlastný server a repozitár aktualizácií nastavíš vlastnosťami Gradle `-PapiBaseUrl=https://tvoj-server.example -PupdateRepository=owner/repository`. Pri forku treba zodpovedajúce nastavenie použiť aj v release workflow.
 
 Testy obrazoviek a úložiska v emulátore:
 

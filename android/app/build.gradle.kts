@@ -1,7 +1,24 @@
+import java.util.Properties
+import java.net.URI
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+val appVersion = Properties().apply {
+    rootProject.file("version.properties").inputStream().use { load(it) }
+}
+val releaseVersionCode = providers.gradleProperty("androidVersionCode").orElse(appVersion.getProperty("versionCode")).get().toInt()
+val releaseVersionName = providers.gradleProperty("androidVersionName").orElse(appVersion.getProperty("versionName")).get()
+require(releaseVersionCode in 1..2_100_000_000)
+require(Regex("[0-9]+\\.[0-9]+\\.[0-9]+").matches(releaseVersionName))
+val updateRepository = providers.gradleProperty("updateRepository").orElse("Richinino/Open-Wearables-Integrations").get()
+require(Regex("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+").matches(updateRepository))
+val apiBaseUrl = providers.gradleProperty("apiBaseUrl").orElse("https://zdravie-rho.vercel.app/").get()
+val apiOrigin = URI(apiBaseUrl)
+require(apiOrigin.scheme == "https" && apiOrigin.host != null && apiOrigin.rawUserInfo == null &&
+    apiOrigin.rawQuery == null && apiOrigin.rawFragment == null && apiOrigin.port == -1 &&
+    apiOrigin.path in listOf("", "/")) { "apiBaseUrl must be a canonical HTTPS origin" }
 android {
     namespace = "sk.zdravie.app"
     compileSdk = 37
@@ -9,10 +26,26 @@ android {
         applicationId = "sk.zdravie.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = releaseVersionCode
+        versionName = releaseVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "API_BASE_URL", "\"https://zdravie-rho.vercel.app/\"")
+        buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl.trimEnd('/')}\"")
+        buildConfigField("String", "UPDATE_REPOSITORY", "\"$updateRepository\"")
+    }
+    signingConfigs {
+        create("release") {
+            providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull?.let { path ->
+                storeFile = file(path)
+                storePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").get()
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+        }
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }

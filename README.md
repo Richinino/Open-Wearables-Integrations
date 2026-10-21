@@ -1,152 +1,189 @@
-# Open Wearables – vlastná inštancia
+<p align="right"><strong>English</strong> · <a href="README.sk.md">Slovenčina</a></p>
 
-Prevádzka po úpravách z 19. 10. 2026: [spúšťanie, záloha, nasadenie a presun na iný PC](docs/prevadzka.md).
-Používateľské účty: [prihlásenie, administrácia a bezpečný prechod existujúcich dát](docs/ucty-prevadzka.md).
-Aktuálne opravy a otvorené body sú v [aktualizovanom audite](docs/audit-2026-10-19.md).
+# Zdravie
 
-Moja inštancia [Open Wearables](https://github.com/the-momentum/open-wearables): dáta zo Samsung Health (telefón a hodinky) sa zbierajú v Dockeri a Claude sa k nim dostane cez MCP.
+**Wearable data, understandable trends, and calculations you can inspect.**
 
-| Časť | Kde | Stav |
+Zdravie is an open-source project combining a self-hosted processing service, a web dashboard, and a native Android app. It builds on [Open Wearables](https://github.com/the-momentum/open-wearables) to turn collected measurements into daily activity, sleep, recovery, and training views.
+
+This repository contains all three Zdravie components. Open Wearables and its data-collection client are separate projects.
+
+[How it works](#how-it-works) · [Android](#android-app) · [Self-hosting](#run-your-own-instance) · [Development](#development) · [Documentation](#documentation) · [MIT license](LICENSE)
+
+## What you can do
+
+- See daily measurements, sleep, workouts, and longer-term trends on the web.
+- Use native Android screens for your overview, 14/30-day history, and day/workout details.
+- Inspect documented score formulas and distinguish measurements from estimates marked `≈`.
+- Calibrate estimates against Samsung Health reference values, with separate data and settings for each paired account.
+- Operate the raw-data backend and processing on your own infrastructure, while choosing where to host the web service.
+
+**Current stage:** an early, working project. Samsung Health is the primary real-data integration used so far. Apple Health and Suunto handling is covered by synthetic tests; real-device validation is still pending. The web and Android interface are currently in Slovak. The README is available in English and Slovak.
+
+## How it works
+
+```mermaid
+flowchart LR
+    Phone["Health sources / collection client"] --> OW["Open Wearables backend"]
+    OW --> Compute["owi sync: metrics, scores, calibration"]
+    Compute --> Store["Per-user results"]
+    Store --> API["owi serve"]
+    API --> Web["Next.js server: sessions and API"]
+    Web --> Browser["Web dashboard"]
+    Web --> Android["Native Android app"]
+```
+
+| Component | Responsibility | Source |
 |---|---|---|
-| Backend (API, Postgres, Redis, Celery, admin portál) | Docker na notebooku, neskôr na domácom PC | beží lokálne, presun na PC sa pripravuje |
-| Spojenie telefón → backend | Tailscale Funnel (stála HTTPS adresa) | beží |
-| MCP pre Claude | lokálne, volá API backendu | beží |
-| Denné metriky (`owi`) | toto repo | beží |
-| API pre web (`owi serve`): čítanie a zápisy zo Samsungu | toto repo, Docker | beží |
-| Web so súhrnmi | `web/`, Vercel | nasadený, s prihlásením |
+| Open Wearables | Collect and store source measurements; connect devices and providers | [Upstream project](https://github.com/the-momentum/open-wearables) |
+| `owi` | Group data into local days, handle overlapping sources, compute metrics/scores, and calibrate estimates | [`src/owi/`](src/owi/) |
+| Python HTTP API | Serve account-specific results; handle accounts and reference entries using separate server credentials | [`src/owi/serve.py`](src/owi/serve.py) |
+| Next.js web | Authenticate sessions, request authorized data, and render the web dashboard | [`web/`](web/) |
+| Native Android | Sign in, fetch authorized results, and display native screens and charts | [`android/`](android/) |
 
-Tajomstvá (API kľúče, heslá, `.env`) ani zdravotné dáta do tohto repa nepatria. Priečinok `data/` je v `.gitignore`.
+The **server performs the health-data calculations**. Android formats and visualizes the results, manages its local session, and handles navigation; it does not retrain scores or run the processing pipeline. The current Zdravie Android app does **not** collect Health Connect data itself. Collection continues through the existing Open Wearables client.
 
-## owi – denné metriky
+A formula change reaches web and Android users after deploying the processing service and recomputing the relevant results. A native-screen change requires a new signed APK. Web deployment, backend deployment, and Android installation are separate steps.
 
-Open Wearables zbiera surové dáta, ale jeho denné súhrny pre dáta zo Samsungu nesedia: dni delí podľa UTC, kroky berie z krokomera telefónu a aktívny čas ani kalórie nepozná. `owi` číta surové dáta cez API a pre každý deň podľa lokálneho času vypočíta:
+## Android app
 
-| Údaj | Ako | Presnosť |
-|---|---|---|
-| Kroky | denný súčet zo Samsung Health; inak hodinové dáta zo Samsungu; inak krokomer telefónu | presné, keď súčet v dátach je |
-| Tep | pokojový, priemer, maximum, minúty v zónach | presné |
-| Tréningy | čas, typ, tep, zóny, vzdialenosť ak je, odhad kalórií | tep presný, kalórie odhad |
-| Spánok | hlavný spánok dňa bez duplicít medzi zdrojmi | presné |
-| Vzdialenosť | meranie zariadenia; inak kroky × dĺžka kroku | meraná alebo odhad |
-| Aktívny čas | minúty s tepom nad prahom a minúty tréningov | odhad |
-| Kalórie | údaj zariadenia; inak z rezervy tepu, váhy a VO2max; spolu = bazál + aktivita | merané alebo odhad |
+The Kotlin/Jetpack Compose app supports **Android 8.0 / API 26 and later**. It includes sign-in, pending-account status, overview, history charts, day/workout details, light/dark themes, and sign-out. Registration, password recovery, and profile management open the web service in a browser.
 
-Odhady majú v databáze stĺpce s príponou `_est`. Keď zdroj pošle priamo hodnotu, má pri zobrazení prednosť. Podpora Apple Health a Suunto je overená syntetickými testami; kontrola na skutočných údajoch nasleduje po pripojení zariadení.
+Use the same Zdravie account as on the web. An administrator pairs new accounts with an Open Wearables identity before their data becomes available. There is no shared dashboard password.
 
-Návrh je v [`docs/superpowers/specs/2026-10-13-denne-metriky-design.md`](docs/superpowers/specs/2026-10-13-denne-metriky-design.md).
+### Install and update
 
-### Spustenie
+Get the [latest Android release](https://github.com/Richinino/Open-Wearables-Integrations/releases/latest) from GitHub, without Google Play. Starting with **v0.1.1**, the app checks for a newer release and offers to download it or postpone the prompt. After the download is verified, choose **Inštalovať** and confirm Android's installation dialog. The first time, Android may ask you to allow installations from Zdravie. Routine updates install over the existing app without uninstalling it.
 
-Potrebuješ [`uv`](https://docs.astral.sh/uv/) a bežiaci Open Wearables.
+If you have the original **v0.1.0 debug APK**, install the updater-enabled APK over it once. That older build cannot discover updates itself. The package and signing certificate must match for an in-place update.
 
-```bash
-cp .env.example .env        # doplň OWI_API_KEY
-uv sync
-uv run owi sync             # prepočíta posledné 3 dni
-uv run owi sync --from 2026-07-01 --to 2026-07-31
-uv run owi day 2026-07-15 --json
-```
+CI builds and versions new releases automatically when Android sources change on the configured production branch. See the [release and update guide](docs/mobile/android-releases.md) for assets, verification, signing, and publishing. For local builds and session-storage details, use the [Android guide](android/README.md). A self-hosted fork must configure its Android build to use its own HTTPS API origin and release repository.
 
-V pôvodnom režime sú výsledky v `data/owi.db` (SQLite). Po zavedení účtov má každý spárovaný používateľ vlastné `data/users/<ow_user_id>/owi.db`; tabuľky `daily` a `workouts` ostávajú rovnaké. Účty sú v `data/accounts/accounts.db`, Samsung zápisy v `data/zapisy/<ow_user_id>/zapisy.db`. Postup prechodu je v [prevádzke účtov](docs/ucty-prevadzka.md).
+Not included yet: Health Connect collection in Zdravie, offline history, widgets, and notifications.
 
-### Skóre
+## Measurements, estimates, and missing data
 
-Z uložených dní `owi` počíta aj skóre: Readiness (odhad inšpirovaný Oura, voliteľne s HRV pri dostatočnej histórii rovnakého typu), Sleep Performance a potrebu spánku (WHOOP), Sleep Score (Apple), pravidelnosť spánku (SRI), Activity (Oura), strain dňa a tréningov (WHOOP, 0–21), stav záťaže (Polar), NightSignal, skóre dňa, VO2max a WHOOP Age. Vzorce sú v [`docs/skore.md`](docs/skore.md), návrh v [`docs/superpowers/specs/2026-10-14-skore-design.md`](docs/superpowers/specs/2026-10-14-skore-design.md).
-
-Vzorce potrebujú v `.env` vek a pohlavie (`OWI_AGE`, `OWI_SEX` = `male` alebo `female`).
-
-```bash
-uv run owi sync             # uloží dni, ich znaky a prepočíta skóre od prvého zmeneného dňa
-uv run owi rescore          # prepočíta len skóre z uložených znakov, nič nesťahuje
-uv run owi rescore --from 2026-10-01 --to 2026-10-14
-```
-
-| Tabuľka | Obsah |
+| Data | Handling |
 |---|---|
-| `day_features` | znaky dňa (`DayFeatures`) ako JSON: tep v spánku, záťaž, MET, spánok s fázami |
-| `day_scores` | skóre dňa (`DayScores`) ako JSON s ich zložkami a poznámkou, prečo hodnota chýba |
+| Steps | Prefer the source's daily count; otherwise use available hourly/phone data |
+| Heart rate and sleep | Derive daily views from measurements; select sleep without double-counting overlapping sources |
+| Distance and calories | Prefer source measurements where available; otherwise use an identified estimate |
+| Active time | Estimate from workouts and heart-rate thresholds |
+| Recovery, sleep, activity, and training scores | Compute on the server from documented inputs, history requirements, and approximations |
 
-Kým nie je dosť histórie, skóre je `null` s poznámkou (napr. Readiness po 14 nociach, stav záťaže po 28 dňoch). Dni s menej ako 1 000 minútami tepu sa nerátajú do základov a ukončený taký deň nemá strain ani Activity.
+Missing data stays missing instead of becoming zero. Some scores need sufficient personal history and remain unavailable until that requirement is met. Reference entries can tune selected estimates and Samsung-inspired score models; they do not make those models identical to a manufacturer's proprietary algorithm.
 
-### Dolaďovanie odhadov
+The [score reference](docs/skore.md) records formulas, sources, assumptions, and confidence limits. These are experimental wellness metrics, not clinically validated measurements. The project is independent of Samsung, WHOOP, Oura, Apple, Polar, and other manufacturers mentioned in the references.
 
-Čísla zo Samsung Health (kroky, vzdialenosť, aktívny čas, aktívne kalórie, kalórie spolu, Sleep Score, Energy Score) sa zapisujú na webe na stránke Zápis, kedykoľvek a za viac dní naraz. `owi serve` ich uloží do `data/zapisy/zapisy.db` (priečinok vytvorí `owi sync` aj `owi serve`, ak chýba).
+## Run your own instance
 
-`owi sync` potom sám doladí dĺžku kroku, prah tepu pre aktívnu minútu, koeficient kalórií a náhradný bazál: po každom uložení či zmazaní zápisu, inak raz denne. Novšie dni vážia viac, pri málo dňoch ostávajú hodnoty blízko predvolených a nová hodnota sa prijme, len ak na najnovších dňoch netrafí horšie. Pri zmene parametrov prepočíta všetky uložené dni, najviac raz za 24 h. Zo Sleep Score a Energy Score sa učí váhy dvoch nových odhadov; ukážu sa od 10 zápisov daného skóre. Postup je v [`docs/skore.md`](docs/skore.md) §7, návrh v [`docs/superpowers/specs/2026-10-16-zapisy-a-doladovanie-design.md`](docs/superpowers/specs/2026-10-16-zapisy-a-doladovanie-design.md).
+This is a multi-service setup. A clone contains application source, **not accounts, credentials, collected health data, or a configured Open Wearables installation**.
 
-```bash
-uv run owi entries import   # jednorazovo prenesie starý data/truth.csv do zápisov
-uv run owi calibrate        # doladí hneď a prepočíta uložené dni
-uv run owi check            # porovná odhady so zápismi
-```
+1. Set up [Open Wearables](https://github.com/the-momentum/open-wearables) and a compatible collection/provider connection.
+2. Configure processing using [`.env.example`](.env.example): API connection, timezone, required profile values, and separate read/write tokens.
+3. Start `owi`, complete the account/bootstrap procedure, and verify the local API.
+4. Configure Next.js using [`web/.env.example`](web/.env.example), then connect the Android build to that HTTPS origin.
 
-| Súbor alebo tabuľka | Obsah |
-|---|---|
-| `data/params.json` | parametre odhadov a maximálny tep |
-| `data/score_weights.json` | váhy odhadov Samsung Sleep Score a Energy Score |
-| `params_history` v `owi.db` | každé doladenie: čas, počet zápisov, hodnoty, odchýlky od Samsungu |
-| `recompute_state` v `owi.db` | s akými parametrami boli dni naposledy prepočítané a kedy |
+Start with the [accounts and migration guide](docs/ucty-prevadzka.md), then the [operations guide](docs/prevadzka.md). These detailed guides are currently in Slovak. The operations notes describe the existing Windows/Docker/Tailscale deployment; some older single-user notes are historical, so use the accounts guide for current authentication and data layout.
 
-### API pre web
-
-Web si výsledky číta a zápisy posiela cez `owi serve`. Výsledky (`owi.db`) server len číta, s tokenom z `OWI_SERVE_TOKEN`. Zápisy prijíma s druhým tokenom `OWI_WRITE_TOKEN`; čítací token zapisovať nemôže a zapisovací nečíta. Oba majú aspoň 32 znakov a sú v `.env`; bez `OWI_WRITE_TOKEN` je API len na čítanie a zápis vráti 503.
+For a configured development environment with Python 3.12+ and [`uv`](https://docs.astral.sh/uv/):
 
 ```bash
-uv run owi serve            # http://127.0.0.1:8787
-curl -H "Authorization: Bearer $OWI_SERVE_TOKEN" "http://127.0.0.1:8787/v1/days?from=2026-07-01&to=2026-07-31"
+cp .env.example .env
+# Fill in your own local configuration before continuing.
+uv sync --locked
+uv run owi sync
+uv run owi serve
 ```
 
-| Cesta | Čo robí |
-|---|---|
-| `GET /health` | `{"status": "ok"}`, bez tokenu |
-| `GET /v1/days` | posledných najviac 400 dní aj s tréningmi |
-| `GET /v1/days?from=…&to=…` | dni v rozsahu vrátane okrajov |
-| `PUT /v1/entries/{deň}` | uloží zápis dňa (JSON so siedmimi poľami, chýbajúce = `null`); všetky `null` zápis zmažú |
-
-Každý deň má navyše `scores` (skóre dňa, `null` kým nie je spočítané, vrátane odhadov `samsung_sleep` a `energy_score`), `sleep_timeline` (fázy hlavného spánku a zdriemnutí, `[]` bez spánku) a `samsung` (zápis dňa alebo `null`); každý tréning má `strain` (0–21 alebo `null`). Na najvyššej úrovni je `calibration`: kedy a podľa koľkých zápisov sa dolaďovalo, aktuálne a predvolené parametre a odchýlky od Samsungu. Zápis prijme deň od prvého uloženého po dnešok; zlé hodnoty vrátia 400 s krátkymi správami po slovensky pri poliach. Typy sú v [`web/src/lib/types.ts`](web/src/lib/types.ts).
-
-Presný tvar odpovedí je v [`docs/superpowers/specs/2026-10-13-web-design.md`](docs/superpowers/specs/2026-10-13-web-design.md) a [`docs/superpowers/specs/2026-10-16-zapisy-a-doladovanie-design.md`](docs/superpowers/specs/2026-10-16-zapisy-a-doladovanie-design.md).
-
-### Docker
-
-Dva kontajnery z jedného image: `owi` prepočítava posledných 14 dní každých 10 minút (telefón niekedy pošle dáta až o pár dní) a dolaďuje odhady, `api` sprístupňuje výsledky na `127.0.0.1:8787` a prijíma zápisy. Kontajner `api` má `data/` pripojené len na čítanie, navyše `data/zapisy/` na zápis, a nedostane kľúč k Open Wearables. Zápisy (SQLite) zdieľajú oba kontajnery cez priečinok z Windows, preto majú obyčajný žurnál (nie WAL) a pri zamknutí sa krátko opakujú.
+The API binds to `127.0.0.1:8787` by default. Docker runs periodic computation and the API as separate services:
 
 ```bash
 docker compose --env-file .env -f docker/compose.yml up -d --build
-docker compose --env-file .env -f docker/compose.yml logs --tail 20
 ```
 
-Predvolene sa `owi` pripája na sieť `open-wearables_default` a adresu `http://app:8000`. Iné hodnoty nastav v `.env` ako `OW_NETWORK` a `OWI_DOCKER_API_URL`, port API ako `OWI_SERVE_PORT`.
+Compose expects an existing Open Wearables Docker network, by default `open-wearables_default`. Network name and upstream API URL are configurable. HTTPS publication through Tailscale Funnel is part of the reference deployment, not a requirement for the calculation engine.
 
-Na internet sa API dostane cez Tailscale Funnel pod cestou `/owi` (v PowerShelli; Git Bash cestu `/owi` prepíše):
-
-```powershell
-tailscale funnel --bg --set-path /owi 8787
-```
-
-### Vývoj
+Useful processing commands:
 
 ```bash
-uv run pytest
-uv run ruff check . && uv run ruff format --check .
+uv run owi sync --from 2026-10-01 --to 2026-10-14
+uv run owi day 2026-10-14 --json
+uv run owi rescore          # Recompute scores from stored features; no raw-data download.
+uv run owi calibrate        # Fit estimates against available reference entries.
+uv run owi check            # Compare estimates with reference entries.
 ```
 
-Testy bežia na umelých dátach z `tests/factories.py`.
+In account mode, commands select the configured owner's active paired account by default. Use `--account <account-id>` to select another account explicitly. Existing installations need the documented migration before enabling account mode.
 
-## Web
+## Data and accounts
 
-Stránka v [`web/`](web/) (Next.js) ukazuje výsledky `owi`: dnešok, posledné obdobie, spánok, tréningy a detail dňa. Dáta ostávajú doma; web si ich pri každom načítaní číta cez `owi serve` a otvorená stránka sa obnovuje každú minútu.
+Raw measurements remain in the configured Open Wearables backend. This service keeps computed history in `data/users/<ow_user_id>/`, account records in `data/accounts/`, and reference entries in `data/zapisy/<ow_user_id>/`. The web server and phone receive the authorized results, so their hosting and access are also part of your deployment.
 
-- Prihlásenie jedným heslom (`SITE_PASSWORD`). Bez prihlásenia sa nezobrazí stránka ani `/api/*`.
-- Token k dátam (`OWI_API_TOKEN`) pozná len server na Verceli, do prehliadača sa nedostane; rovnako zapisovací `OWI_WRITE_TOKEN`, cez ktorý stránka Zápis posiela čísla zo Samsung Health.
-- Odhady sú označené znakom ≈.
-- Bez `OWI_API_URL` beží lokálny vývoj na umelých dátach.
+Shared backend tokens stay on servers. Android does not save the password or health history to disk; an optionally remembered session is encrypted using Android Keystore and excluded from backups. Sign-out clears the session and loaded data. Account status and session versions are checked on the server.
+
+Keep `.env` files, databases, keys, health records, and backup archives out of Git. The repository ignores local data and secrets. A source checkout is not a backup of an installation; use the documented [backup and restore procedure](docs/prevadzka.md).
+
+## Development
+
+| Directory | Contents |
+|---|---|
+| [`src/owi/`](src/owi/) | Python processing, persistence, accounts, CLI, and HTTP API |
+| [`tests/`](tests/) | Python regression tests and synthetic data factories |
+| [`web/`](web/) | Next.js dashboard and server routes |
+| [`android/`](android/) | Kotlin/Compose app, Gradle build, and Android tests |
+| [`docker/`](docker/) | Processing/API images and Compose configuration |
+| [`scripts/`](scripts/) | Deployment, backup, and Funnel diagnostics |
+| [`docs/`](docs/) | Score references, operations, contracts, and design history |
+
+Python:
+
+```bash
+uv sync --locked
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest -q
+```
+
+Web, using Node.js 24:
 
 ```bash
 cd web
-npm install
+npm ci
+# Configure .env.local from .env.example; account login requires the backend.
 npm run dev -- -p 3100
-npm test
 ```
 
-Premenné prostredia sú v [`web/.env.example`](web/.env.example), návrh v [`docs/superpowers/specs/2026-10-13-web-design.md`](docs/superpowers/specs/2026-10-13-web-design.md).
+For web checks, run `npm run lint`, `npm test`, `npx next typegen`, `npx tsc --noEmit`, and `npm run build` from `web/`. Synthetic data helpers are for non-production development and do not bypass account authentication.
+
+Android, using JDK 21 and the Android SDK:
+
+```bash
+bash android/gradlew -p android :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+```
+
+On Windows, use `android/gradlew.bat` instead of `bash android/gradlew`. Emulator/device checks use `:app:connectedDebugAndroidTest`; see the [Android guide](android/README.md). CI runs Python, web, Android build/unit/lint, and Windows watchdog checks. Tests use synthetic fixtures; passing them does not imply validation on every supported physical device.
+
+For contributions, describe the behavior being changed, include a reproducible case using synthetic data, and run the relevant checks. Keep measured/estimated provenance and account isolation intact. Never attach real health records, passwords, or session tokens to public issues.
+
+## Documentation
+
+The README is bilingual; most detailed references currently remain in Slovak.
+
+| Guide | Contents |
+|---|---|
+| [Android](android/README.md) | Build, scope, local storage, and device checks |
+| [Android releases](docs/mobile/android-releases.md) | APK distribution, signing, update checks, and publishing |
+| [Android verification](docs/mobile/android-v1-verification.md) | Dated v0.1.0 test evidence and remaining limits |
+| [Mobile API contract](docs/mobile/android-v1-contract.md) | Authentication, identity checks, and client/server interface |
+| [Accounts](docs/ucty-prevadzka.md) | Bootstrap, pairing, migration, password recovery, and administration |
+| [Score reference](docs/skore.md) | Formulas, supporting sources, and approximations |
+| [Operations](docs/prevadzka.md) | Deployment, backups, recovery, and moving to another host |
+| [Processing overview](docs/ako-to-funguje.md) | Background on data selection and the original deployment |
+| [Audit](docs/audit-2026-10-19.md) | Dated findings and follow-up history |
+
+## Credits and licensing
+
+Zdravie uses [Open Wearables](https://github.com/the-momentum/open-wearables) as its collection/storage foundation. Upstream projects and third-party dependencies retain their own licenses and attribution requirements.
+
+Zdravie is available under the [MIT license](LICENSE).
