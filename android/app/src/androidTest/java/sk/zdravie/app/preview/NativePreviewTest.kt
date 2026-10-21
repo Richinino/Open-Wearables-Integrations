@@ -1,8 +1,11 @@
 package sk.zdravie.app.preview
 
 import android.graphics.Bitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -39,7 +42,8 @@ class NativePreviewTest {
     private fun save(name:String) {
         compose.waitForIdle()
         val instrumentation=InstrumentationRegistry.getInstrumentation()
-        val bitmap=requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+        // Capture the app surface, excluding emulator launcher/system error dialogs.
+        val bitmap=compose.onRoot().captureToImage().asAndroidBitmap()
         val target=File(instrumentation.targetContext.filesDir,name)
         target.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) }
         bitmap.recycle()

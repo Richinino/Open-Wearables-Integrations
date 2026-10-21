@@ -12,6 +12,8 @@
 
 Plná sada v emulátore prešla pred posledným doplnením deklaratívnych pravidiel záloh. Následné zostavenie, JVM testy a lint overili aj finálny manifest a XML pravidlá.
 
+Po finálnom zostavení prešli aj oba testy ukážok prehľadu a histórie. Ukážky zachytávajú priamo Compose plochu aplikácie a obsahujú výhradne syntetické údaje. GitHub potvrdil Android, Python a watchdog joby; webový job bol doplnený o `next typegen` pred TypeScript kontrolou, aby mal aj čistý checkout vygenerovaný typ `PageProps`.
+
 ## Limity a ďalší krok
 
 APK je vývojová verzia podpísaná lokálnym Android debug kľúčom. Pre bežné vydávanie a stabilné aktualizácie treba samostatný trvalý podpisový kľúč. Kľúče nie sú súčasťou Git repozitára. Balíček a jeho SHA-256 sa lokálne ukladajú do ignorovaného `artifacts/android/`.
