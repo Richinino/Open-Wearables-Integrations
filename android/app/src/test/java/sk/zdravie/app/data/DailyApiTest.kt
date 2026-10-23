@@ -123,6 +123,27 @@ class DailyApiTest {
         assertEquals(2, server.requestCount)
     }
 
+    @Test fun unsupportedIsForgottenByLogoutAndLogin() {
+        server.enqueue(MockResponse().setResponseCode(404))
+        assertEquals(DailyResult.Unsupported, api.insights(credential, session, day))
+        assertEquals(DailyResult.Unsupported, api.insights(credential, session, day))
+        assertEquals(1, server.requestCount)
+        server.enqueue(MockResponse().setResponseCode(204))
+        api.logout(credential)
+        server.enqueue(ok(insights()))
+        assertTrue(api.insights(credential, session, day) is DailyResult.Ok)
+        server.enqueue(MockResponse().setResponseCode(404))
+        assertEquals(DailyResult.Unsupported, api.journal(credential, session, day))
+        server.enqueue(json(DataFixtures.sessionJson(session.account.id, session.expiresAt, session.persistent,
+            session.identity.sessionVersion)).addHeader("Set-Cookie", credential.cookie + "; Path=/; Secure; HttpOnly"))
+        api.login("a@example.test", "synthetic", false)
+        server.enqueue(ok(journal(null, 0)))
+        assertTrue(api.journal(credential, session, day) is DailyResult.Ok)
+        assertEquals(6, server.requestCount)
+    }
+
+    private fun json(body: JSONObject) = MockResponse().setHeader("Content-Type", "application/json").setBody(body.toString())
+
     @Test fun insights503IsUnavailableAndNotCached() {
         server.enqueue(MockResponse().setResponseCode(503).setBody("{\"error\":\"unavailable\"}"))
         assertEquals(DailyResult.Unavailable, api.insights(credential, session, day))

@@ -40,6 +40,7 @@ class ZdravieApi(
     }
 
     override fun login(email: String, password: String, remember: Boolean): LoginResult = usable {
+        forgetUnsupported()
         val json = JSONObject().put("email", email.trim()).put("password", password).put("remember", remember)
         val result = call("api/mobile/login", body = json)
         val session = Payloads.session(result.json)
@@ -65,6 +66,7 @@ class ZdravieApi(
     }
 
     override fun logout(credential: SessionCredential) {
+        forgetUnsupported()
         validCredential(credential)
         call("api/mobile/logout", credential, JSONObject(), expectedStatus = 204)
     }
@@ -144,6 +146,8 @@ class ZdravieApi(
     private val unsupported = mutableSetOf<String>()
     private var unsupportedFor: AccountIdentity? = null
 
+    /** The cache lives for one login session, so a later deployment is noticed after logging in again. */
+    @Synchronized private fun forgetUnsupported() { unsupported.clear(); unsupportedFor = null }
     @Synchronized private fun isUnsupported(identity: AccountIdentity, family: String): Boolean {
         if (unsupportedFor != identity) { unsupported.clear(); unsupportedFor = identity }
         return family in unsupported
