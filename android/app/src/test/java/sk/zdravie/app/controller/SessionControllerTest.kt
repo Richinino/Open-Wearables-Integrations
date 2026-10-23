@@ -45,7 +45,8 @@ class SessionControllerTest {
             dataCalls++
             error?.let { throw it }
             duringData?.also { duringData=null }?.invoke()
-            return DatasetResult(listOf(day(if(session.account.id=="a") 100 else 900)),"2026-10-20T10:00:00Z")
+            return DatasetResult(listOf(day(if(session.account.id=="a") 100 else 900)),"2026-10-20T10:00:00Z",
+                Dataset("Europe/Bratislava", null, null, null, null, null, emptyList()))
         }
         override fun logout(credential:SessionCredential) { logoutCookies.add(credential.cookie) }
     }

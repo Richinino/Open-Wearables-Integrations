@@ -14,4 +14,4 @@ data class WorkoutSummary(val id: String, val type: String, val start: String, v
     val distanceMeters: Double?, val averageHr: Double?)
 data class AppUiState(val loading: Boolean = false, val session: AppSession? = null,
     val days: List<DaySummary> = emptyList(), val syncedAt: String? = null, val error: String? = null,
-    val refreshing: Boolean = false, val hasLoaded: Boolean = false)
+    val refreshing: Boolean = false, val hasLoaded: Boolean = false, val dataset: Dataset? = null)

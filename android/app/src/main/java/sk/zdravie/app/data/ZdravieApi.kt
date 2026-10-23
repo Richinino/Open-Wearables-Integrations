@@ -19,7 +19,7 @@ import javax.net.ssl.SSLException
 
 class ApiFailure(val status: Int, override val message: String) : Exception(message)
 data class LoginResult(val session: AppSession, val credential: SessionCredential)
-data class DatasetResult(val days: List<DaySummary>, val syncedAt: String?)
+data class DatasetResult(val days: List<DaySummary>, val syncedAt: String?, val dataset: Dataset)
 
 class ZdravieApi(
     private val base: HttpUrl = BuildConfig.API_BASE_URL.toHttpUrl(),
@@ -70,7 +70,8 @@ class ZdravieApi(
     override fun data(credential: SessionCredential, session: AppSession): DatasetResult = usable {
         sameSession(validCredential(credential), session)
         val result = call("api/data", credential, identity = session.identity)
-        DatasetResult(Payloads.days(result.json, session.account.sleepScore), Payloads.syncedAt(result.json))
+        DatasetResult(Payloads.days(result.json, session.account.sleepScore), Payloads.syncedAt(result.json),
+            DatasetParser.dataset(result.json))
     }
 
     private fun validCredential(credential: SessionCredential): SessionCookies.Claims = try {

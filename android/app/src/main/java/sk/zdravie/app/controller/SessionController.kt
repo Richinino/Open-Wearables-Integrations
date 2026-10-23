@@ -72,7 +72,7 @@ class SessionController(private val api: MobileApi, private val store: Credentia
             return
         }
         val result = withContext(io) { api.data(saved, session) }
-        if (ticket == revision) mutableState.value = AppUiState(session = session, days = result.days, syncedAt = result.syncedAt, hasLoaded = true)
+        if (ticket == revision) mutableState.value = AppUiState(session = session, days = result.days, syncedAt = result.syncedAt, hasLoaded = true, dataset = result.dataset)
     }
     fun logout() {
         ++revision

@@ -88,7 +88,9 @@ class ZdravieApiTest {
         assertEquals(credential.cookie, check.getHeader("Cookie"))
 
         server.enqueue(dataResponse())
-        assertEquals(5200L, api.data(result.credential, result.session).days.single().steps)
+        val loaded = api.data(result.credential, result.session)
+        assertEquals(5200L, loaded.days.single().steps)
+        assertEquals(5200.0, loaded.dataset.days.single().steps!!, 0.0)
         val data = server.takeRequest()
         assertEquals("/api/data", data.path)
         assertEquals(credential.cookie, data.getHeader("Cookie"))
