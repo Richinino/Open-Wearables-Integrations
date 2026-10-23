@@ -1,7 +1,11 @@
 package sk.zdravie.app.logic
 
 import java.time.Instant
+import sk.zdravie.app.model.CardioLoad
 import sk.zdravie.app.model.Day
+import sk.zdravie.app.model.DayScores
+import sk.zdravie.app.model.NightSignal
+import sk.zdravie.app.model.Score
 import sk.zdravie.app.model.Selected
 import sk.zdravie.app.model.ValueSource
 import sk.zdravie.app.model.Workout
@@ -34,4 +38,17 @@ object LogicFixtures {
     )
 
     fun selected(value: Double?, source: ValueSource?) = Selected(value, source)
+
+    fun makeScore(value: Double?, components: Map<String, Double?> = emptyMap(), note: String? = null): Score =
+        Score(value, components, note)
+
+    fun makeScores(day: String, change: (DayScores) -> DayScores = { it }): DayScores = change(
+        DayScores(
+            day = day, strain = null, cardioLoad = CardioLoad(null, null, null, null), sleepNeedMinutes = null,
+            sleepPerformance = makeScore(null), appleSleep = makeScore(null), sleepRegularity = null,
+            readiness = makeScore(null), activity = makeScore(null),
+            nightSignal = NightSignal(null, null, null, null), dayScore = null, vo2max = null,
+            vo2maxUth = null, whoopAge = makeScore(null), samsungSleep = null, energyScore = null,
+        ),
+    )
 }
