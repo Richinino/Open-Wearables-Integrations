@@ -25,7 +25,7 @@ import sk.zdravie.app.ui.theme.LocalZTokens
 import sk.zdravie.app.ui.theme.ZType
 import sk.zdravie.app.ui.theme.panelColor
 
-/** Joined segmented control (e.g. Ráno / Večer). Option 40 dp in a 46 dp container, ink fill with bg text when selected; [filled] false = transparent container. */
+/** Joined segmented control (e.g. Ráno / Večer). Visual pill 40 dp, hit area 48 dp (container 48 dp), ink fill with bg text when selected; [filled] false = transparent container. */
 @Composable
 fun Segmented(
     options: List<String>,
@@ -42,7 +42,7 @@ fun Segmented(
             .clip(shape)
             .background(if (filled) panelColor(t) else Color.Transparent, shape)
             .border(BorderStroke(1.dp, t.line), shape)
-            .padding(3.dp),
+            .padding(horizontal = 3.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         options.forEachIndexed { i, label ->
@@ -50,14 +50,21 @@ fun Segmented(
             Box(
                 Modifier
                     .weight(1f)
-                    .height(40.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(if (on) t.ink else Color.Transparent)
+                    .height(48.dp)
                     .clickable(role = Role.Tab) { onSelect(i) }
                     .semantics { this.selected = on },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, style = ZType.label, color = if (on) t.bg else t.ink2)
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(40.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(if (on) t.ink else Color.Transparent),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(label, style = ZType.label, color = if (on) t.bg else t.ink2)
+                }
             }
         }
     }

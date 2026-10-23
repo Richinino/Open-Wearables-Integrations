@@ -3,6 +3,7 @@ package sk.zdravie.app.ui
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Text
 import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -72,6 +73,8 @@ class ComponentsTest {
             }
         }
         rule.onNodeWithText("Ráno").assertIsSelected()
+        rule.onNodeWithText("Večer").assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithText("Ráno").assertHeightIsAtLeast(48.dp)
         rule.onNodeWithText("Večer").performClick()
         rule.onNodeWithText("Večer").assertIsSelected()
         rule.onNodeWithText("30 dní").performClick()

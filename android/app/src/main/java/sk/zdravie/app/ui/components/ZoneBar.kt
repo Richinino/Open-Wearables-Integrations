@@ -9,7 +9,6 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipPath
-import sk.zdravie.app.ui.theme.mixOklab
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.semantics.contentDescription
@@ -17,6 +16,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import sk.zdravie.app.ui.theme.LocalZTokens
+import sk.zdravie.app.ui.theme.mixOklab
 
 /** Light / moderate / vigorous minutes (accent 38 % / 68 % / 100 %); [height] 8 dp on day tiles, 6 dp for workout rows. */
 @Composable
