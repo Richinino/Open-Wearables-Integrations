@@ -20,7 +20,7 @@ import sk.zdravie.app.ui.theme.panelColor
 fun Panel(
     modifier: Modifier = Modifier,
     radius: Dp = 28.dp,
-    padding: Dp = 20.dp,
+    padding: Dp = 22.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val t = LocalZTokens.current

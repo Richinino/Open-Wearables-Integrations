@@ -23,9 +23,9 @@ fun Sparkline(
     color: Color,
     modifier: Modifier = Modifier,
     height: Dp = 40.dp,
-    contentDescription: String? = null,
+    contentDescription: String,
 ) {
-    val sem = if (contentDescription != null) Modifier.semantics { this.contentDescription = contentDescription } else Modifier
+    val sem = Modifier.semantics { this.contentDescription = contentDescription }
     Canvas(modifier.fillMaxWidth().height(height).then(sem)) {
         val known = values.filterNotNull()
         if (known.isEmpty()) return@Canvas

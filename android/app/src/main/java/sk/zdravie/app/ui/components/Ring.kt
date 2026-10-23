@@ -23,12 +23,12 @@ fun ScoreRing(
     color: Color,
     size: Dp,
     modifier: Modifier = Modifier,
-    contentDescription: String? = null,
+    contentDescription: String,
     content: @Composable () -> Unit = {},
 ) {
     val track = LocalZTokens.current.track
     val f = if (fraction.isNaN()) 0f else fraction.coerceIn(0f, 1f)
-    val sem = if (contentDescription != null) Modifier.semantics { this.contentDescription = contentDescription } else Modifier
+    val sem = Modifier.semantics { this.contentDescription = contentDescription }
     Box(modifier.size(size).then(sem), contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(size)) {
             val stroke = this.size.minDimension * 11f / 220f

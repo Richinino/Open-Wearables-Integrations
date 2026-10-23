@@ -68,6 +68,10 @@ class TokensTest {
         assertColor("accent", oklabMix(0xE9B44C, 0x4A3200, 0.7f), LightTokens.accent)
     }
 
+    @Test fun mixOklabHelperMatchesLightAccent() {
+        assertColor("mix", LightTokens.accent, sk.zdravie.app.ui.theme.mixOklab(hex(0xE9B44C), hex(0x4A3200), 0.7f))
+    }
+
     @Test fun textContrastAtLeast45() {
         for ((name, t) in listOf("dark" to DarkTokens, "light" to LightTokens)) {
             val surfaces = listOf("bg" to t.bg, "glass" to panelColor(t))

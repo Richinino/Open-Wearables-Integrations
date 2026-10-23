@@ -24,7 +24,7 @@ internal fun stageColor(t: ZTokens, stage: SleepStage): Color = when (stage) {
     SleepStage.DEEP -> t.deep
     SleepStage.REM -> t.rem
     SleepStage.LIGHT -> t.lightSleep
-    SleepStage.AWAKE -> t.warn
+    SleepStage.AWAKE -> t.accent
     SleepStage.ASLEEP -> t.sleep
 }
 
@@ -33,26 +33,30 @@ internal fun stageColor(t: ZTokens, stage: SleepStage): Color = when (stage) {
 fun StageStrip(
     segments: List<StageSegment>,
     modifier: Modifier = Modifier,
-    height: Dp = 22.dp,
-    contentDescription: String? = null,
+    height: Dp = 26.dp,
+    contentDescription: String,
 ) {
     val t = LocalZTokens.current
-    val sem = if (contentDescription != null) Modifier.semantics { this.contentDescription = contentDescription } else Modifier
+    val sem = Modifier.semantics { this.contentDescription = contentDescription }
     Canvas(modifier.fillMaxWidth().height(height).then(sem)) {
         val outline = Path().apply {
-            addRoundRect(RoundRect(0f, 0f, size.width, size.height, CornerRadius(6.dp.toPx())))
+            addRoundRect(RoundRect(0f, 0f, size.width, size.height, CornerRadius(8.dp.toPx())))
         }
         val total = segments.sumOf { it.minutes.coerceAtLeast(0.0) }
         if (total <= 0.0) {
             drawPath(outline, t.track)
             return@Canvas
         }
+        val gap = 2.dp.toPx()
+        val n = segments.count { it.minutes > 0 }
+        val usable = size.width - gap * (n - 1).coerceAtLeast(0)
         clipPath(outline) {
             var x = 0f
             segments.forEach { s ->
-                val w = (s.minutes.coerceAtLeast(0.0) / total * size.width).toFloat()
-                if (w > 0f) drawRect(stageColor(t, s.stage), topLeft = androidx.compose.ui.geometry.Offset(x, 0f), size = androidx.compose.ui.geometry.Size(w, size.height))
-                x += w
+                if (s.minutes <= 0.0) return@forEach
+                val w = (s.minutes / total * usable).toFloat()
+                drawRect(stageColor(t, s.stage), topLeft = androidx.compose.ui.geometry.Offset(x, 0f), size = androidx.compose.ui.geometry.Size(w, size.height))
+                x += w + gap
             }
         }
     }

@@ -4,10 +4,11 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -22,38 +23,41 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import sk.zdravie.app.ui.theme.LocalZTokens
 import sk.zdravie.app.ui.theme.ZType
+import sk.zdravie.app.ui.theme.panelColor
 
-/** Joined segmented control (e.g. Ráno / Večer). Each segment is at least 48 dp tall. */
+/** Joined segmented control (e.g. Ráno / Večer). Option 40 dp in a 46 dp container, ink fill with bg text when selected; [filled] false = transparent container. */
 @Composable
 fun Segmented(
     options: List<String>,
     selected: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    filled: Boolean = true,
 ) {
     val t = LocalZTokens.current
-    val shape = RoundedCornerShape(22.dp)
+    val shape = RoundedCornerShape(24.dp)
     Row(
         modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(t.track, shape)
+            .background(if (filled) panelColor(t) else Color.Transparent, shape)
             .border(BorderStroke(1.dp, t.line), shape)
             .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         options.forEachIndexed { i, label ->
             val on = i == selected
             Box(
                 Modifier
                     .weight(1f)
-                    .heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(19.dp))
-                    .background(if (on) t.accent.copy(alpha = 0.22f) else Color.Transparent)
+                    .height(40.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(if (on) t.ink else Color.Transparent)
                     .clickable(role = Role.Tab) { onSelect(i) }
                     .semantics { this.selected = on },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, style = ZType.label, color = if (on) t.accentText else t.ink2)
+                Text(label, style = ZType.label, color = if (on) t.bg else t.ink2)
             }
         }
     }
