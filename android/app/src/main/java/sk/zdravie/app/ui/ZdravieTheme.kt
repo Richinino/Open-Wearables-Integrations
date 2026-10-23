@@ -5,61 +5,62 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import sk.zdravie.app.ui.theme.DarkTokens
+import sk.zdravie.app.ui.theme.LightTokens
+import sk.zdravie.app.ui.theme.LocalZTokens
+import sk.zdravie.app.ui.theme.ZTokens
+import sk.zdravie.app.ui.theme.panelColor
+import sk.zdravie.app.ui.theme.zMaterialTypography
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-private val DarkColors = darkColorScheme(
-    primary = Color(0xFFE9B44C),
-    onPrimary = Color(0xFF2B1C00),
-    primaryContainer = Color(0xFF403214),
-    onPrimaryContainer = Color(0xFFFFDDA0),
-    secondary = Color(0xFF8F8CF2),
-    onSecondary = Color(0xFF161342),
-    secondaryContainer = Color(0xFF292650),
-    onSecondaryContainer = Color(0xFFDEDCFF),
-    tertiary = Color(0xFFF0718F),
-    background = Color(0xFF08090C),
-    onBackground = Color(0xFFF2F1ED),
-    surface = Color(0xFF111318),
-    onSurface = Color(0xFFF2F1ED),
-    surfaceVariant = Color(0xFF202229),
-    onSurfaceVariant = Color(0xFFB0B0AB),
-    outline = Color(0xFF777A84),
-    outlineVariant = Color(0xFF30323B),
-    error = Color(0xFFFFB4AB),
-    errorContainer = Color(0xFF572422),
-    onErrorContainer = Color(0xFFFFDAD6),
-)
+private fun schemeFor(t: ZTokens, dark: Boolean): ColorScheme {
+    val panel = panelColor(t)
+    val container = t.accent.copy(alpha = 0.22f).compositeOver(t.bg)
+    val base = if (dark) darkColorScheme() else lightColorScheme()
+    return base.copy(
+        primary = if (dark) t.accent else t.accentText,
+        onPrimary = if (dark) Color(0xFF2B1C00) else Color.White,
+        primaryContainer = container,
+        onPrimaryContainer = t.accentText,
+        secondary = t.sleep,
+        onSecondary = if (dark) Color(0xFF161342) else Color.White,
+        secondaryContainer = t.sleep.copy(alpha = 0.22f).compositeOver(t.bg),
+        onSecondaryContainer = t.ink,
+        tertiary = t.heart,
+        onTertiary = if (dark) Color(0xFF3B0A1B) else Color.White,
+        background = t.bg,
+        onBackground = t.ink,
+        surface = panel,
+        onSurface = t.ink,
+        surfaceVariant = t.track.compositeOver(panel),
+        onSurfaceVariant = t.ink2,
+        surfaceTint = t.accent,
+        surfaceContainerLowest = t.bg,
+        surfaceContainerLow = panel,
+        surfaceContainer = panel,
+        surfaceContainerHigh = t.track.compositeOver(panel),
+        surfaceContainerHighest = t.track.compositeOver(panel),
+        outline = t.muted,
+        outlineVariant = t.line.compositeOver(t.bg),
+        error = if (dark) Color(0xFFFFB4AB) else Color(0xFFB42A2A),
+        errorContainer = if (dark) Color(0xFF572422) else Color(0xFFFFDAD6),
+        onErrorContainer = if (dark) Color(0xFFFFDAD6) else Color(0xFF410003),
+    )
+}
 
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF805B12),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFFFE3A4),
-    onPrimaryContainer = Color(0xFF332300),
-    secondary = Color(0xFF5B57D6),
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFE5E1FF),
-    onSecondaryContainer = Color(0xFF282064),
-    tertiary = Color(0xFFB72A50),
-    background = Color(0xFFEEF0F3),
-    onBackground = Color(0xFF14161A),
-    surface = Color(0xFFFBFBFC),
-    onSurface = Color(0xFF14161A),
-    surfaceVariant = Color(0xFFE5E7EC),
-    onSurfaceVariant = Color(0xFF565962),
-    outline = Color(0xFF777A84),
-    outlineVariant = Color(0xFFD1D4DC),
-    error = Color(0xFFB42A2A),
-    errorContainer = Color(0xFFFFDAD6),
-    onErrorContainer = Color(0xFF410003),
-)
+private val DarkColors = schemeFor(DarkTokens, dark = true)
+private val LightColors = schemeFor(LightTokens, dark = false)
 
 /** The account preference wins; an absent or unknown preference follows Android. */
 @Composable
@@ -86,7 +87,9 @@ internal fun ZdravieTheme(theme: String?, content: @Composable () -> Unit) {
             }
         }
     }
-    MaterialTheme(colorScheme = if (dark) DarkColors else LightColors, content = content)
+    CompositionLocalProvider(LocalZTokens provides (if (dark) DarkTokens else LightTokens)) {
+        MaterialTheme(colorScheme = if (dark) DarkColors else LightColors, typography = zMaterialTypography(), content = content)
+    }
 }
 
 internal fun legacyNavigationBarColor(dark: Boolean): Int =
