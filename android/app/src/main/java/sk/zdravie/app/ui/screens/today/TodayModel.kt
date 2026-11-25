@@ -188,7 +188,7 @@ fun focusDate(dataset: Dataset, now: Instant, mode: Mode? = null): String {
 private fun capitalized(text: String): String = text.replaceFirstChar { it.uppercase() }
 
 private fun sleepCaption(kind: SleepKind): String = when (kind) {
-    SleepKind.PERFORMANCE -> "Sleep Performance"
+    SleepKind.PERFORMANCE -> "Výkon spánku"
     SleepKind.APPLE -> "Apple skóre"
     SleepKind.SAMSUNG -> "Samsung skóre"
 }

@@ -168,7 +168,7 @@ object Sleep {
     val SLEEP_KINDS: Map<SleepKind, SleepKindInfo> = mapOf(
         SleepKind.PERFORMANCE to SleepKindInfo(
             kind = SleepKind.PERFORMANCE,
-            label = "Sleep Performance",
+            label = "Výkon spánku",
             vendor = "WHOOP",
             about = "Koľko z potrebného spánku si naozaj naspal. 100 znamená, že si potrebu pokryl celú.",
             band = Scores::sleepPerformanceBand,

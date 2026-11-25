@@ -40,10 +40,10 @@ data class SubScore(
 object Scores {
     val SCORE_NAMES: Map<String, String> = mapOf(
         "day" to "Skóre dňa",
-        "readiness" to "Readiness",
-        "sleepPerformance" to "Sleep Performance",
+        "readiness" to "Pripravenosť",
+        "sleepPerformance" to "Výkon spánku",
         "appleSleep" to "Sleep Score",
-        "activity" to "Activity",
+        "activity" to "Aktivita",
         "strain" to "Strain",
         "sleepNeed" to "Potreba spánku",
         "cardioLoad" to "Stav záťaže",
@@ -119,6 +119,7 @@ object Scores {
         "too little history" to "zatiaľ málo dát",
         "no data" to "bez dát",
         "no sleep recorded" to "spánok sa nezaznamenal",
+        "no heart rate recorded" to "tep sa nezaznamenal",
         "no sleep need from the day before" to "chýba potreba spánku z predošlého dňa",
         "age missing" to "chýba vek",
         "no sleep stages, no stage deductions" to "bez fáz spánku",

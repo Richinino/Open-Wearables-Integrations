@@ -124,7 +124,7 @@ internal fun ZPanel(
 
 /** Inner bordered tile (radius 20) used for minis, HRV, night pulse and sleep need. */
 @Composable
-private fun InnerTile(
+internal fun InnerTile(
     modifier: Modifier = Modifier,
     border: Color = LocalZTokens.current.line,
     horizontal: Dp = 14.dp,
@@ -147,7 +147,7 @@ internal fun Dot(color: Color, size: Dp, modifier: Modifier = Modifier) {
 
 /** "posledné dáta: včera": the tile shows an older day than the selected one. */
 @Composable
-private fun LatestNote(text: String) {
+internal fun LatestNote(text: String) {
     val t = LocalZTokens.current
     Row(
         Modifier.clip(CircleShape).border(BorderStroke(1.dp, t.line), CircleShape).padding(horizontal = 10.dp, vertical = 3.dp),

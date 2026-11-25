@@ -205,14 +205,14 @@ class ScoresTest {
         }
         val (readiness, sleep, activity) = Scores.subScores(day, previous)
         assertEquals("readiness", readiness.key)
-        assertEquals("Readiness", readiness.label)
+        assertEquals("Pripravenosť", readiness.label)
         assertEquals(81.2, readiness.value!!, 0.0)
         assertEquals("≈ 81", readiness.display)
         assertEquals("good", readiness.band?.key)
         assertEquals("pokojový tep 51, pod tvojím priemerom · brzdí spánková bilancia", readiness.reason)
-        assertEquals("Sleep Performance", sleep.label)
+        assertEquals("Výkon spánku", sleep.label)
         assertEquals("7 h 36 min z potrebných 8 h 20 min", sleep.reason)
-        assertEquals("Activity", activity.label)
+        assertEquals("Aktivita", activity.label)
         assertEquals("6 480 krokov · beh 55 min", plain(activity.reason))
     }
 

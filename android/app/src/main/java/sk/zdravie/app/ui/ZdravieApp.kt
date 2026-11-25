@@ -1,5 +1,10 @@
 package sk.zdravie.app.ui
 
+import sk.zdravie.app.ui.screens.SleepScreen
+import sk.zdravie.app.ui.screens.ActivityScreen
+import sk.zdravie.app.ui.screens.TrendsScreen
+import sk.zdravie.app.logic.SleepKind
+import sk.zdravie.app.logic.Dates
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -299,7 +304,33 @@ private fun SignedInApp(
                 error = state.error,
                 readOnly = session.identity.viewOnly,
             )
-            else -> PlaceholderScreen(tab, eyebrow, initial, openAccount)
+            tab == AppTab.SLEEP -> SleepScreen(
+                dataset = dataset,
+                date = date,
+                today = Dates.todayIn(dataset.timezone, now),
+                kind = SleepKind.fromAccount(session.account.sleepScore),
+                initial = initial,
+                onDate = { selectedDate = it },
+                onAccount = openAccount,
+            )
+            tab == AppTab.ACTIVITY -> ActivityScreen(
+                dataset = dataset,
+                date = date,
+                today = Dates.todayIn(dataset.timezone, now),
+                initial = initial,
+                onDate = { selectedDate = it },
+                onAccount = openAccount,
+            )
+            else -> TrendsScreen(
+                dataset = dataset,
+                today = Dates.todayIn(dataset.timezone, now),
+                initial = initial,
+                onOpenDay = { day ->
+                    selectedDate = day
+                    tab = AppTab.TODAY
+                },
+                onAccount = openAccount,
+            )
         }
     }
 }
