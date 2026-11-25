@@ -2,6 +2,7 @@
 
 import { dayFigure, dayValue, periodFigure } from "@/lib/day-values";
 import { useId } from "react";
+import { CountUp, Morph } from "@/components/ui/motion";
 import { trendPaths } from "@/components/charts/paths";
 import { ROUTES } from "@/components/shell/nav";
 import { MiniBars, STAGE_COLORS, STAGE_LABELS, StageStrip, Tile, TileShell, TileTitle } from "@/components/ui/tile";
@@ -66,7 +67,11 @@ export function StepsTile({ dataset, day, date, isToday, latest }: TodayProps) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <TileTitle href={ROUTES.steps}>{isToday ? "Kroky dnes" : `Kroky · ${formatDay(date)}`}</TileTitle>
-          <div className="figure mt-1 text-[clamp(64px,9vw,120px)] tracking-[-0.045em]">{formatInt(day?.steps ?? null)}</div>
+          <div className="figure mt-1 text-[clamp(64px,9vw,120px)] tracking-[-0.045em]">
+            <Morph name="figure-steps">
+              <CountUp value={day?.steps ?? null} format={formatInt} id={`steps:${date}`} />
+            </Morph>
+          </div>
         </div>
         <div className="flex flex-col items-start gap-1 pb-2.5 sm:items-end">
           <LatestNote text={latest} />
@@ -81,7 +86,7 @@ export function StepsTile({ dataset, day, date, isToday, latest }: TodayProps) {
       <svg
         viewBox="0 0 600 150"
         preserveAspectRatio="none"
-        className="block h-[150px] w-full overflow-visible"
+        className="draw-line block h-[150px] w-full overflow-visible"
         role="img"
         aria-label={`Kroky za posledných 30 dní, priemer ${formatInt(summary.average)} za deň`}
       >
@@ -182,7 +187,7 @@ export function SleepTile({ dataset, day, date, latest }: TodayProps) {
         )}
       </div>
       <div className="figure text-[clamp(40px,3.6vw,48px)] leading-none tracking-[-0.03em]">
-        {hasSleep ? formatDuration(day?.sleep_minutes) : DASH}
+        <Morph name="figure-sleep">{hasSleep ? formatDuration(day?.sleep_minutes) : DASH}</Morph>
       </div>
       <StageStrip
         segments={segments}
@@ -233,13 +238,13 @@ export function RestingTile({ dataset, day, date, isToday, latest }: TodayProps)
   return (
     <Tile href={ROUTES.heart} label="Pokojový tep" aside={latest ? <LatestNote text={latest} /> : undefined} className="gap-3.5 p-6 sm:p-7">
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <div className="figure text-[48px] leading-none tracking-[-0.03em]">{dayFigure(day, "restingHr", formatInt)}</div>
+        <div className="figure text-[48px] leading-none tracking-[-0.03em]"><Morph name="figure-resting">{dayFigure(day, "restingHr", formatInt)}</Morph></div>
         <div className="text-[14px] text-ink2">bpm{range}</div>
       </div>
       <svg
         viewBox="0 0 300 64"
         preserveAspectRatio="none"
-        className="block h-16 w-full overflow-visible"
+        className="draw-line block h-16 w-full overflow-visible"
         role="img"
         aria-label={`Pokojový tep za 30 dní: ${note.toLowerCase()}`}
       >

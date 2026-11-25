@@ -3,7 +3,7 @@
 import { dayFigure, periodHasEstimate } from "@/lib/day-values";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { addTransitionType, startTransition, useMemo, useState, ViewTransition } from "react";
 import { capitalize, riseStyle, RoundNav, Rows, Swatch } from "@/components/detail/shared-b/parts";
 import { ROUTES } from "@/components/shell/nav";
 import { WithData } from "@/components/shell/shell";
@@ -143,8 +143,12 @@ function Calendar({ dataset, now }: { dataset: Dataset; now: Date }) {
   const cells = calendarCells(dataset.days, view, period, today);
   const heading = view === "month" ? monthTitle(period, today) : weekTitle(period, today);
 
+  // The arrows run as a transition, so the period slides the way you go.
   const goTo = (target: string) =>
-    setState((current) => ({ ...current, period: target, selected: selectionIn(dataset.days, current.view, target, today, current.selected) }));
+    startTransition(() => {
+      addTransitionType(target < period ? "nav-back" : "nav-forward");
+      setState((current) => ({ ...current, period: target, selected: selectionIn(dataset.days, current.view, target, today, current.selected) }));
+    });
   const switchView = (target: View) =>
     setState((current) => {
       const anchor = current.selected ?? periodRange(current.view, current.period).from;
@@ -189,22 +193,24 @@ function Calendar({ dataset, now }: { dataset: Dataset; now: Date }) {
           style={riseStyle(1, { flex: "2.4 1 680px" })}
           aria-label={view === "month" ? `Mesiac ${heading}` : `Týždeň ${heading}`}
         >
-          {view === "month" ? (
-            <div className="flex flex-col gap-2 sm:min-w-[660px]">
-              <WeekdayHeader />
-              <div className="grid grid-cols-7 gap-1 sm:gap-2">
+          <ViewTransition key={`${view}-${period}`} enter={PERIOD_SLIDE} exit={PERIOD_SLIDE} default="none">
+            {view === "month" ? (
+              <div className="flex flex-col gap-2 sm:min-w-[660px]">
+                <WeekdayHeader />
+                <div className="grid grid-cols-7 gap-1 sm:gap-2">
+                  {cells.map((cell) => (
+                    <MonthCell key={cell.day} cell={cell} selected={cell.day === selected} onSelect={select} />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(min(168px,100%),1fr))] gap-2.5">
                 {cells.map((cell) => (
-                  <MonthCell key={cell.day} cell={cell} selected={cell.day === selected} onSelect={select} />
+                  <WeekCard key={cell.day} cell={cell} selected={cell.day === selected} onSelect={select} timeZone={dataset.timezone} />
                 ))}
               </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(min(168px,100%),1fr))] gap-2.5">
-              {cells.map((cell) => (
-                <WeekCard key={cell.day} cell={cell} selected={cell.day === selected} onSelect={select} timeZone={dataset.timezone} />
-              ))}
-            </div>
-          )}
+            )}
+          </ViewTransition>
         </section>
 
         <div className="rise flex min-w-0 flex-col gap-[18px]" style={riseStyle(2, { flex: "1 1 320px" })}>
@@ -215,6 +221,9 @@ function Calendar({ dataset, now }: { dataset: Dataset; now: Date }) {
     </>
   );
 }
+
+/** Earlier periods slide in from the left, later ones from the right. */
+const PERIOD_SLIDE = { "nav-forward": "nav-forward", "nav-back": "nav-back", default: "none" };
 
 export function CalendarView() {
   return <WithData>{(dataset, now) => <Calendar dataset={dataset} now={now} />}</WithData>;

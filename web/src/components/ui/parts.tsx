@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 import { Sparkline } from "@/components/charts/charts";
 import { formatChange } from "@/lib/format";
+import { PillGroup } from "@/components/ui/motion";
 
 export function Card({
   children,
@@ -316,7 +317,7 @@ export function Segmented<T extends string | number>({
   label: string;
 }) {
   return (
-    <div role="group" aria-label={label} className="glass inline-flex gap-1.5 p-1" style={{ borderRadius: 26 }}>
+    <PillGroup label={label} className="glass inline-flex gap-1.5 p-1" style={{ borderRadius: 26 }}>
       {options.map((option) => {
         const selected = option.value === value;
         return (
@@ -331,7 +332,7 @@ export function Segmented<T extends string | number>({
           </button>
         );
       })}
-    </div>
+    </PillGroup>
   );
 }
 

@@ -209,12 +209,12 @@ describe("subScores", () => {
       }),
     });
     const [readiness, sleep, activity] = subScores(day, previous);
-    expect(readiness).toMatchObject({ key: "readiness", label: "Readiness", value: 81.2, display: "≈ 81" });
+    expect(readiness).toMatchObject({ key: "readiness", label: "Pripravenosť", value: 81.2, display: "≈ 81" });
     expect(readiness.band?.key).toBe("good");
     expect(readiness.reason).toBe("pokojový tep 51, pod tvojím priemerom · brzdí spánková bilancia");
-    expect(sleep.label).toBe("Sleep Performance");
+    expect(sleep.label).toBe("Výkon spánku");
     expect(sleep.reason).toBe("7 h 36 min z potrebných 8 h 20 min");
-    expect(activity.label).toBe("Activity");
+    expect(activity.label).toBe("Aktivita");
     expect(plain(activity.reason)).toBe("6 480 krokov · beh 55 min");
   });
 

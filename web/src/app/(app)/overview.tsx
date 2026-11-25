@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { HeatmapTile, RecordsTile, WeekTile, WorkoutsTile } from "@/components/overview/history-tiles";
 import { DayScoreTile, EveningTile } from "@/components/overview/score-tiles";
 import { NightBanner, SummaryTile } from "@/components/overview/summary-tiles";
+import { WeekCompareTile } from "@/components/overview/week-compare";
 import { Minis, RestingTile, SleepTile, StepsTile } from "@/components/overview/today-tiles";
 import { ROUTES } from "@/components/shell/nav";
 import { WithData } from "@/components/shell/shell";
@@ -98,8 +99,9 @@ function Overview({ dataset, now, override }: { dataset: Dataset; now: Date; ove
       <SummaryTile morning={morning} sentence={sentence} insights={observations} />
       <WeekTile dataset={dataset} date={date} isToday={isToday} />
 
+      <HeatmapTile dataset={dataset} date={date} />
       <div className="grid gap-[18px] lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <HeatmapTile dataset={dataset} date={date} />
+        <WeekCompareTile dataset={dataset} date={date} />
         <RecordsTile dataset={dataset} date={date} />
       </div>
 

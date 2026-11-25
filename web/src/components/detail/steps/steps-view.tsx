@@ -10,6 +10,7 @@ import { useState } from "react";
 import { ColumnChart } from "@/components/charts/charts";
 import { dayPoints, tickCompact } from "@/components/charts/points";
 import { WithData } from "@/components/shell/shell";
+import { Morph } from "@/components/ui/motion";
 import { EmptyState } from "@/components/ui/parts";
 import { mix, ScoreBar, TileShell } from "@/components/ui/tile";
 import {
@@ -48,7 +49,7 @@ function StepsTodayTile({ day, isToday, average }: { day: Day; isToday: boolean;
         <h2 className="eyebrow">{isToday ? "Kroky dnes" : `Kroky · ${formatDay(day.day)}`}</h2>
         {running && <RunningHint />}
       </div>
-      <div className="figure text-[clamp(64px,8vw,104px)] tracking-[-0.045em]">{formatInt(steps)}</div>
+      <div className="figure text-[clamp(64px,8vw,104px)] tracking-[-0.045em]"><Morph name="figure-steps">{formatInt(steps)}</Morph></div>
       <div className="flex flex-col gap-2">
         <ScoreBar share={share === null ? null : Math.min(1, share)} color="var(--accent)" />
         <p className="text-[13px] text-ink2">

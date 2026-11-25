@@ -5,6 +5,7 @@
 
 import { useCallback, useId, useState, useSyncExternalStore, type ReactNode } from "react";
 import { DataTable, type TableData } from "@/components/ui/parts";
+import { PillGroup } from "@/components/ui/motion";
 
 /** Pills in a thin outline, one pressed. Buttons keep the 44px height of the A2 pills. */
 export function Switch<T extends string | number>({
@@ -21,7 +22,7 @@ export function Switch<T extends string | number>({
   className?: string;
 }) {
   return (
-    <div role="group" aria-label={label} className={`inline-flex max-w-full flex-wrap gap-1 rounded-[26px] border border-line p-1 ${className}`}>
+    <PillGroup label={label} className={`inline-flex max-w-full flex-wrap gap-1 rounded-[26px] border border-line p-1 ${className}`}>
       {options.map((option) => (
         <button
           key={String(option.value)}
@@ -34,7 +35,7 @@ export function Switch<T extends string | number>({
           {option.label}
         </button>
       ))}
-    </div>
+    </PillGroup>
   );
 }
 

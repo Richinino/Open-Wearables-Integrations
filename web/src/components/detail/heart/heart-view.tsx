@@ -10,6 +10,7 @@ import { useState } from "react";
 import { LineChart } from "@/components/charts/charts";
 import { dayPoints, tickPlain } from "@/components/charts/points";
 import { WithData } from "@/components/shell/shell";
+import { Morph } from "@/components/ui/motion";
 import { EmptyState } from "@/components/ui/parts";
 import { mix, TileShell } from "@/components/ui/tile";
 import { nightHeartSeries, restingBaseline, restingComparison, restingTrend } from "@/lib/detail-heart";
@@ -48,7 +49,7 @@ function TodayHeartTile({ dataset, day, isToday }: { dataset: Dataset; day: Day;
         <h2 className="eyebrow">{isToday ? "Pokojový tep dnes" : `Pokojový tep · ${formatDay(day.day)}`}</h2>
       </div>
       <div className="flex flex-wrap items-baseline gap-x-2.5">
-        <div className="figure text-[clamp(64px,8vw,104px)] tracking-[-0.045em]">{dayFigure(day, "restingHr", formatInt)}</div>
+        <div className="figure text-[clamp(64px,8vw,104px)] tracking-[-0.045em]"><Morph name="figure-resting">{dayFigure(day, "restingHr", formatInt)}</Morph></div>
         <div className="text-[15px] text-ink2">bpm</div>
       </div>
       <p className="text-[14px] text-ink2">{restingComparison(dayValue(day, "restingHr"), baseline)}</p>

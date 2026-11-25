@@ -46,6 +46,16 @@
   /* The glass over --bg as one opaque colour, for gaps between chart marks. */
   --surface: #fbfbfc;
   --line-strong: rgba(18, 24, 38, 0.2);
+
+  /*
+   * Motion: three curves and four lengths for the whole site.
+   * Feedback 100-160ms, routine change 150-260ms, movement in place 300-420ms,
+   * one authored moment 600-900ms. Never ease-in on UI.
+   */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-focal: cubic-bezier(0.16, 1, 0.3, 1);
+  --shimmer: color-mix(in oklab, var(--ink) 7%, transparent);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -163,6 +173,8 @@
   html {
     background: var(--bg);
     -webkit-text-size-adjust: 100%;
+    /* The header keeps its place whether or not the page scrolls. */
+    scrollbar-gutter: stable;
   }
 
   body {
@@ -249,14 +261,29 @@
     text-decoration: none;
     white-space: nowrap;
     cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
     transition:
+      transform 160ms var(--ease-out),
       background-color 0.2s,
       color 0.2s,
       border-color 0.2s;
   }
 
-  .pill:hover {
-    color: var(--ink);
+  /* Press feedback: the interface heard the click. */
+  .pill:active,
+  .press:active {
+    transform: scale(0.97);
+  }
+
+  .press {
+    transition: transform 160ms var(--ease-out);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .pill:hover {
+      color: var(--ink);
+    }
   }
 
   .pill[aria-current="page"],
@@ -280,7 +307,6 @@
    */
   .tile {
     position: relative;
-    transition: border-color 0.2s;
   }
 
   .tile-link {
@@ -303,34 +329,51 @@
     outline-offset: 3px;
   }
 
-  .tile:has(.tile-link:hover) {
-    border-color: color-mix(in oklab, var(--ink) 24%, transparent);
-  }
-
   .tile-arrow {
     opacity: 0.45;
     transition:
       opacity 0.2s,
-      transform 0.2s;
+      transform 200ms var(--ease-out);
   }
 
-  .tile:has(.tile-link:hover) .tile-arrow,
   .tile:has(.tile-link:focus-visible) .tile-arrow {
     opacity: 1;
     transform: translateX(2px);
+  }
+
+  /* A pressed tile gives way a little, like a pressed button. */
+  .tile:has(.tile-link:active) {
+    transform: scale(0.99);
+  }
+
+  .tile {
+    transition:
+      border-color 0.2s,
+      transform 160ms var(--ease-out);
   }
 
   .title-link {
     text-decoration: none;
   }
 
-  .title-link:hover {
-    color: var(--ink);
-  }
+  @media (hover: hover) and (pointer: fine) {
+    .tile:has(.tile-link:hover) {
+      border-color: color-mix(in oklab, var(--ink) 24%, transparent);
+    }
 
-  .title-link:hover .tile-arrow {
-    opacity: 1;
-    transform: translateX(2px);
+    .tile:has(.tile-link:hover) .tile-arrow {
+      opacity: 1;
+      transform: translateX(2px);
+    }
+
+    .title-link:hover {
+      color: var(--ink);
+    }
+
+    .title-link:hover .tile-arrow {
+      opacity: 1;
+      transform: translateX(2px);
+    }
   }
 
   .tile-raise {
@@ -348,8 +391,10 @@
     transition: background-color 0.2s;
   }
 
-  .row-link:hover {
-    background: color-mix(in oklab, var(--ink) 6%, transparent);
+  @media (hover: hover) and (pointer: fine) {
+    .row-link:hover {
+      background: color-mix(in oklab, var(--ink) 6%, transparent);
+    }
   }
 
   /* Text shown only in the light or only in the dark theme, without a hydration mismatch. */
@@ -370,10 +415,281 @@
     fill: var(--ink2);
   }
 
-  /* One staggered entrance per page; children opt in with --i. */
+  /* One staggered entrance per page; children opt in with --i. Short: pages open often. */
   .rise {
-    animation: rise 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
-    animation-delay: calc(var(--i, 0) * 60ms);
+    animation: rise 300ms var(--ease-out) both;
+    animation-delay: calc(min(var(--i, 0), 6) * 40ms);
+  }
+
+  /* ---- Loading ---------------------------------------------------------------------- */
+
+  /* Skeleton blocks in the shape of the tiles that will come. Constant motion: linear. */
+  .skel {
+    border-radius: 10px;
+    background: linear-gradient(90deg, var(--track) 0%, var(--shimmer) 40%, var(--track) 80%);
+    background-size: 300% 100%;
+    animation: skel-sweep 1.4s linear infinite;
+  }
+
+  /* Real content replacing a skeleton: blur into focus. Plays only after a skeleton. */
+  .data-in {
+    animation: data-in 220ms var(--ease-out) both;
+  }
+
+  /* Header dot while the data refreshes: a thin arc turns around it. */
+  .sync-dot {
+    position: relative;
+  }
+
+  .sync-dot[data-busy="true"]::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 1.5px solid transparent;
+    border-top-color: var(--ink2);
+    animation: spin 700ms linear infinite;
+  }
+
+  /* ---- Popups ----------------------------------------------------------------------- */
+
+  /* Menus grow from their trigger; closing is faster than opening. */
+  .popup {
+    opacity: 0;
+    transform: scale(0.97) translateY(-4px);
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity 120ms ease,
+      transform 120ms var(--ease-out),
+      visibility 0s linear 120ms;
+  }
+
+  .popup[data-open="true"] {
+    opacity: 1;
+    transform: none;
+    visibility: visible;
+    pointer-events: auto;
+    transition:
+      opacity 160ms ease,
+      transform 180ms var(--ease-out),
+      visibility 0s;
+  }
+
+  .popup-up {
+    transform: scale(0.97) translateY(4px);
+  }
+
+  /* ---- Pill groups with a sliding indicator ----------------------------------------- */
+
+  .pill-group {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .pill-group > .pill {
+    position: relative;
+    z-index: 1;
+  }
+
+  .pill-ind {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 0;
+    border-radius: 22px;
+    background: var(--ink);
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      transform 260ms var(--ease-out),
+      width 260ms var(--ease-out),
+      height 260ms var(--ease-out);
+  }
+
+  .pill-group[data-ready="true"] > .pill-ind {
+    opacity: 1;
+  }
+
+  .pill-group[data-ready="true"] > .pill[aria-pressed="true"] {
+    background: transparent;
+    border-color: transparent;
+  }
+
+  /* ---- Charts ----------------------------------------------------------------------- */
+
+  /*
+   * A line draws itself left to right once when the chart first appears (a clip, so it
+   * works with dashed and non-scaling strokes); data refreshes do not replay it.
+   */
+  .draw-line {
+    animation: draw-line 700ms var(--ease-focal) backwards;
+  }
+
+  /* The three day-score tracks: pathLength 100, drawn from empty to their value. */
+  .arc-draw {
+    animation: arc-draw 900ms var(--ease-focal) both;
+  }
+
+  .area-in {
+    animation: fade-in 300ms ease-out 450ms both;
+  }
+
+  .end-dot {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: end-dot 240ms var(--ease-out) 640ms both;
+  }
+
+  /* ---- Rare moments ----------------------------------------------------------------- */
+
+  /* New record: one golden sheen across the tile. */
+  .sheen {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background: linear-gradient(105deg, transparent 30%, color-mix(in oklab, var(--accent) 30%, transparent) 50%, transparent 70%);
+    transform: translateX(-100%);
+    animation: sheen 900ms var(--ease-in-out) 200ms both;
+  }
+
+  .badge-in {
+    animation: badge-in 240ms var(--ease-out) 580ms both;
+  }
+
+  /* The night-signal warning slides in above the content. */
+  .ns-in {
+    animation: ns-in 360ms var(--ease-focal) both;
+  }
+
+  /* The day-score glow: blooms once on the first morning view. */
+  .score-glow {
+    animation: score-glow 1400ms ease-out 300ms both;
+  }
+
+  /* Rolling digits for a number that changed while the page was open. */
+  .odo {
+    display: inline-flex;
+    align-items: flex-start;
+    height: 0.95em;
+    overflow: hidden;
+    line-height: 0.95;
+  }
+
+  .odo-col {
+    display: inline-flex;
+    flex-direction: column;
+    transition: transform 520ms var(--ease-out);
+  }
+
+  .odo-col > span {
+    display: block;
+    height: 0.95em;
+  }
+
+  /* Insight deck: cards follow the pointer 1:1, then settle. */
+  .deck-card {
+    transition:
+      transform 320ms var(--ease-out),
+      opacity 220ms ease;
+    touch-action: pan-y;
+    user-select: none;
+  }
+
+  .deck-card[data-dragging="true"] {
+    transition: none;
+  }
+
+  /* Bars that rescale when the measure changes. */
+  .bar-y {
+    transform-origin: bottom;
+    transition:
+      transform 320ms var(--ease-in-out),
+      background-color 200ms ease;
+  }
+
+  /* Content that changes in place (a day, a month) fades through. */
+  .swap-in {
+    animation: swap-in 220ms var(--ease-out) both;
+  }
+}
+
+/* ---- View transitions ------------------------------------------------------------------ */
+
+/* Clicks pass to the live page while a transition runs. */
+::view-transition {
+  pointer-events: none;
+}
+
+/* A number that travels from a tile to its detail page. */
+::view-transition-group(.morph) {
+  animation-duration: 420ms;
+  animation-timing-function: var(--ease-focal);
+}
+
+::view-transition-image-pair(.morph) {
+  animation-name: via-blur;
+}
+
+/* The header stays put while the content changes under it. */
+::view-transition-group(site-header) {
+  animation: none;
+  z-index: 100;
+}
+
+::view-transition-old(site-header) {
+  display: none;
+}
+
+::view-transition-new(site-header) {
+  animation: none;
+}
+
+/* Days and months: content leaves the way you go and arrives from the other side. */
+::view-transition-old(.nav-forward),
+::view-transition-old(.nav-back) {
+  animation: 120ms var(--ease-out) both slide-out;
+}
+
+::view-transition-new(.nav-forward),
+::view-transition-new(.nav-back) {
+  animation: 220ms var(--ease-out) 60ms both slide-in;
+}
+
+::view-transition-old(.nav-forward) {
+  --slide: -16px;
+}
+
+::view-transition-new(.nav-forward) {
+  --slide: 16px;
+}
+
+::view-transition-old(.nav-back) {
+  --slide: 16px;
+}
+
+::view-transition-new(.nav-back) {
+  --slide: -16px;
+}
+
+@keyframes slide-out {
+  to {
+    opacity: 0;
+    translate: var(--slide) 0;
+  }
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    translate: var(--slide) 0;
+  }
+}
+
+@keyframes via-blur {
+  30% {
+    filter: blur(3px);
   }
 }
 
@@ -397,7 +713,7 @@
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -405,9 +721,140 @@
   }
 }
 
+@keyframes skel-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+@keyframes data-in {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes draw-line {
+  from {
+    clip-path: inset(-20px 100% -20px -20px);
+  }
+  to {
+    clip-path: inset(-20px -20px -20px -20px);
+  }
+}
+
+@keyframes arc-draw {
+  from {
+    stroke-dashoffset: 100;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes end-dot {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+@keyframes sheen {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes badge-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(4px);
+  }
+}
+
+@keyframes ns-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes score-glow {
+  0% {
+    opacity: 0;
+  }
+  45% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes swap-in {
+  from {
+    opacity: 0;
+    filter: blur(3px);
+  }
+}
+
+/*
+ * Less motion means fewer and gentler animations, not none: movement and scale go,
+ * fades that explain a change stay.
+ */
 @media (prefers-reduced-motion: reduce) {
   .rise {
     animation: none;
+  }
+  .skel,
+  .sync-dot[data-busy="true"]::after {
+    animation: none;
+  }
+  .draw-line,
+  .arc-draw,
+  .end-dot,
+  .sheen,
+  .score-glow {
+    animation: none;
+  }
+  .sheen {
+    display: none;
+  }
+  .ns-in,
+  .badge-in,
+  .data-in,
+  .swap-in {
+    animation: fade-in 180ms ease both;
+  }
+  .pill:active,
+  .press:active,
+  .tile:has(.tile-link:active) {
+    transform: none;
+  }
+  .popup,
+  .popup-up {
+    transform: none;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
   }
   * {
     transition-duration: 0.01ms !important;

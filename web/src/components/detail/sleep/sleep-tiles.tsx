@@ -5,6 +5,7 @@
 // the sleep is.
 
 import { mix, STAGE_COLORS, STAGE_LABELS, StageStrip, TileShell } from "@/components/ui/tile";
+import { Morph } from "@/components/ui/motion";
 import {
   nightScore,
   regularityBand,
@@ -154,7 +155,7 @@ export function NightTile({ night, timeZone, isLastNight }: { night: Day; timeZo
         <div className="mono text-[12px] text-ink2">{clock}</div>
       </div>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <div className="figure text-[clamp(40px,4vw,52px)] leading-none tracking-[-0.03em]">{formatDuration(minutes)}</div>
+        <div className="figure text-[clamp(40px,4vw,52px)] leading-none tracking-[-0.03em]"><Morph name="figure-sleep">{formatDuration(minutes)}</Morph></div>
         <div className="text-[14px] text-ink2">spánku{inBed !== null ? ` · v posteli ${formatDuration(inBed)}` : ""}</div>
       </div>
       {main ? (

@@ -32,6 +32,7 @@ import {
   type RecordItem,
 } from "@/lib/overview";
 import { formatStrain } from "@/lib/scores";
+import { useFirstTime } from "@/components/ui/motion";
 import type { Dataset } from "@/lib/types";
 
 function capitalize(text: string) {
@@ -221,6 +222,32 @@ function recordText(item: RecordItem): { value: string; note: string } {
   }
 }
 
+/**
+ * A record set on the shown day: one golden sheen crosses the tile and a badge appears.
+ * Rare, so it may delight, but only once per record in this browser.
+ */
+function RecordMoment({ id }: { id: string }) {
+  const first = useFirstTime(`record:${id}`);
+  return (
+    <>
+      {first && (
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden" style={{ borderRadius: 28 }}>
+          <div className="sheen" />
+        </div>
+      )}
+      <span
+        className={`${first ? "badge-in " : ""}inline-flex h-[26px] items-center gap-1.5 self-start rounded-full px-2.5 text-[12px] font-bold`}
+        style={{ background: "color-mix(in oklab, var(--accent) 22%, transparent)", color: "var(--accent)" }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.5 6.7 19.4l1.2-6L3.4 9.3l6-.7z" />
+        </svg>
+        Nový rekord
+      </span>
+    </>
+  );
+}
+
 export function RecordsTile({ dataset, date }: { dataset: Dataset; date: string }) {
   const items = records(dataset.days, date);
   return (
@@ -230,6 +257,7 @@ export function RecordsTile({ dataset, date }: { dataset: Dataset; date: string 
           const text = recordText(item);
           return (
             <div key={item.key} className="flex flex-col gap-0.5 border-t border-line py-3">
+              {item.day === date && <RecordMoment id={`${item.key}:${item.day}:${Math.round(item.value)}`} />}
               <div className="figure-sm text-[26px] leading-[1.1]">{text.value}</div>
               <div className="text-[12px] text-ink2">{text.note}</div>
             </div>

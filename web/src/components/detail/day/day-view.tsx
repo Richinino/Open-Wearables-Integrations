@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, ViewTransition } from "react";
 import { capitalize, Chip, riseStyle, RoundNav } from "@/components/detail/shared-b/parts";
 import { ROUTES } from "@/components/shell/nav";
 import { WithData } from "@/components/shell/shell";
@@ -29,10 +29,10 @@ function Head({ date, today, previous, next, chip }: { date: string; today: stri
         {chip && <div className="mt-3">{chip}</div>}
       </div>
       <nav aria-label="Iné dni" className="flex shrink-0 gap-2">
-        <RoundNav label={previous ? `Predošlý deň, ${formatDay(previous)}` : "Predošlý deň"} href={previous && ROUTES.day(previous)}>
+        <RoundNav label={previous ? `Predošlý deň, ${formatDay(previous)}` : "Predošlý deň"} href={previous && ROUTES.day(previous)} transitionTypes={["nav-back"]}>
           ←
         </RoundNav>
-        <RoundNav label={next ? `Nasledujúci deň, ${formatDay(next)}` : "Nasledujúci deň"} href={next && ROUTES.day(next)}>
+        <RoundNav label={next ? `Nasledujúci deň, ${formatDay(next)}` : "Nasledujúci deň"} href={next && ROUTES.day(next)} transitionTypes={["nav-forward"]}>
           →
         </RoundNav>
       </nav>
@@ -135,5 +135,18 @@ export function DayView({ date }: { date: string }) {
       </>
     );
   }
-  return <WithData>{(dataset, now) => <DayDetail dataset={dataset} now={now} date={date} />}</WithData>;
+  return (
+    <WithData>
+      {(dataset, now) => (
+        <ViewTransition key={date} enter={DAY_SLIDE} exit={DAY_SLIDE} default="none">
+          <div className="flex min-w-0 flex-col gap-[18px]">
+            <DayDetail dataset={dataset} now={now} date={date} />
+          </div>
+        </ViewTransition>
+      )}
+    </WithData>
+  );
 }
+
+/** Arrows to earlier days slide the day out to the right, to later days to the left. */
+const DAY_SLIDE = { "nav-forward": "nav-forward", "nav-back": "nav-back", default: "none" };

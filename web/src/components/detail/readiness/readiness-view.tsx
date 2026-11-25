@@ -48,7 +48,7 @@ function Readiness({ dataset, now }: { dataset: Dataset; now: Date }) {
 
   return (
     <>
-      <DetailHead section="Pripravenosť" title="Readiness">
+      <DetailHead section="Pripravenosť" title="Pripravenosť">
         Ako je telo pripravené na deň · {isToday ? "dnes" : formatDay(day.day)} · odhad z dostupných údajov
       </DetailHead>
 
@@ -70,7 +70,7 @@ function Readiness({ dataset, now }: { dataset: Dataset; now: Date }) {
         label={`Readiness · ${TREND_DAYS} dní`}
         note={mean === null ? "Za toto obdobie zatiaľ bez skóre." : `Priemer ≈ ${formatInt(mean)} · ${readinessBand(mean)?.label ?? ""} · každý deň je odhad`}
         table={{
-          columns: ["Deň", "Readiness", "Pásmo"],
+          columns: ["Deň", "Pripravenosť", "Pásmo"],
           rows: trend
             .filter((item) => scoreValue(item.score) !== null)
             .map((item) => [formatDay(item.key), formatScore(item.score), readinessBand(scoreValue(item.score))?.label ?? DASH])

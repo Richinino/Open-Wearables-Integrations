@@ -208,7 +208,7 @@ export function TrendChart({
             {series.map((item) => {
               const { path, lonely } = linePath(item.values, x, y);
               return (
-                <g key={item.label}>
+                <g key={item.label} className="draw-line">
                   <path
                     d={path}
                     fill="none"

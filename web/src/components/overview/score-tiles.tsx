@@ -15,6 +15,7 @@ import {
   type SubScore,
 } from "@/lib/scores";
 import type { Dataset, Day } from "@/lib/types";
+import { TripleRing, type RingPart } from "./triple-ring";
 
 const SUB_HREF: Record<SubScore["key"], string> = {
   readiness: ROUTES.readiness,
@@ -75,20 +76,14 @@ export function DayScoreTile({
 }) {
   const value = day?.scores?.day_score ?? null;
   const parts = day ? subScores(day, previous) : [];
+  const ringParts: RingPart[] = (["readiness", "sleepPerformance", "activity"] as const).map((key) => {
+    const part = parts.find((item) => item.key === key);
+    return { key, label: part?.label ?? SCORE_NAMES[key], value: part?.value ?? null, color: SUB_COLOR[key] };
+  });
   return (
     <TileShell className="gap-6 p-6 sm:p-[30px]">
       <TileTitle href={ROUTES.day(date)}>{isToday ? SCORE_NAMES.day : `${SCORE_NAMES.day} · ${formatDay(date)}`}</TileTitle>
-      <Ring
-        share={value === null ? 0 : value / 100}
-        sweep={0.75}
-        from={225}
-        thickness={12}
-        className={RING_CLASS}
-        label={value === null ? "Skóre dňa zatiaľ nie je" : `Skóre dňa ${formatInt(value)} zo 100`}
-      >
-        <span className="figure text-[clamp(76px,8vw,104px)] leading-[0.9] tracking-[-0.05em]">{formatInt(value)}</span>
-        <span className="mt-1.5 text-[14px] text-ink2">{dayScoreLabel(value)}</span>
-      </Ring>
+      <TripleRing parts={ringParts} score={value} caption={value === null ? "skóre zatiaľ nie je" : dayScoreLabel(value)} date={date} />
       <div className="flex flex-col gap-4">
         {parts.map((part) => (
           <ScoreRow

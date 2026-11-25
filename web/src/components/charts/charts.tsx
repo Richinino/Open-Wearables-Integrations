@@ -268,6 +268,7 @@ export function LineChart({
         return (
           <>
             <path
+              className="draw-line"
               d={path}
               fill="none"
               stroke={color}

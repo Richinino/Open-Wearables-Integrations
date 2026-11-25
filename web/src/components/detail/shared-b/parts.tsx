@@ -40,23 +40,26 @@ export function RoundNav({
   label,
   href,
   onClick,
+  transitionTypes,
   children,
 }: {
   label: string;
   href?: string | null;
   onClick?: (() => void) | null;
+  /** View-transition types for the link, e.g. ["nav-back"] for an arrow to earlier days. */
+  transitionTypes?: string[];
   children: ReactNode;
 }) {
   if (href) {
     return (
-      <Link href={href} aria-label={label} title={label} className={`${ROUND} bg-glass text-ink no-underline hover:bg-sunk`}>
+      <Link href={href} aria-label={label} title={label} transitionTypes={transitionTypes} className={`${ROUND} press bg-glass text-ink no-underline hover:bg-sunk`}>
         {children}
       </Link>
     );
   }
   if (onClick) {
     return (
-      <button type="button" aria-label={label} title={label} onClick={onClick} className={`${ROUND} cursor-pointer bg-glass text-ink hover:bg-sunk`}>
+      <button type="button" aria-label={label} title={label} onClick={onClick} className={`${ROUND} press cursor-pointer bg-glass text-ink hover:bg-sunk`}>
         {children}
       </button>
     );

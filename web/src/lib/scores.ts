@@ -20,10 +20,10 @@ import type { CardioLoadStatus, Day, DayScores, NightSignal, Score } from "./typ
 
 export const SCORE_NAMES = {
   day: "Skóre dňa",
-  readiness: "Readiness",
-  sleepPerformance: "Sleep Performance",
+  readiness: "Pripravenosť",
+  sleepPerformance: "Výkon spánku",
   appleSleep: "Sleep Score",
-  activity: "Activity",
+  activity: "Aktivita",
   strain: "Strain",
   sleepNeed: "Potreba spánku",
   cardioLoad: "Stav záťaže",
@@ -101,6 +101,7 @@ const NOTE_TEXTS: Readonly<Record<string, string>> = {
   "too little history": "zatiaľ málo dát",
   "no data": "bez dát",
   "no sleep recorded": "spánok sa nezaznamenal",
+  "no heart rate recorded": "tep sa nezaznamenal",
   "no sleep need from the day before": "chýba potreba spánku z predošlého dňa",
   "age missing": "chýba vek",
   "no sleep stages, no stage deductions": "bez fáz spánku",

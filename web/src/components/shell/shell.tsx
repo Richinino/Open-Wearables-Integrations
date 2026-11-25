@@ -94,7 +94,7 @@ function useDismiss(
 
 function Chevron({ open }: { open: boolean }) {
   return (
-    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" style={{ transform: open ? "rotate(180deg)" : undefined }}>
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" style={{ transform: open ? "rotate(180deg)" : undefined, transition: "transform 180ms var(--ease-out)" }}>
       <path d="m2.5 4.5 3.5 3.5 3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
@@ -132,8 +132,8 @@ function DetailMenu({ pathname }: { pathname: string }) {
         {current ? current.label : "Detaily"}
         <Chevron open={open} />
       </button>
-      {open && (
-        <div id={id} className={`${POPUP} top-[52px] left-0 w-[290px]`} style={POPUP_STYLE}>
+      {(
+        <div id={id} className={`${POPUP} popup top-[52px] left-0 w-[290px]`} style={{ ...POPUP_STYLE, transformOrigin: "top left" }} data-open={open} inert={!open}>
           <ul>
             {details.map((item) => (
               <li key={item.href}>
@@ -155,7 +155,11 @@ function DetailMenu({ pathname }: { pathname: string }) {
   );
 }
 
-function SyncStatus({ dataset, now, failed }: { dataset: Dataset; now: Date; failed: boolean }) {
+/**
+ * Age of the data in the header. While a refresh runs, a thin arc turns around the dot;
+ * the page itself stays as it is (it used to dim, every minute while the data was old).
+ */
+function SyncStatus({ dataset, now, failed, busy }: { dataset: Dataset; now: Date; failed: boolean; busy: boolean }) {
   const status = dataStatus(dataset, now, failed);
   const stale = status.warning;
   return (
@@ -163,7 +167,8 @@ function SyncStatus({ dataset, now, failed }: { dataset: Dataset; now: Date; fai
       className="flex items-center gap-2"
       title={status.title}
     >
-      <span aria-hidden="true" className="size-1.5 rounded-full" style={{ background: stale ? "var(--warn)" : "var(--good)" }} />
+      <span aria-hidden="true" data-busy={busy} className="sync-dot size-1.5 rounded-full" style={{ background: stale ? "var(--warn)" : "var(--good)", transition: "background-color 300ms ease" }} />
+      {busy && <span className="sr-only">Obnovujem dáta. </span>}
       <span>
         {stale ? "pozor · " : <span className="sr-only">Prepočítané </span>}
         {formatRelative(dataset.synced_at, now)}
@@ -212,8 +217,8 @@ function TabBar({ pathname }: { pathname: string }) {
       className="fixed inset-x-3 bottom-3 z-30 sm:hidden"
       style={{ marginBottom: "env(safe-area-inset-bottom)" }}
     >
-      {open && (
-        <div id={id} className={`${POPUP} right-0 bottom-[70px] left-0`} style={POPUP_STYLE}>
+      {(
+        <div id={id} className={`${POPUP} popup popup-up right-0 bottom-[70px] left-0`} style={{ ...POPUP_STYLE, transformOrigin: "bottom right" }} data-open={open} inert={!open}>
           <ul className="grid grid-cols-2 gap-1">
             {extra.map((item) => (
               <li key={item.href}>
@@ -261,7 +266,7 @@ function TabBar({ pathname }: { pathname: string }) {
 export function Shell({ children }: { children: React.ReactNode }) {
   const context = useAccount();
   const pathname = usePathname();
-  const { dataset, error } = useDataset();
+  const { dataset, error, isValidating } = useDataset();
   const now = useNow();
   const today = dataset ? todayIn(dataset.timezone, now) : null;
 
@@ -269,7 +274,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <div className="relative min-h-dvh overflow-clip">
       <Glows mirrored={pathname.startsWith(ROUTES.calendar)} />
       <div className="relative mx-auto flex max-w-[1360px] flex-col gap-[18px] px-[clamp(16px,3vw,40px)] pt-5 pb-28 sm:pt-7 sm:pb-12">
-        <header className="flex flex-wrap items-center justify-between gap-3 px-1 pb-2">
+        <header className="flex flex-wrap items-center justify-between gap-3 px-1 pb-2" style={{ viewTransitionName: "site-header" }}>
           <div className="flex flex-wrap items-center gap-x-7 gap-y-3">
             <Link href="/" className="flex items-center gap-3 no-underline">
               <Mark />
@@ -287,7 +292,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
             <div className="mono flex items-center gap-5 text-[12px] tracking-[0.04em] text-ink2 uppercase">
               {today && <div className="hidden md:block">{capitalize(formatDayLong(today).replace(/\s\d{4}$/, ""))}</div>}
-              {dataset && <SyncStatus dataset={dataset} now={now} failed={Boolean(error)} />}
+              {dataset && <SyncStatus dataset={dataset} now={now} failed={Boolean(error)} busy={isValidating} />}
             </div>
             <div className="hidden sm:block">
               <ThemeToggle />
@@ -316,7 +321,64 @@ function AccountMenu() {
   const close = useCallback(() => setOpen(false), []);
   useDismiss(open, close, ref, button);
   if (!context) return null;
-  return <div ref={ref} className="relative"><button ref={button} type="button" className="pill pill-outline max-w-[160px]" aria-expanded={open} aria-controls={id} onClick={() => setOpen((value) => !value)}><svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="shrink-0"><circle cx="12" cy="8" r="4" /><path d="M4 21v-2a8 8 0 0 1 16 0v2" /></svg><span className="truncate">{context.account.first_name}</span><span className="sr-only"> · Menu účtu</span></button>{open && <div id={id} className={`${POPUP} right-0 top-[52px] w-[min(290px,calc(100vw-32px))]`} style={POPUP_STYLE}><p className="px-3.5 py-2 text-xs text-ink2">{context.account.role === "admin" ? "Administrátor" : "Používateľ"}</p><ul><li><Link className="row-link !m-0 block !px-3.5 !py-3 font-semibold" href="/ucet" onClick={close}>Nastavenia účtu</Link></li>{context.account.status === "active" && <li><Link className="row-link !m-0 block !px-3.5 !py-3 font-semibold" href="/nastavenia" onClick={close}>Nastavenia</Link></li>}{context.account.role === "admin" && context.account.status === "active" && !context.viewOnly && <><li><Link className="row-link !m-0 block !px-3.5 !py-3 font-semibold" href="/admin/ucty" onClick={close}>Prepnúť účet</Link></li><li><Link className="row-link !m-0 block !px-3.5 !py-3 font-semibold" href="/admin" onClick={close}>Admin panel</Link></li></>}<li><ActionForm action={logoutAccount} submit="Odhlásiť sa" /></li></ul></div>}</div>;
+  return <div ref={ref} className="relative"><button ref={button} type="button" className="pill pill-outline max-w-[160px]" aria-expanded={open} aria-controls={id} onClick={() => setOpen((value) => !value)}><svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="shrink-0"><circle cx="12" cy="8" r="4" /><path d="M4 21v-2a8 8 0 0 1 16 0v2" /></svg><span className="truncate">{context.account.first_name}</span><span className="sr-only"> · Menu účtu</span></button>{<div id={id} className={`${POPUP} popup right-0 top-[52px] w-[min(290px,calc(100vw-32px))]`} style={{ ...POPUP_STYLE, transformOrigin: "top right" }} data-open={open} inert={!open}><p className="px-3.5 py-2 text-xs text-ink2">{context.account.role === "admin" ? "Administrátor" : "Používateľ"}</p><ul><li><Link className="row-link !m-0 block !px-3.5 !py-3 font-semibold" href="/ucet" onClick={close}>Nastavenia účtu</Link></li>{context.account.status === "active" && <li><Link className="row-link !m-0 block !px-3.5 !py-3 font-semibold" href="/nastavenia" onClick={close}>Nastavenia</Link></li>}{context.account.role === "admin" && context.account.status === "active" && !context.viewOnly && <><li><Link className="row-link !m-0 block !px-3.5 !py-3 font-semibold" href="/admin/ucty" onClick={close}>Prepnúť účet</Link></li><li><Link className="row-link !m-0 block !px-3.5 !py-3 font-semibold" href="/admin" onClick={close}>Admin panel</Link></li></>}<li><ActionForm action={logoutAccount} submit="Odhlásiť sa" /></li></ul></div>}</div>;
+}
+
+/** One skeleton tile: a label line, a large figure, a note, then a chart block. */
+function SkeletonTile({ height, chart = true, className = "" }: { height: number; chart?: boolean; className?: string }) {
+  return (
+    <div className={`glass flex min-w-0 flex-col gap-3 p-6 ${className}`} style={{ borderRadius: 28, minHeight: height }}>
+      <span className="skel h-3 w-28" />
+      <span className="skel mt-2 h-12 w-3/5" style={{ borderRadius: 14 }} />
+      <span className="skel h-3 w-2/5" />
+      {chart && <span className="skel mt-auto h-24 w-full" style={{ borderRadius: 14 }} />}
+    </div>
+  );
+}
+
+/**
+ * The page in outline while the data loads: tiles where tiles will be, so nothing jumps
+ * and the wait reads as loading rather than as an empty page.
+ */
+function LoadingSkeleton({ overview }: { overview: boolean }) {
+  return (
+    <div role="status" aria-live="polite" className="flex flex-col gap-[18px]">
+      <span className="sr-only">Načítavam dáta…</span>
+      {overview ? (
+        <>
+          <div className="grid gap-[18px] md:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)] xl:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)_minmax(0,1fr)]">
+            <SkeletonTile height={460} />
+            <div className="flex min-w-0 flex-col gap-[18px]">
+              <SkeletonTile height={300} />
+              <div className="grid grid-cols-3 gap-[18px]">
+                <SkeletonTile height={142} chart={false} />
+                <SkeletonTile height={142} chart={false} />
+                <SkeletonTile height={142} chart={false} />
+              </div>
+            </div>
+            <div className="hidden min-w-0 flex-col gap-[18px] xl:flex">
+              <SkeletonTile height={240} />
+              <SkeletonTile height={202} chart={false} />
+            </div>
+          </div>
+          <SkeletonTile height={200} chart={false} />
+        </>
+      ) : (
+        <>
+          <div className="flex flex-col gap-3 px-1">
+            <span className="skel h-3 w-32" />
+            <span className="skel h-14 w-72 max-w-full" style={{ borderRadius: 16 }} />
+            <span className="skel h-3 w-80 max-w-full" />
+          </div>
+          <div className="grid gap-[18px] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+            <SkeletonTile height={380} />
+            <SkeletonTile height={380} />
+          </div>
+          <SkeletonTile height={300} />
+        </>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -324,8 +386,12 @@ function AccountMenu() {
  * nothing to show, and a source that has gone quiet.
  */
 export function WithData({ children }: { children: (dataset: Dataset, now: Date) => React.ReactNode }) {
-  const { dataset, error, isValidating } = useDataset();
+  const { dataset, error } = useDataset();
   const now = useNow();
+  const pathname = usePathname();
+  // The content blurs into focus only when it replaces a skeleton, not on every visit.
+  const [waited, setWaited] = useState(false);
+  if (!dataset && !error && !waited) setWaited(true);
 
   if (!dataset) {
     if (error) {
@@ -335,12 +401,7 @@ export function WithData({ children }: { children: (dataset: Dataset, now: Date)
         </EmptyState>
       );
     }
-    return (
-      <div className="flex items-center gap-3 px-1 py-24 text-[14px] text-ink2" role="status">
-        <span className="size-2 animate-pulse rounded-full bg-accent" />
-        Načítavam dáta…
-      </div>
-    );
+    return <LoadingSkeleton overview={pathname === ROUTES.overview} />;
   }
   if (dataset.days.length === 0) {
     return (
@@ -353,7 +414,7 @@ export function WithData({ children }: { children: (dataset: Dataset, now: Date)
   const status = dataStatus(dataset, now, Boolean(error));
   const stale = status.warning;
   return (
-    <div className="flex flex-col gap-[18px] transition-opacity duration-300" style={{ opacity: isValidating && stale ? 0.7 : 1 }}>
+    <div className={`flex flex-col gap-[18px] ${waited ? "data-in" : ""}`}>
       {stale && (
         <p
           role="status"
