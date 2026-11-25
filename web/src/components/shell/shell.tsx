@@ -274,7 +274,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <div className="relative min-h-dvh overflow-clip">
       <Glows mirrored={pathname.startsWith(ROUTES.calendar)} />
       <div className="relative mx-auto flex max-w-[1360px] flex-col gap-[18px] px-[clamp(16px,3vw,40px)] pt-5 pb-28 sm:pt-7 sm:pb-12">
-        <header className="flex flex-wrap items-center justify-between gap-3 px-1 pb-2" style={{ viewTransitionName: "site-header" }}>
+        {/* Above the page: the header is its own layer (view transitions), so its menus must stack over the tiles. */}
+        <header className="relative z-30 flex flex-wrap items-center justify-between gap-3 px-1 pb-2" style={{ viewTransitionName: "site-header" }}>
           <div className="flex flex-wrap items-center gap-x-7 gap-y-3">
             <Link href="/" className="flex items-center gap-3 no-underline">
               <Mark />
