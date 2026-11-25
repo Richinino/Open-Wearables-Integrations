@@ -10,6 +10,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import java.time.Instant
+import kotlinx.coroutines.delay
 import sk.zdravie.app.ui.ZdravieApp
 import sk.zdravie.app.updates.UpdateUi
 import sk.zdravie.app.updates.UpdateViewModel
@@ -25,13 +28,19 @@ class MainActivity:ComponentActivity() {
         setContent {
             val state by model.state.collectAsStateWithLifecycle()
             val updateState by updater.state.collectAsStateWithLifecycle()
+            // "Dáta pred X" and the 15:00 switch to the evening layout follow the clock while the app stays open.
+            val now by produceState(Instant.now()) { while (true) { delay(30_000); value = Instant.now() } }
             ZdravieApp(state,model::login,model::logout,model::refresh,::openWeb,
                 onCheckForUpdates = { updater.check(manual = true) },
                 overlay = {
                     UpdateUi(updateState, updater::download, updater::defer,
                         { updater.install(this) }, updater::dismissError, updater::cancelDownload,
                         { updater.check(manual = true) })
-                })
+                },
+                onLoadDaily = model::loadDaily,
+                onSaveJournal = model::saveJournal,
+                onAdoptConflict = model::adoptConflict,
+                clock = { now })
         }
     }
     override fun onStart() {

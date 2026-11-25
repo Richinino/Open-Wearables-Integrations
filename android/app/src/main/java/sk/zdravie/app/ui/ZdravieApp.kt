@@ -1,6 +1,6 @@
 package sk.zdravie.app.ui
 
-import androidx.compose.foundation.Canvas
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -37,8 +37,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -46,6 +44,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -54,17 +53,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
@@ -77,15 +71,31 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.time.Instant
+import sk.zdravie.app.BuildConfig
+import sk.zdravie.app.logic.Format
+import sk.zdravie.app.logic.Scores
 import sk.zdravie.app.model.AppSession
 import sk.zdravie.app.model.AppUiState
+import sk.zdravie.app.model.JournalEntry
 import sk.zdravie.app.model.WorkoutSummary
-import sk.zdravie.app.BuildConfig
+import sk.zdravie.app.ui.screens.ModeChoice
+import sk.zdravie.app.ui.screens.TodayScreen
+import sk.zdravie.app.ui.screens.today.focusDate
 
 private val Web = BuildConfig.API_BASE_URL.trimEnd('/')
-private enum class AppTab(val title: String) { OVERVIEW("Prehľad"), HISTORY("História"), ACCOUNT("Účet") }
 
-/** Native screens consume only the current controller state. No credentials or health data are saved by UI. */
+/** Balík 1 entry points of the controller; all default to no-ops so previews and tests can omit them. */
+private class DailyActions(
+    val load: (String) -> Unit,
+    val save: (String, JournalEntry) -> Unit,
+    val adopt: (String) -> Unit,
+)
+
+/**
+ * Native screens consume only the current controller state. No credentials or health data are saved by UI.
+ * [clock] is read during composition; the activity passes a ticking clock, tests a fixed one.
+ */
 @Composable
 fun ZdravieApp(
     state: AppUiState,
@@ -95,6 +105,10 @@ fun ZdravieApp(
     onOpenWeb: (String) -> Unit,
     onCheckForUpdates: (() -> Unit)? = null,
     overlay: @Composable () -> Unit = {},
+    onLoadDaily: (String) -> Unit = {},
+    onSaveJournal: (String, JournalEntry) -> Unit = { _, _ -> },
+    onAdoptConflict: (String) -> Unit = {},
+    clock: () -> Instant = Instant::now,
 ) {
     val session = state.session
     // A changed identity discards navigation, selected dates, and all other remembered UI state.
@@ -104,7 +118,8 @@ fun ZdravieApp(
             if (session == null) {
                 LoginScreen(state, onLogin, onRefresh, onOpenWeb)
             } else {
-                SignedInApp(state, session, localTheme, { localTheme = it }, onLogout, onRefresh, onOpenWeb, onCheckForUpdates)
+                SignedInApp(state, session, localTheme, { localTheme = it }, onLogout, onRefresh, onOpenWeb, onCheckForUpdates,
+                    DailyActions(onLoadDaily, onSaveJournal, onAdoptConflict), clock())
             }
             overlay()
         }
@@ -214,87 +229,77 @@ private fun SignedInApp(
     onRefresh: () -> Unit,
     onOpenWeb: (String) -> Unit,
     onCheckForUpdates: (() -> Unit)?,
+    daily: DailyActions,
+    now: Instant,
 ) {
-    var tab by remember { mutableStateOf(AppTab.OVERVIEW) }
-    var metric by remember { mutableStateOf(HistoryMetric.STEPS) }
+    // All of this sits inside the identity key of ZdravieApp, so a new account starts from scratch.
+    var tab by remember { mutableStateOf(AppTab.TODAY) }
+    var showAccount by remember { mutableStateOf(false) }
+    var selectedDate by remember { mutableStateOf<String?>(null) }
+    var modeChoice by remember { mutableStateOf<ModeChoice?>(null) }
     val waiting = session.account.status == "pending" || !session.account.paired
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        contentWindowInsets = WindowInsets.safeDrawing,
-        bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                AppTab.entries.forEach { item ->
-                    NavigationBarItem(
-                        selected = tab == item,
-                        onClick = { tab = item },
-                        icon = { TabIcon(item, if (tab == item) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
-                        label = { Text(item.title) },
-                    )
-                }
-            }
-        },
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
-            when {
-                tab == AppTab.ACCOUNT -> AccountScreen(state, session, theme, onTheme, onLogout, onRefresh, onOpenWeb, onCheckForUpdates)
-                waiting -> WaitingScreen(state, session, onRefresh, onOpenWeb)
-                tab == AppTab.HISTORY -> HistoryScreen(state, metric, { metric = it }, onRefresh)
-                else -> OverviewScreen(state, session, onRefresh) { selected -> metric = selected; tab = AppTab.HISTORY }
-            }
-        }
+    val dataset = state.dataset?.takeIf { it.days.isNotEmpty() }
+    val initial = initialOf(session.account.firstName)
+    // The selected date is shared by all tabs; without a choice it follows the web's focus day.
+    val date = dataset?.let {
+        val natural = Scores.resolveMode(now, it.timezone, null).mode
+        val forced = modeChoice?.takeIf { choice -> choice.natural == natural }?.mode
+        selectedDate ?: focusDate(it, now, forced)
     }
-}
-
-@Composable
-private fun OverviewScreen(state: AppUiState, session: AppSession, onRefresh: () -> Unit, onHistory: (HistoryMetric) -> Unit) {
-    val days = remember(state.days) { state.days.sortedByDescending { it.day } }
-    val latest = days.firstOrNull()
-    ScreenList {
-        item {
-            Brand()
-            Spacer(Modifier.height(24.dp))
-            MutedText("Dobrý deň, ${session.account.firstName.ifBlank { "vitajte" }}")
-            Text("Váš prehľad", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp).semantics { heading() })
-        }
-        item { RefreshStatus(state, onRefresh) }
-        if (latest == null) {
-            item { NoData(state, onRefresh) }
-        } else {
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(dayLabel(latest.day), style = MaterialTheme.typography.titleMedium)
-                    if (!latest.complete) StatusPill("Priebežné údaje · deň ešte nie je uzavretý", MaterialTheme.colorScheme.secondary)
-                    val age = dayAge(latest)
-                    if (age != null && age >= 2) StatusPill("Posledné dostupné údaje sú staršie ako deň", MaterialTheme.colorScheme.tertiary)
+    val eyebrow = date?.let { Format.formatDayLong(it) }
+    LaunchedEffect(tab, date, waiting, showAccount) {
+        if (tab == AppTab.TODAY && date != null && !waiting && !showAccount) daily.load(date)
+    }
+    BackHandler(enabled = showAccount) { showAccount = false }
+    val openAccount = { showAccount = true }
+    AppShell(
+        tab = tab,
+        showNav = !showAccount && !waiting,
+        onTab = { picked ->
+            // Tapping Dnes again goes back to the automatic day.
+            if (picked == AppTab.TODAY && tab == AppTab.TODAY) selectedDate = null
+            tab = picked
+        },
+    ) {
+        when {
+            showAccount -> Column(Modifier.fillMaxSize()) {
+                BackRow("Účet") { showAccount = false }
+                Box(Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
+                    AccountScreen(state, session, theme, onTheme, onLogout, onRefresh, onOpenWeb, onCheckForUpdates)
                 }
             }
-            item {
-                AdaptivePair(
-                    first = { MetricCard("Kroky", steps(latest.steps), "krokov", MaterialTheme.colorScheme.primary) { onHistory(HistoryMetric.STEPS) } },
-                    second = { MetricCard("Spánok", duration(latest.sleepMinutes), "celkový čas", MaterialTheme.colorScheme.secondary) { onHistory(HistoryMetric.SLEEP) } },
-                )
+            waiting -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                WaitingScreen(state, session, onRefresh, onOpenWeb)
+                AccountCircle(initial, openAccount, Modifier.align(Alignment.TopEnd).padding(top = 16.dp, end = 12.dp))
             }
-            item {
-                AdaptivePair(
-                    first = { MetricCard("Pripravenosť ≈", finiteValue(latest.readiness)?.let { "≈ ${whole(it)}" } ?: "—", "približné skóre / 100", MaterialTheme.colorScheme.secondary) { onHistory(HistoryMetric.READINESS) } },
-                    second = { MetricCard("Pokojový tep", restingHrValue(latest), "úderov/min", MaterialTheme.colorScheme.tertiary) { onHistory(HistoryMetric.RESTING_HR) } },
-                )
-            }
-            item {
-                Panel {
-                    SectionTitle("Ešte z vášho dňa")
-                    ValueRow("Aktívny čas", activeMinutesLabel(latest))
-                    ValueRow("Vzdialenosť", distanceLabel(latest))
-                    ValueRow("Skóre spánku", sleepScoreLabel(latest))
-                    ValueRow("Aktivita", finiteValue(latest.activityScore)?.let { "${whole(it)} / 100" } ?: "—")
-                    MutedText("≈ označuje približný výpočet. Chýbajúce údaje zobrazujeme ako —.", small = true)
+            dataset == null || date == null -> Column(Modifier.widthIn(max = 840.dp).fillMaxSize()) {
+                ScreenHeader(null, tab.title, initial, openAccount, Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp))
+                Box(Modifier.weight(1f)) {
+                    ScreenList {
+                        item { RefreshStatus(state, onRefresh) }
+                        item { NoData(state, onRefresh) }
+                    }
                 }
             }
-            if (latest.workouts.isNotEmpty()) {
-                item { SectionTitle("Tréningy · ${latest.workouts.size}") }
-                items(latest.workouts, key = { it.id }) { WorkoutCard(it, latest.timezone) }
-            }
-            item { OutlinedButton(onClick = { onHistory(HistoryMetric.STEPS) }, modifier = Modifier.fillMaxWidth()) { Text("Otvoriť históriu dní") } }
+            tab == AppTab.TODAY -> TodayScreen(
+                dataset = dataset,
+                date = date,
+                now = now,
+                account = session.account,
+                daily = state.daily,
+                onDate = { selectedDate = it },
+                onOpenSleep = { tab = AppTab.SLEEP },
+                onSaveJournal = daily.save,
+                onRefresh = onRefresh,
+                onAdoptConflict = daily.adopt,
+                onOpenAccount = openAccount,
+                modeChoice = modeChoice,
+                onModeChoice = { modeChoice = it },
+                refreshing = state.refreshing,
+                error = state.error,
+                readOnly = session.identity.viewOnly,
+            )
+            else -> PlaceholderScreen(tab, eyebrow, initial, openAccount)
         }
     }
 }
@@ -317,7 +322,7 @@ private fun WaitingScreen(state: AppUiState, session: AppSession, onRefresh: () 
             }
         }
         state.error?.let { message -> item { ErrorNotice(message, onRefresh) } }
-        item { MutedText("Po aktivácii a prvom prenose údajov obnovte túto obrazovku. Profil a odhlásenie nájdete v karte Účet.") }
+        item { MutedText("Po aktivácii a prvom prenose údajov obnovte túto obrazovku. Profil a odhlásenie nájdete pod kruhom účtu vpravo hore.") }
     }
 }
 
@@ -452,30 +457,6 @@ internal fun ValueRow(label: String, value: String) {
 }
 
 @Composable
-private fun AdaptivePair(first: @Composable () -> Unit, second: @Composable () -> Unit) {
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        if (maxWidth >= 340.dp && LocalDensity.current.fontScale <= 1.25f) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.weight(1f)) { first() }
-                Box(Modifier.weight(1f)) { second() }
-            }
-        } else Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { first(); second() }
-    }
-}
-
-@Composable
-private fun MetricCard(title: String, value: String, unit: String, accent: Color, onClick: () -> Unit) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth().testTag("metric-$title"), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.size(28.dp, 4.dp).background(accent, CircleShape))
-            Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            MutedText(unit, small = true)
-        }
-    }
-}
-
-@Composable
 internal fun StatusPill(label: String, color: Color) {
     Surface(shape = RoundedCornerShape(12.dp), color = color.copy(alpha = 0.12f)) {
         Text(label, Modifier.padding(horizontal = 12.dp, vertical = 8.dp), color = color, style = MaterialTheme.typography.bodySmall)
@@ -547,28 +528,3 @@ private fun workoutName(type: String): String = when (type.lowercase()) {
     else -> type.replace('_', ' ').replaceFirstChar { it.uppercase() }
 }
 
-@Composable
-private fun TabIcon(tab: AppTab, color: Color) {
-    Canvas(Modifier.size(24.dp).clearAndSetSemantics {}) {
-        val scale = size.width / 24f
-        val stroke = 1.8f * scale
-        when (tab) {
-            AppTab.OVERVIEW -> {
-                drawRoundRect(color, Offset(3 * scale, 3 * scale), Size(7 * scale, 7 * scale), style = Stroke(stroke))
-                drawRoundRect(color, Offset(14 * scale, 3 * scale), Size(7 * scale, 11 * scale), style = Stroke(stroke))
-                drawRoundRect(color, Offset(3 * scale, 14 * scale), Size(7 * scale, 7 * scale), style = Stroke(stroke))
-                drawRoundRect(color, Offset(14 * scale, 18 * scale), Size(7 * scale, 3 * scale), style = Stroke(stroke))
-            }
-            AppTab.HISTORY -> {
-                drawLine(color, Offset(4 * scale, 20 * scale), Offset(4 * scale, 4 * scale), stroke, StrokeCap.Round)
-                drawLine(color, Offset(4 * scale, 20 * scale), Offset(21 * scale, 20 * scale), stroke, StrokeCap.Round)
-                val points = listOf(Offset(7 * scale, 15 * scale), Offset(11 * scale, 10 * scale), Offset(15 * scale, 13 * scale), Offset(20 * scale, 5 * scale))
-                points.zipWithNext().forEach { (a, b) -> drawLine(color, a, b, stroke, StrokeCap.Round) }
-            }
-            AppTab.ACCOUNT -> {
-                drawCircle(color, 4 * scale, Offset(12 * scale, 7 * scale), style = Stroke(stroke))
-                drawArc(color, 180f, 180f, false, Offset(4 * scale, 14 * scale), Size(16 * scale, 12 * scale), style = Stroke(stroke))
-            }
-        }
-    }
-}

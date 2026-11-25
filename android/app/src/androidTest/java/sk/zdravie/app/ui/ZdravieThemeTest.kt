@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -33,7 +34,8 @@ class ZdravieThemeTest {
         assertLightIconsAppearance(false)
         compose.runOnIdle { state.value = state.value.copy(session = session.copy(account = session.account.copy(theme = "light"))) }
         assertLightIconsAppearance(true)
-        compose.onNodeWithText("Účet").performClick()
+        // The account opens from the circle top right (Task 8); it is no longer a bottom tab.
+        compose.onNodeWithContentDescription("Účet").performClick()
         compose.onNodeWithTag("screen-list").performScrollToNode(hasText("Tmavý"))
         compose.onNodeWithText("Tmavý").performClick()
         assertLightIconsAppearance(false)
