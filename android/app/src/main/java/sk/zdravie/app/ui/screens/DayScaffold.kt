@@ -91,7 +91,7 @@ internal fun DayScaffold(
                 }
             }
             content()
-            item(key = "end") { Spacer(Modifier.fillMaxWidth().height(1.dp)) }
+            item(key = "end") { Spacer(Modifier.fillMaxWidth().height(1.dp).testTag("screen-end")) }
         }
     }
 }

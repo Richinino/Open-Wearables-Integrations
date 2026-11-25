@@ -56,7 +56,7 @@ class MainActivity:ComponentActivity() {
         val base=Uri.parse(BuildConfig.API_BASE_URL)
         val uri=Uri.parse(if(value.startsWith('/')) BuildConfig.API_BASE_URL.trimEnd('/')+value else value)
         if(uri.scheme != "https" || uri.host != base.host || uri.port != -1 || uri.userInfo != null ||
-            uri.query != null || uri.fragment != null || uri.path !in setOf("/registracia","/zabudnute-heslo","/ucet","/nastavenia","/admin")) return
+            uri.query != null || uri.fragment != null || uri.path !in setOf("/registracia","/zabudnute-heslo","/ucet","/nastavenia","/zapis","/admin")) return
         try { startActivity(Intent(Intent.ACTION_VIEW,uri)) }
         catch(_:ActivityNotFoundException) { /* No browser installed on this device. */ }
     }

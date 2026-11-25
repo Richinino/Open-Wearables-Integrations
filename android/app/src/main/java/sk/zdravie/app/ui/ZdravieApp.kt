@@ -1,5 +1,9 @@
 package sk.zdravie.app.ui
 
+import sk.zdravie.app.ui.theme.LocalZTokens
+import sk.zdravie.app.ui.theme.ZType
+import sk.zdravie.app.ui.components.Segmented
+import androidx.compose.ui.draw.clip
 import sk.zdravie.app.ui.screens.SleepScreen
 import sk.zdravie.app.ui.screens.ActivityScreen
 import sk.zdravie.app.ui.screens.TrendsScreen
@@ -160,7 +164,7 @@ private fun LoginScreen(state: AppUiState, onLogin: (String, String, Boolean) ->
                 item { Brand() }
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Vaše zdravie.\nVáš prehľad.", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+                        Text("Vaše zdravie.\nVáš prehľad.", style = ZType.figure, color = LocalZTokens.current.ink, modifier = Modifier.semantics { heading() })
                         MutedText("Spánok, pohyb a každodenné súvislosti na jednom mieste.")
                     }
                 }
@@ -394,11 +398,9 @@ private fun AccountScreen(
         item {
             Panel {
                 SectionTitle("Vzhľad")
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("system" to "Systém", "light" to "Svetlý", "dark" to "Tmavý").forEach { (value, label) ->
-                        FilterChip(selected = theme == value || (value == "system" && theme !in listOf("light", "dark")), onClick = { onTheme(value) }, label = { Text(label) })
-                    }
-                }
+                val themes = listOf("system" to "Systém", "dark" to "Tmavý", "light" to "Svetlý")
+                val picked = themes.indexOfFirst { it.first == theme }.takeIf { it >= 0 } ?: 0
+                Segmented(themes.map { it.second }, picked, { onTheme(themes[it].first) })
                 MutedText("Táto voľba platí počas otvorenia aplikácie. Trvalý vzhľad účtu zmeníte na webe.", small = true)
             }
         }
@@ -408,6 +410,8 @@ private fun AccountScreen(
                 MutedText("Úpravu profilu, hesla a nastavení otvoríme vo vašom prehliadači.")
                 OutlinedButton(onClick = { onOpenWeb("$Web/ucet") }, modifier = Modifier.fillMaxWidth()) { Text("Profil a heslo na webe") }
                 if (account.status == "active") OutlinedButton(onClick = { onOpenWeb("$Web/nastavenia") }, modifier = Modifier.fillMaxWidth()) { Text("Nastavenia na webe") }
+                if (account.status == "active" && account.hasSamsung) OutlinedButton(onClick = { onOpenWeb("$Web/zapis") }, modifier = Modifier.fillMaxWidth()) { Text("Zápis zo Samsung Health") }
+                if (account.role == "admin" && account.status == "active") OutlinedButton(onClick = { onOpenWeb("$Web/admin") }, modifier = Modifier.fillMaxWidth()) { Text("Admin panel") }
                 Button(onClick = { confirmLogout = true }, modifier = Modifier.fillMaxWidth()) { Text("Odhlásiť sa") }
             }
         }
@@ -439,37 +443,40 @@ internal fun ScreenList(content: androidx.compose.foundation.lazy.LazyListScope.
     )
 }
 
+/** The A2 glass panel (radius 28, 1 dp line) used by login, waiting and account. */
 @Composable
 internal fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
+    sk.zdravie.app.ui.components.Panel(modifier.fillMaxWidth(), padding = 0.dp) {
+        Column(Modifier.fillMaxWidth().padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
     }
 }
 
+/** Half gold, half violet: the day and the night, as on the web. */
 @Composable
 private fun Brand() {
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(12.dp, 28.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp)))
-        Text("zdravie", fontWeight = FontWeight.Bold, fontSize = 25.sp, letterSpacing = (-0.7).sp)
+    val t = LocalZTokens.current
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(26.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Brush.horizontalGradient(0.5f to t.accent, 0.5f to t.sleep)))
+        Text("Zdravie", style = ZType.heading, color = t.ink, fontWeight = FontWeight.SemiBold)
     }
 }
 
 @Composable
 internal fun ScreenHeading(title: String, subtitle: String) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+        Text(title, style = ZType.title, color = LocalZTokens.current.ink, modifier = Modifier.semantics { heading() })
         MutedText(subtitle)
     }
 }
 
 @Composable
 internal fun SectionTitle(value: String) {
-    Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.semantics { heading() })
+    Text(value, style = ZType.heading, color = LocalZTokens.current.ink, modifier = Modifier.semantics { heading() })
 }
 
 @Composable
 internal fun MutedText(value: String, small: Boolean = false, modifier: Modifier = Modifier) {
-    Text(value, modifier, color = MaterialTheme.colorScheme.onSurfaceVariant, style = if (small) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium)
+    Text(value, modifier, color = LocalZTokens.current.ink2, style = if (small) ZType.caption else ZType.body)
 }
 
 @Composable
@@ -536,26 +543,15 @@ internal fun NoData(state: AppUiState, onRefresh: () -> Unit) {
     }
 }
 
-@Composable
-internal fun WorkoutCard(workout: WorkoutSummary, timezone: String?) {
-    Panel {
-        Text(workoutName(workout.type), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        MutedText("Začiatok · ${workoutTime(workout.start, timezone)}", small = true)
-        ValueRow("Trvanie", duration(finiteValue(workout.durationSeconds)?.div(60)))
-        finiteValue(workout.distanceMeters)?.let { ValueRow("Vzdialenosť", "${decimal(it / 1000)} km") }
-        if (finiteValue(workout.averageHr) != null) ValueRow("Priemerný tep", "${whole(workout.averageHr)} úderov/min")
-    }
-}
 
-private fun workoutName(type: String): String = when (type.lowercase()) {
-    "walking", "walk" -> "Chôdza"
-    "running", "run" -> "Beh"
-    "cycling", "bike", "biking" -> "Bicyklovanie"
-    "swimming", "swim" -> "Plávanie"
-    "hiking", "hike" -> "Turistika"
-    "strength", "strength_training", "weight_training" -> "Silový tréning"
-    "yoga" -> "Joga"
-    "workout", "other", "unknown", "" -> "Tréning"
-    else -> type.replace('_', ' ').replaceFirstChar { it.uppercase() }
-}
 
+private val SyncDate = java.time.format.DateTimeFormatter.ofPattern("d. M. yyyy, HH:mm", java.util.Locale.forLanguageTag("sk-SK"))
+
+/** Server sync time in local "d. M. yyyy, HH:mm"; null when absent or unreadable. */
+internal fun syncLabel(value: String?): String? {
+    if (value.isNullOrBlank()) return null
+    val instant = runCatching { java.time.Instant.parse(value) }.getOrNull()
+        ?: runCatching { java.time.OffsetDateTime.parse(value).toInstant() }.getOrNull()
+        ?: value.toLongOrNull()?.let { runCatching { java.time.Instant.ofEpochMilli(it) }.getOrNull() }
+    return instant?.atZone(java.time.ZoneId.systemDefault())?.format(SyncDate)
+}

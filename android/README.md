@@ -4,7 +4,14 @@ Natívny klient v Kotline a Jetpack Compose. Prihlasuje sa existujúcim účtom 
 
 Na bežnú inštaláciu použi [najnovšie podpísané vydanie](https://github.com/Richinino/Open-Wearables-Integrations/releases/latest). Od verzie 0.1.1 appka ponúka nové verzie priamo v aplikácii: stiahnuť, odložiť a potvrdiť inštaláciu cez Android. Pôvodnú 0.1.0 treba raz aktualizovať týmto APK cez existujúcu appku, bez odinštalovania. Postup a automatické vydávanie sú v [príručke aktualizácií](../docs/mobile/android-releases.md).
 
-Prvá verzia obsahuje prihlásenie, stav čakajúceho účtu, prehľad meraní, graf histórie za 14/30 dní, detail dňa a tréningov, profil a odhlásenie. Podporuje svetlý/tmavý vzhľad a preferované skóre spánku. Správa profilu, registrácia a obnova hesla otvoria existujúci web v prehliadači.
+Od verzie 0.2 má appka vzhľad Nočného panela ako web a štyri karty:
+
+- **Dnes:** ráno skóre dňa ako tri kruhy (pripravenosť, spánok, aktivita), večer strain a potreba spánku s časom zaspania. Postrehy ako balíček kariet, tento týždeň oproti minulému, spánok, aktivita, srdce, záťaž, tréningy a denník (keď ho server poskytuje).
+- **Spánok:** hypnogram noci, fázy, tri skóre noci, 14 nocí oproti potrebe a pravidelnosť.
+- **Aktivita:** kroky, strain za 14 dní, záťaž za 8 týždňov, zóny tepu a tréningy za 30 dní s detailom.
+- **Trendy:** desať ukazovateľov za 7 dní až rok, týždeň v kartách, kalendár 12 týždňov, rekordy, VO2max a vek tela.
+
+Účet sa otvára kruhom vpravo hore: vzhľad, aktualizácie, odkazy na web a odhlásenie. Pohyb je krátky a jemný a pri vypnutých animáciách v systéme sa neprehrá. Správa profilu, registrácia a obnova hesla otvoria existujúci web v prehliadači.
 
 Zobrazuje dáta, ktoré už do servera posiela Open Wearables. Zber cez Health Connect, widgety, upozornenia a offline história v tejto verzii ešte nie sú zahrnuté. Namerané hodnoty majú prednosť; odhadované hodnoty a približná Readiness sú označené. Chýbajúci údaj sa nezobrazuje ako nula.
 

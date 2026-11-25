@@ -106,14 +106,14 @@ fun SleepScreen(
                 Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     val inBed = main?.let { (it.end - it.start) / 60000.0 }
                     val awake = stages.firstOrNull { it.stage == SleepStage.AWAKE }?.minutes
-                    Fact("V posteli", Format.formatDurationShort(inBed), Modifier.weight(1f).fillMaxHeight())
-                    Fact("Bdenie", Format.formatDurationShort(awake), Modifier.weight(1f).fillMaxHeight())
-                    Fact("Zdriemnutie", Format.formatDurationShort(night?.napMinutes), Modifier.weight(1f).fillMaxHeight(), tag = "nap-value")
+                    Fact("V posteli", Format.formatDurationCompact(inBed), Modifier.weight(1f).fillMaxHeight())
+                    Fact("Bdenie", Format.formatDurationCompact(awake), Modifier.weight(1f).fillMaxHeight())
+                    Fact("Zdriemnutie", Format.formatDurationCompact(night?.napMinutes), Modifier.weight(1f).fillMaxHeight(), tag = "nap-value")
                 }
                 if (timeline.naps.isNotEmpty()) {
                     Text(
                         "Zdriemnutia: " + timeline.naps.joinToString(", ") {
-                            "${Format.formatClock(java.time.Instant.ofEpochMilli(it.start), tz)} · ${Format.formatDurationShort(it.asleepMinutes)}"
+                            "${Format.formatClock(java.time.Instant.ofEpochMilli(it.start), tz)} · ${Format.formatDurationCompact(it.asleepMinutes)}"
                         },
                         style = urbanist(13.sp),
                         color = t.ink2,
@@ -131,7 +131,7 @@ fun SleepScreen(
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Dot(stageColor(t, stage.stage), 8.dp)
                         Text(STAGE_NAMES[stage.stage] ?: "", style = urbanist(15.sp), color = t.ink2, modifier = Modifier.weight(1f))
-                        Text(Format.formatDurationShort(stage.minutes), style = urbanist(15.sp, FontWeight.SemiBold), color = t.ink)
+                        Text(Format.formatDurationCompact(stage.minutes), style = urbanist(15.sp, FontWeight.SemiBold), color = t.ink)
                         Text(stage.share?.let { "${Format.formatInt(it * 100)} %" } ?: "", style = mono(12.sp), color = t.muted)
                     }
                 }

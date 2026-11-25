@@ -38,13 +38,15 @@ import org.junit.runner.RunWith
 import sk.zdravie.app.model.*
 import sk.zdravie.app.ui.AppShell
 import sk.zdravie.app.ui.AppTab
-import sk.zdravie.app.ui.HistoryMetric
-import sk.zdravie.app.ui.HistoryScreen
 import sk.zdravie.app.ui.TodayFixtures
 import sk.zdravie.app.ui.TodayFixtures.local
 import sk.zdravie.app.ui.ZdravieApp
 import sk.zdravie.app.ui.ZdravieTheme
 import sk.zdravie.app.ui.screens.TodayScreen
+import sk.zdravie.app.ui.screens.SleepScreen
+import sk.zdravie.app.ui.screens.ActivityScreen
+import sk.zdravie.app.ui.screens.TrendsScreen
+import sk.zdravie.app.logic.SleepKind
 
 /**
  * Visual evidence only: synthetic models, no network, credentials or production data.
@@ -65,10 +67,27 @@ class NativePreviewTest {
         compose.setContent { ZdravieApp(state(), {_,_,_->},{},{},{}) }
         save("native-overview.png")
     }
-    @Test fun captureNativeHistory() {
-        // The v0.1 history is no longer a tab (Task 8); it is rendered directly until Task 12 removes it.
-        compose.setContent { ZdravieTheme("dark") { HistoryScreen(state(), HistoryMetric.STEPS, {}, {}) } }
-        save("native-history.png")
+    private fun richData(now: Instant) = TodayFixtures.dataset(days { it }, now.minusSeconds(7 * 60))
+
+    @Test fun captureSleep() {
+        val now = local(today, 9, 0)
+        capture("spanok.png", "sleep-list", AppTab.SLEEP) {
+            SleepScreen(richData(now), today, today, SleepKind.SAMSUNG, "A", {}, {})
+        }
+    }
+
+    @Test fun captureActivity() {
+        val now = local(today, 19, 0)
+        capture("aktivita.png", "activity-list", AppTab.ACTIVITY) {
+            ActivityScreen(richData(now), today, today, "A", {}, {})
+        }
+    }
+
+    @Test fun captureTrends() {
+        val now = local(today, 19, 0)
+        capture("trendy.png", "trends-list", AppTab.TRENDS, endTag = "trends-list") {
+            TrendsScreen(richData(now), today, "A", {}, {})
+        }
     }
 
     private val today = "2026-10-23"
@@ -119,7 +138,21 @@ class NativePreviewTest {
      * The whole scroll in one image: the screen is laid out as tall as its content (so the lazy list
      * composes every panel), recorded into a graphics layer and rendered off-window.
      */
-    private fun captureToday(name: String, data: Dataset, now: Instant, daily: DailyUiState) {
+    private fun captureToday(name: String, data: Dataset, now: Instant, daily: DailyUiState) =
+        capture(name, "today-list", AppTab.TODAY, endTag = "today-end") {
+            TodayScreen(
+                dataset = data, date = today, now = now, account = TodayFixtures.account("samsung"), daily = daily,
+                onDate = {}, onOpenSleep = {}, onSaveJournal = { _, _ -> }, onRefresh = {},
+            )
+        }
+
+    private fun capture(
+        name: String,
+        listTag: String,
+        tab: AppTab,
+        endTag: String = "screen-end",
+        screen: @androidx.compose.runtime.Composable () -> Unit,
+    ) {
         var height by mutableIntStateOf(6000)
         var slices: List<GraphicsLayer> = emptyList()
         var size = IntSize.Zero
@@ -150,20 +183,15 @@ class NativePreviewTest {
                     },
             ) {
                 ZdravieTheme("dark") {
-                    AppShell(AppTab.TODAY, showNav = true, onTab = {}) {
-                        TodayScreen(
-                            dataset = data, date = today, now = now, account = TodayFixtures.account("samsung"), daily = daily,
-                            onDate = {}, onOpenSleep = {}, onSaveJournal = { _, _ -> }, onRefresh = {},
-                        )
-                    }
+                    AppShell(tab, showNav = true, onTab = {}) { screen() }
                 }
             }
         }
         compose.waitForIdle()
         // Shrink to the content: drop the empty space below the last panel, keep the list's bottom padding.
         val density = InstrumentationRegistry.getInstrumentation().targetContext.resources.displayMetrics.density
-        val list = compose.onNodeWithTag("today-list").fetchSemanticsNode().boundsInRoot
-        val end = compose.onNodeWithTag("today-end").fetchSemanticsNode().boundsInRoot
+        val list = compose.onNodeWithTag(listTag).fetchSemanticsNode().boundsInRoot
+        val end = compose.onNodeWithTag(endTag).fetchSemanticsNode().boundsInRoot
         val unused = (list.bottom - end.bottom) / density - 28f
         compose.runOnIdle { height = ceil(height - unused).toInt() }
         compose.waitForIdle()

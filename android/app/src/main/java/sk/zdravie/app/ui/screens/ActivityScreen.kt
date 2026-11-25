@@ -103,13 +103,13 @@ fun ActivityScreen(
                     Text(Scores.formatStrain(day?.scores?.strain), style = urbanist(20.sp, FontWeight.Medium), color = t.ink, modifier = Modifier.testTag("strain-today"))
                 }
                 MiniBars(strain14, setOf(13), t.accent, height = 72.dp, contentDescription = "Strain za 14 dní")
-                Text(Scores.strainBand(day?.scores?.strain)?.label?.let { "dnes $it záťaž" } ?: "dnes zatiaľ bez strainu", style = urbanist(13.sp), color = t.ink2)
+                Text(Scores.strainBand(day?.scores?.strain)?.label?.let { "dnes $it" } ?: "dnes zatiaľ bez strainu", style = urbanist(13.sp), color = t.ink2)
             }
         }
         item(key = "load") {
             ZPanel {
                 Eyebrow("Stav záťaže · 8 týždňov")
-                Text(Scores.cardioStatusLabel(status), style = ZType.heading, color = t.ink)
+                Text(Scores.cardioStatusLabel(status).replaceFirstChar { it.uppercase() }, style = ZType.heading, color = t.ink)
                 MiniBars(weeks.map { it.ratio }, setOf(weeks.size - 1), t.accent, height = 64.dp, contentDescription = "Pomer 7 dní oproti 28 dňom za 8 týždňov")
                 Text(Activity.cardioText(status) ?: "Potrebuje aspoň pár týždňov dát.", style = urbanist(13.sp), color = t.ink2)
             }
@@ -184,7 +184,7 @@ private fun WorkoutRow(workout: Workout, tz: String, onOpen: () -> Unit) {
             Text(Format.workoutLabel(workout.type), style = urbanist(16.sp, FontWeight.SemiBold), color = t.ink)
             Text("${Format.formatDay(workout.day)} · ${Format.formatClock(workout.start, tz)}", style = mono(11.sp), color = t.muted)
         }
-        Text(Format.formatDurationShort(workout.durationS?.div(60)), style = urbanist(16.sp, FontWeight.Medium), color = t.ink)
+        Text(Format.formatDurationCompact(workout.durationS?.div(60)), style = urbanist(16.sp, FontWeight.Medium), color = t.ink)
         Text(Scores.formatStrain(workout.strain), style = mono(12.sp), color = t.ink2)
     }
 }

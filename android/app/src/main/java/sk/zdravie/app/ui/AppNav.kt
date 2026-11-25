@@ -239,27 +239,6 @@ internal fun ScreenHeader(eyebrow: String?, title: String, initial: String, onAc
     }
 }
 
-/** Stand-in for the Spánok, Aktivita and Trendy screens until their own tasks land. */
-@Composable
-internal fun PlaceholderScreen(tab: AppTab, eyebrow: String?, initial: String, onAccount: () -> Unit) {
-    val t = LocalZTokens.current
-    Column(
-        Modifier.widthIn(max = 640.dp).fillMaxSize().padding(horizontal = 16.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        ScreenHeader(eyebrow, tab.title, initial, onAccount)
-        Panel(Modifier.fillMaxWidth()) {
-            Eyebrow(tab.title)
-            Text(
-                "Táto obrazovka sa pripravuje. Hlavné čísla dňa nájdeš na karte Dnes.",
-                style = ZType.body,
-                color = t.ink2,
-                modifier = Modifier.padding(top = 12.dp),
-            )
-        }
-    }
-}
-
 /** Header row of the account screen while it is reached from the circle. */
 @Composable
 internal fun BackRow(title: String, onBack: () -> Unit) {

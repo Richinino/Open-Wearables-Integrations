@@ -139,7 +139,7 @@ fun TrendsScreen(dataset: Dataset, today: String, initial: String, onOpenDay: (S
                             ) {
                                 Text(Format.formatDay(card.day), style = urbanist(13.sp), color = t.ink2)
                                 Text(Format.formatInt(card.steps), style = urbanist(24.sp, spacing = -0.02f, line = 1.1f), color = t.ink)
-                                Text("spánok ${Format.formatDurationShort(card.sleepMinutes)}", style = urbanist(12.sp), color = t.ink2)
+                                Text("spánok ${Format.formatDurationCompact(card.sleepMinutes)}", style = urbanist(12.sp), color = t.ink2)
                                 Text("skóre ${Format.formatInt(card.dayScore)}", style = urbanist(12.sp), color = t.ink2)
                             }
                         }
@@ -188,7 +188,7 @@ fun TrendsScreen(dataset: Dataset, today: String, initial: String, onOpenDay: (S
                     }
                 }
             }
-            item(key = "end") { Spacer(Modifier.height(1.dp)) }
+            item(key = "end") { Spacer(Modifier.height(1.dp).testTag("screen-end")) }
         }
     }
 }

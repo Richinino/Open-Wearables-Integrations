@@ -101,17 +101,6 @@ class ZdravieAppTest {
         compose.onNodeWithText("01:30").assertIsDisplayed()
     }
 
-    @Test fun historyDescribesAbsentCalendarDaysAndOffersExactValues() {
-        // The v0.1 history stays testable on its own until Task 12 removes it.
-        val state = AppUiState(session = session(), days = listOf(day("2026-10-20", 2000L), day("2026-10-18", 1000L)), hasLoaded = true)
-        compose.setContent { ZdravieTheme("light") { HistoryScreen(state, HistoryMetric.STEPS, {}, {}) } }
-        compose.onNodeWithContentDescription("Kroky, 14 dní. 2 dní s údajom, 12 dní bez údaja.", substring = true).assertExists()
-        compose.onNodeWithTag("screen-list").performScrollToNode(hasText("Zobraziť hodnoty grafu"))
-        compose.onNodeWithText("Zobraziť hodnoty grafu").performClick()
-        compose.onNodeWithTag("screen-list").performScrollToNode(hasText("Hodnoty grafu · Kroky"))
-        compose.onNodeWithText("Hodnoty grafu · Kroky").assertExists()
-    }
-
     @Test fun replacingIdentityDropsSelectedDateAndNavigation() {
         val data = dataset(richDays(today, 30), now)
         val current = mutableStateOf(loaded(data))
