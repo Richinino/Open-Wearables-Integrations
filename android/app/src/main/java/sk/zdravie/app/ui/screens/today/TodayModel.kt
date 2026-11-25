@@ -33,6 +33,10 @@ internal enum class Tone { ACCENT, SLEEP, HEART, INK }
 internal class SubRow(val label: String, val value: String, val fraction: Float, val tone: Tone, val reason: String)
 
 internal class MorningHero(
+    /** The day score itself, for the count-up of the ring; null when there is none. */
+    val score: Double?,
+    /** The day the score belongs to: the ring moment plays once per day and app run. */
+    val date: String,
     val valueText: String,
     val fraction: Float,
     val label: String,
@@ -226,7 +230,7 @@ internal fun buildTodayModel(dataset: Dataset, date: String, today: String, mode
         canGoForward = date < today,
         incomplete = day?.complete == false,
         alert = Scores.nightSignalAlert(day?.scores?.nightSignal),
-        morning = if (mode == Mode.MORNING) morningHero(day, previous, kind) else null,
+        morning = if (mode == Mode.MORNING) morningHero(day, previous, kind, date) else null,
         evening = if (mode == Mode.EVENING) eveningHero(dataset, day, date) else null,
         webInsights = webInsights(days, date),
         sleep = sleepBlock(dataset, byDay, date, today, kind),
@@ -237,10 +241,12 @@ internal fun buildTodayModel(dataset: Dataset, date: String, today: String, mode
     )
 }
 
-private fun morningHero(day: Day?, previous: Day?, kind: SleepKind): MorningHero {
+private fun morningHero(day: Day?, previous: Day?, kind: SleepKind, date: String): MorningHero {
     val value = day?.scores?.dayScore.finite()
     val label = Scores.dayScoreLabel(value)
     return MorningHero(
+        score = value,
+        date = date,
         valueText = Format.formatInt(value),
         fraction = fraction(value, 100.0),
         label = label,

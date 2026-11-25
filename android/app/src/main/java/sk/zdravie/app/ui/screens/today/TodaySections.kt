@@ -56,8 +56,24 @@ import androidx.compose.ui.unit.sp
 import sk.zdravie.app.logic.NightAlert
 import sk.zdravie.app.ui.ZIcon
 import sk.zdravie.app.ui.ZIcons
+import androidx.compose.runtime.remember
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.graphicsLayer
+import sk.zdravie.app.ui.components.ZMotion
+import sk.zdravie.app.ui.components.CountUpText
 import sk.zdravie.app.ui.components.Eyebrow
 import sk.zdravie.app.ui.components.MiniBars
+import sk.zdravie.app.ui.components.RingTrack
+import sk.zdravie.app.ui.components.SeenOnce
+import sk.zdravie.app.ui.components.TripleRing
+import sk.zdravie.app.ui.components.pressClickable
+import sk.zdravie.app.ui.components.rememberReducedMotion
 import sk.zdravie.app.ui.components.Panel
 import sk.zdravie.app.ui.components.ScoreRing
 import sk.zdravie.app.ui.components.Sparkline
@@ -84,10 +100,10 @@ internal fun toneColor(t: ZTokens, tone: Tone): Color = when (tone) {
 /** `good` as text: in the light theme it is darkened until it keeps 4.5:1 (controller ruling 2). */
 internal fun goodText(t: ZTokens): Color = if (t.bg.luminance() > 0.5f) mixOklab(t.good, t.ink, 0.7f) else t.good
 
-private fun urbanist(size: TextUnit, weight: FontWeight = FontWeight.Normal, spacing: Float = 0f, line: Float = 1.3f) =
+internal fun urbanist(size: TextUnit, weight: FontWeight = FontWeight.Normal, spacing: Float = 0f, line: Float = 1.3f) =
     TextStyle(fontFamily = Urbanist, fontWeight = weight, fontSize = size, lineHeight = size * line, letterSpacing = spacing.em)
 
-private fun mono(size: TextUnit, spacing: Float = 0f) =
+internal fun mono(size: TextUnit, spacing: Float = 0f) =
     TextStyle(fontFamily = DmMono, fontWeight = FontWeight.Normal, fontSize = size, lineHeight = size * 1.35f, letterSpacing = spacing.em)
 
 @Composable
@@ -125,7 +141,7 @@ private fun InnerTile(
 }
 
 @Composable
-private fun Dot(color: Color, size: Dp, modifier: Modifier = Modifier) {
+internal fun Dot(color: Color, size: Dp, modifier: Modifier = Modifier) {
     Box(modifier.size(size).clip(CircleShape).background(color))
 }
 
@@ -168,8 +184,20 @@ internal fun NightBanner(alert: NightAlert) {
     val t = LocalZTokens.current
     val color = if (alert.level == "red") t.heart else t.warn
     val shape = RoundedCornerShape(22.dp)
+    // Slides in once (360 ms, focal curve); scrolling back to it does not replay the entrance.
+    val reduced = rememberReducedMotion()
+    var shown by rememberSaveable { mutableStateOf(false) }
+    val enter = remember { Animatable(if (shown || reduced) 1f else 0f) }
+    LaunchedEffect(Unit) {
+        if (enter.value < 1f) enter.animateTo(1f, tween(360, easing = ZMotion.Focal))
+        shown = true
+    }
     Row(
         Modifier
+            .graphicsLayer {
+                alpha = enter.value
+                translationY = (1f - enter.value) * -8.dp.toPx()
+            }
             .fillMaxWidth()
             .clip(shape)
             .background(mixOklab(color, t.bg, 0.12f), shape)
@@ -195,11 +223,23 @@ private val SENTENCE = TextStyle(fontFamily = Urbanist, fontWeight = FontWeight.
 @Composable
 internal fun MorningHeroPanel(hero: MorningHero) {
     val t = LocalZTokens.current
+    // The morning moment: once per day and app run, and never with "Remove animations" on.
+    val reduced = rememberReducedMotion()
+    val play = remember(hero.date, hero.score == null) { !reduced && hero.score != null && SeenOnce.first("day-score:${hero.date}") }
+    val tracks = hero.rows.map { RingTrack(it.fraction, toneColor(t, it.tone)) }
     ZPanel(vertical = 24.dp, gap = 22.dp) {
         Eyebrow("Skóre dňa")
-        ScoreRing(hero.fraction, t.accent, 220.dp, Modifier.align(Alignment.CenterHorizontally), contentDescription = hero.description) {
+        TripleRing(tracks, 240.dp, play, hero.description, Modifier.align(Alignment.CenterHorizontally)) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(hero.valueText, style = ZType.display, color = t.ink, modifier = Modifier.testTag("day-score-value"))
+                CountUpText(
+                    value = hero.score,
+                    text = hero.valueText,
+                    play = play,
+                    style = ZType.display.copy(fontSize = 72.sp, lineHeight = 66.sp),
+                    color = t.ink,
+                    modifier = Modifier.testTag("day-score-value"),
+                    delayMs = 260,
+                )
                 Text(hero.label, style = urbanist(14.sp), color = t.ink2, modifier = Modifier.padding(top = 6.dp))
             }
         }
@@ -263,25 +303,8 @@ internal fun InsightsPanel(view: InsightsView) {
     val t = LocalZTokens.current
     ZPanel {
         Eyebrow("Čo sa zmenilo")
-        view.cards.forEach { card ->
-            val shape = RoundedCornerShape(20.dp)
-            Column(
-                Modifier.fillMaxWidth().clip(shape).border(BorderStroke(1.dp, t.line), shape).padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                if (card.bars.isNotEmpty()) {
-                    MiniBars(card.bars, card.highlight, toneColor(t, card.tone), height = 40.dp, contentDescription = "Graf k postrehu")
-                }
-                if (card.subject != null) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Dot(toneColor(t, card.tone), 6.dp)
-                        Eyebrow(card.subject)
-                    }
-                }
-                Text(card.text, style = urbanist(17.sp, FontWeight.Medium, -0.01f), color = t.ink)
-                if (card.detail != null) Text(card.detail, style = urbanist(13.sp), color = t.muted)
-            }
-        }
+        // One observation at a time; the rest wait in a deck below it.
+        if (view.cards.isNotEmpty()) InsightDeck(view.cards)
         view.notes.forEach { Text(it, style = urbanist(13.sp), color = t.ink2) }
     }
 }
@@ -292,7 +315,7 @@ internal fun InsightsPanel(view: InsightsView) {
 @Composable
 internal fun SleepPanel(block: SleepBlock, onOpen: () -> Unit) {
     val t = LocalZTokens.current
-    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).clickable(role = Role.Button, onClickLabel = "Detail noci", onClick = onOpen)) {
+    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).pressClickable(onClickLabel = "Detail noci", onClick = onOpen)) {
         ZPanel {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Eyebrow("Spánok")

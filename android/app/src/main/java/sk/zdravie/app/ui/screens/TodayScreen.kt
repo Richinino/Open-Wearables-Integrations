@@ -18,7 +18,13 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import sk.zdravie.app.ui.components.ZMotion
+import sk.zdravie.app.ui.components.rememberReducedMotion
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +67,7 @@ import sk.zdravie.app.ui.screens.today.NightBanner
 import sk.zdravie.app.ui.screens.today.SleepPanel
 import sk.zdravie.app.ui.screens.today.StatusRow
 import sk.zdravie.app.ui.screens.today.TodayModel
+import sk.zdravie.app.ui.screens.today.WeekComparePanel
 import sk.zdravie.app.ui.screens.today.WorkoutsPanel
 import sk.zdravie.app.ui.screens.today.balikInsights
 import sk.zdravie.app.ui.screens.today.buildTodayModel
@@ -132,10 +139,31 @@ fun TodayScreen(
         if (onModeChoice != null) onModeChoice(next) else localChoice = next
     }
 
+    // ‹ › move through days: the content leaves the way you go and comes in from the other side
+    // (16 dp, 220 ms). The header and controls move with it; the bottom bar stays put.
+    val slide = remember { Animatable(0f) }
+    var shownDate by remember { mutableStateOf(date) }
+    val reduced = rememberReducedMotion()
+    LaunchedEffect(date) {
+        if (date == shownDate) return@LaunchedEffect
+        val direction = if (date > shownDate) 1f else -1f
+        shownDate = date
+        if (reduced) return@LaunchedEffect
+        slide.snapTo(direction)
+        slide.animateTo(0f, tween(220, easing = ZMotion.EaseOut))
+    }
+
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             LazyColumn(
-                modifier = Modifier.widthIn(max = 640.dp).fillMaxSize().testTag("today-list"),
+                modifier = Modifier
+                    .widthIn(max = 640.dp)
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationX = slide.value * 16.dp.toPx()
+                        alpha = 1f - kotlin.math.abs(slide.value)
+                    }
+                    .testTag("today-list"),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
@@ -146,7 +174,7 @@ fun TodayScreen(
                 item(key = "status") { StatusRow(status, stale) }
                 if (error != null) item(key = "error") { ErrorLine(error, onRefresh) }
                 model.alert?.let { alert -> item(key = "alert") { NightBanner(alert) } }
-                val sections = Sections(model, insights, onOpenSleep)
+                val sections = Sections(model, dataset, insights, onOpenSleep)
                 if (mode == Mode.MORNING) {
                     item(key = "hero") { MorningHeroPanel(model.morning!!) }
                     sections.insights(this)
@@ -176,13 +204,16 @@ fun TodayScreen(
 }
 
 /** List items shared by both layouts, in the order each artboard places them. */
-private class Sections(val model: TodayModel, val insights: InsightsView, val onOpenSleep: () -> Unit) {
+private class Sections(val model: TodayModel, val dataset: Dataset, val insights: InsightsView, val onOpenSleep: () -> Unit) {
     fun insights(scope: LazyListScope) {
         if (insights.cards.isEmpty() && insights.notes.isEmpty()) return
         scope.item(key = "insights") { InsightsPanel(insights) }
     }
     fun sleep(scope: LazyListScope) = scope.item(key = "sleep") { SleepPanel(model.sleep, onOpenSleep) }
-    fun activity(scope: LazyListScope) = scope.item(key = "activity") { ActivityPanel(model.activity) }
+    fun activity(scope: LazyListScope) {
+        scope.item(key = "activity") { ActivityPanel(model.activity) }
+        scope.item(key = "week") { WeekComparePanel(dataset, model.date) }
+    }
     fun workouts(scope: LazyListScope) = scope.item(key = "workouts") { WorkoutsPanel(model.workouts) }
 }
 

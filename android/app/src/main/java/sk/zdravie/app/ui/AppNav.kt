@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import sk.zdravie.app.ui.components.BackgroundGlow
 import sk.zdravie.app.ui.components.Eyebrow
 import sk.zdravie.app.ui.components.Panel
+import sk.zdravie.app.ui.components.pressClickable
 import sk.zdravie.app.ui.theme.LocalZTokens
 import sk.zdravie.app.ui.theme.ZType
 import sk.zdravie.app.ui.theme.panelColor
@@ -174,7 +175,7 @@ internal fun AccountCircle(initial: String, onClick: () -> Unit, modifier: Modif
         modifier
             .size(48.dp)
             .clip(CircleShape)
-            .clickable(role = Role.Button, onClickLabel = "Otvoriť účet", onClick = onClick)
+            .pressClickable(onClickLabel = "Otvoriť účet", onClick = onClick)
             .semantics { contentDescription = "Účet" },
         contentAlignment = Alignment.Center,
     ) {
@@ -201,7 +202,7 @@ internal fun CircleIconButton(
         modifier
             .size(48.dp)
             .clip(CircleShape)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .pressClickable(enabled = enabled, onClick = onClick)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {

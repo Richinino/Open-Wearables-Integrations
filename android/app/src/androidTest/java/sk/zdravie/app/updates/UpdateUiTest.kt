@@ -3,6 +3,7 @@ package sk.zdravie.app.updates
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
@@ -68,7 +69,7 @@ class UpdateUiTest {
         compose.setContent {
             ZdravieApp(AppUiState(session = session), { _, _, _ -> }, {}, {}, {}, onCheckForUpdates = { checks++ })
         }
-        compose.onNodeWithText("Účet").performClick()
+        compose.onNodeWithContentDescription("Účet").performClick()
         compose.onNodeWithTag("screen-list").performScrollToNode(hasText("Skontrolovať aktualizácie"))
         compose.onNodeWithText("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})").assertIsDisplayed()
         compose.onNodeWithText("Skontrolovať aktualizácie").performClick()

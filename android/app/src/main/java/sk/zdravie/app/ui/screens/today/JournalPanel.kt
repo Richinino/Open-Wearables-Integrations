@@ -1,5 +1,13 @@
 package sk.zdravie.app.ui.screens.today
 
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import sk.zdravie.app.ui.components.pressClickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -86,6 +94,15 @@ internal fun JournalPanel(
 ) {
     val t = LocalZTokens.current
     val enabled = !readOnly && !daily.saving
+    // One confirming tick when a save lands; the button text says it too, haptics may be off.
+    val haptics = LocalHapticFeedback.current
+    var wasSaving by remember { mutableStateOf(false) }
+    LaunchedEffect(daily.saving) {
+        if (wasSaving && !daily.saving && daily.saveError == null && daily.conflict == null) {
+            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+        }
+        wasSaving = daily.saving
+    }
     ZPanel(gap = 16.dp) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Eyebrow("Môj deň")
@@ -201,7 +218,7 @@ internal fun JournalPanel(
                     .alpha(if (canSave) 1f else 0.5f)
                     .clip(RoundedCornerShape(24.dp))
                     .background(t.accent)
-                    .clickable(enabled = canSave, role = Role.Button) { onSave(day, normalized(draft)) },
+                    .pressClickable(enabled = canSave) { onSave(day, normalized(draft)) },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(if (daily.saving) "Ukladám…" else "Uložiť", style = style(15, FontWeight.Bold), color = ON_ACCENT)
