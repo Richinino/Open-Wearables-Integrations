@@ -103,7 +103,8 @@ function Chevron({ open }: { open: boolean }) {
 const POPUP = "glass absolute z-40 p-2 shadow-[0_18px_50px_rgba(0,0,0,0.28)]";
 const POPUP_STYLE: React.CSSProperties = {
   borderRadius: 22,
-  background: "color-mix(in oklab, var(--surface) 94%, transparent)",
+  // Opaque: the header is its own layer, so a blur behind the menu would not reach the tiles.
+  background: "var(--surface)",
 };
 
 /** "Detaily" in the header: the detail pages in a small menu. */
